@@ -161,7 +161,7 @@ const SalesAnalysis = () => {
         const paymentPieData = [
           { name: '카드', value: currentHalfData.reduce((a, b) => a + (b.card || 0), 0), color: '#3b82f6' },
           { name: '현금', value: currentHalfData.reduce((a, b) => a + (b.cash || 0), 0), color: '#10b981' },
-          { name: '기타/이체', value: currentHalfData.reduce((a, b) => a + (b.other || 0), 0), color: '#f59e0b' }
+          { name: '기타(온라인)', value: currentHalfData.reduce((a, b) => a + (b.other || 0), 0), color: '#f59e0b' }
         ];
         
         return (
@@ -192,9 +192,9 @@ const SalesAnalysis = () => {
                       <YAxis tickFormatter={(v) => `${(v/10000).toLocaleString()}만`} width={60} />
                       <Tooltip formatter={(v) => `${v.toLocaleString()}원`} />
                       <Legend />
-                      <Bar dataKey="card" name="카드" fill="#3b82f6" stackId="a" />
-                      <Bar dataKey="cash" name="현금" fill="#10b981" stackId="a" />
-                      <Bar dataKey="other" name="기타/이체" fill="#f59e0b" stackId="a" />
+                      <Bar dataKey="card" name="카드" fill="#3b82f6" />
+                      <Bar dataKey="cash" name="현금" fill="#10b981" />
+                      <Bar dataKey="other" name="기타(온라인)" fill="#f59e0b" />
                     </BarChart>
                   </ResponsiveContainer>
                 </DashboardCard>
@@ -222,7 +222,7 @@ const SalesAnalysis = () => {
                         <td className="font-bold">{ currentHalfData.reduce((a,b)=>a+(Number(b.cash)||0),0).toLocaleString() }원</td>
                       </tr>
                       <tr>
-                        <td className="row-header"><span className="marker-yellow"></span> 기타/이체</td>
+                        <td className="row-header"><span className="marker-yellow"></span> 기타(온라인)</td>
                         {currentHalfData.map(d => <td key={d.month}>{Number(d.other || 0).toLocaleString()}원</td>)}
                         <td className="font-bold">{ currentHalfData.reduce((a,b)=>a+(Number(b.other)||0),0).toLocaleString() }원</td>
                       </tr>
