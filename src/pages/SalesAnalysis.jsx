@@ -85,6 +85,33 @@ const SalesAnalysis = () => {
   // --- 진료비 상위 환자 (최근 월 기준) ---
   const topPatients = (currentHalfData[currentHalfData.length - 1]?.topPatients || []).slice(0, 20);
 
+  // --- 커스텀 차트 레이블 컴포넌트 ---
+  const CustomizedLabel = (props) => {
+    const { x, y, width, value, fill } = props;
+    if (!value || value === 0) return null;
+    return (
+      <g>
+        <rect x={x + width/2 - 38} y={y - 22} width={76} height={18} rx={4} fill={fill} />
+        <text x={x + width/2} y={y - 10} fill="#fff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '9px', fontWeight: 'bold' }}>
+          {value.toLocaleString()}원
+        </text>
+      </g>
+    );
+  };
+
+  const CustomizedLineLabel = (props) => {
+    const { x, y, value, stroke } = props;
+    if (!value || value === 0) return null;
+    return (
+      <g>
+        <rect x={x - 38} y={y - 28} width={76} height={18} rx={4} fill={stroke} />
+        <text x={x} y={y - 16} fill="#fff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '9px', fontWeight: 'bold' }}>
+          {value.toLocaleString()}원
+        </text>
+      </g>
+    );
+  };
+
   // --- 탭별 렌더링 로직 (7개 탭) ---
   const renderTabContent = () => {
     switch (subTab) {
@@ -93,8 +120,8 @@ const SalesAnalysis = () => {
           <div className="tab-pane active">
             <div className="dashboard-stack">
               <DashboardCard title="월별 매출 추합 및 목표 대비">
-                <ResponsiveContainer width="100%" height={350}>
-                  <ComposedChart data={currentHalfData} margin={{ left: 30, right: 30, top: 20, bottom: 20 }}>
+                <ResponsiveContainer width="100%" height={380}>
+                  <ComposedChart data={currentHalfData} margin={{ left: 30, right: 30, top: 40, bottom: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                     <XAxis dataKey="month" stroke="var(--text-secondary)" tick={{ dy: 10 }} />
                     <YAxis 
@@ -105,24 +132,14 @@ const SalesAnalysis = () => {
                     <Tooltip formatter={(v) => `${v.toLocaleString()}원`} contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }} />
                     <Legend verticalAlign="top" height={36}/>
                     <Bar dataKey="netSales" name="순매출" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40}>
-                      <LabelList 
-                        dataKey="netSales" 
-                        position="top" 
-                        offset={10}
-                        formatter={(v) => v > 0 ? `${v.toLocaleString()}원` : ''} 
-                        style={{ fill: '#3b82f6', fontWeight: 'bold', fontSize: '11px' }} 
-                      />
+                      <LabelList dataKey="netSales" content={<CustomizedLabel fill="#3b82f6" />} />
                     </Bar>
                     <Bar dataKey="insurance" name="보험청구" fill="#93c5fd" radius={[4, 4, 0, 0]} barSize={40}>
-                      <LabelList 
-                        dataKey="insurance" 
-                        position="top" 
-                        offset={10}
-                        formatter={(v) => v > 0 ? `${v.toLocaleString()}원` : ''} 
-                        style={{ fill: '#60a5fa', fontWeight: 'bold', fontSize: '11px' }} 
-                      />
+                      <LabelList dataKey="insurance" content={<CustomizedLabel fill="#60a5fa" />} />
                     </Bar>
-                    <Line type="monotone" dataKey="total" name="총합계" stroke="#f59e0b" strokeWidth={3} dot={{ r: 5, fill: '#f59e0b' }} />
+                    <Line type="monotone" dataKey="total" name="총합계" stroke="#f59e0b" strokeWidth={3} dot={{ r: 5, fill: '#f59e0b' }}>
+                      <LabelList dataKey="total" content={<CustomizedLineLabel stroke="#f59e0b" />} />
+                    </Line>
                   </ComposedChart>
                 </ResponsiveContainer>
               </DashboardCard>
