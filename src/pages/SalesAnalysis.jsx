@@ -237,19 +237,58 @@ const SalesAnalysis = () => {
       case 'newPatient': // 3. 신환수익 비교
         return (
           <div className="tab-pane active">
-            <DashboardCard title="월별 신환 매출 기여도 비교">
-              <ResponsiveContainer width="100%" height={400}>
-                <AreaChart data={currentHalfData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-                  <XAxis dataKey="month" stroke="var(--text-secondary)" />
-                  <YAxis stroke="var(--text-secondary)" />
-                  <Tooltip />
-                  <Legend />
-                  <Area type="monotone" dataKey="netSales" name="전체 순매출" stroke="#3b82f6" fillOpacity={0.1} fill="#3b82f6" />
-                  <Area type="monotone" dataKey="newPatientSales" name="신환 매출" stroke="#8b5cf6" fillOpacity={0.3} fill="#8b5cf6" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </DashboardCard>
+            <div className="dashboard-stack">
+              <DashboardCard title="월별 신환 매출 기여도 비교">
+                <ResponsiveContainer width="100%" height={400}>
+                  <BarChart data={currentHalfData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="month" tick={{ dy: 10 }} />
+                    <YAxis tickFormatter={(v) => `${(v/10000).toLocaleString()}만`} width={60} />
+                    <Tooltip formatter={(v) => `${Number(v).toLocaleString()}원`} />
+                    <Legend verticalAlign="top" align="right" height={36} />
+                    <Bar dataKey="netSales" name="전체 순매출" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="newPatientSales" name="신환 매출" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </DashboardCard>
+              
+              <DashboardCard title="순수 매출 중 신환 수익 비중 (%)">
+                <div className="sales-data-table-container">
+                  <table className="sales-data-table">
+                    <thead>
+                      <tr>
+                        <th className="row-header">분석 항목</th>
+                        {currentHalfData.map(d => <th key={d.month}>{d.month}</th>)}
+                        <th>평균/합계</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="row-header"><span className="marker blue"></span> 전체 순매출</td>
+                        {currentHalfData.map(d => <td key={d.month}>{Number(d.netSales || 0).toLocaleString()}원</td>)}
+                        <td className="font-bold">{ currentHalfData.reduce((a,b)=>a+(Number(b.netSales)||0),0).toLocaleString() }원</td>
+                      </tr>
+                      <tr>
+                        <td className="row-header"><span className="marker purple"></span> 신환 매출</td>
+                        {currentHalfData.map(d => <td key={d.month}>{Number(d.newPatientSales || 0).toLocaleString()}원</td>)}
+                        <td className="font-bold">{ currentHalfData.reduce((a,b)=>a+(Number(b.newPatientSales)||0),0).toLocaleString() }원</td>
+                      </tr>
+                      <tr className="bg-highlight">
+                        <td className="row-header">신환 수익 비중 (%)</td>
+                        {currentHalfData.map(d => {
+                          const ratio = (Number(d.newPatientSales || 0) / Number(d.netSales || 1)) * 100;
+                          return <td key={d.month} className="highlight text-blue">{ratio.toFixed(1)}%</td>;
+                        })}
+                        <td className="font-bold highlight text-blue">
+                          {((currentHalfData.reduce((a,b)=>a+(Number(b.newPatientSales)||0),0) / 
+                             currentHalfData.reduce((a,b)=>a+(Number(b.netSales)||0),1)) * 100).toFixed(1)}%
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </DashboardCard>
+            </div>
           </div>
         );
 
