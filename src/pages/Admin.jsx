@@ -200,53 +200,53 @@ const Admin = () => {
                             let extractedNewPatients = 0;
                             let extractedNewPatientSales = 0;
 
-                            // 1단계: 전체 시트에서 키워드 기반 정밀 탐색 (내원환자 배제 로직 추가)
-                            for (let r = 0; r < rawData.length; r++) {
+                            // [매트릭스 파싱] 헤더 열과 합계 행의 교차점 찾기
+                            let newPatientCol = -1;
+                            let salesCol = -1;
+                            let totalRowIdx = -1;
+
+                            // 1. 헤더 탐색 (최상단 20행 내에서 '신환수'와 '총진료비' 열 인덱스 확인)
+                            for (let r = 0; r < Math.min(20, rawData.length); r++) {
                                 const row = rawData[r] || [];
                                 for (let c = 0; c < row.length; c++) {
-                                    const cellText = String(row[c] || '').trim().replace(/\s+/g, '');
-                                    
-                                    // [중요] 신환 수 추출: '내원환자' 키워드는 명시적으로 제외하고 '신환수' 또는 '신규' 키워드만 타겟팅
-                                    const isNewPatientLabel = (cellText.includes('신환수') || (cellText.includes('신규') && cellText.includes('수'))) && !cellText.includes('내원환자');
-                                    
-                                    if (isNewPatientLabel && (cellText.includes('합계') || cellText.includes('총계') || cellText.includes('계'))) {
-                                        if (!cellText.includes('비') && !cellText.includes('매출') && !cellText.includes('액')) {
-                                            for (let k = 1; k <= 5; k++) {
-                                                const v = parseNum(row[c + k]);
-                                                if (v > 0 && v < 2000) { 
-                                                    extractedNewPatients = v; 
-                                                    break; 
-                                                }
-                                            }
-                                        }
+                                    const txt = String(row[c] || '').trim().replace(/\s+/g, '');
+                                    // '신환수'만 정확히 타겟 (내원객수와 엄격히 구분)
+                                    if ((txt.includes('신환') || txt.includes('신규')) && (txt.includes('수') || txt.includes('인원')) && !txt.includes('내원')) {
+                                        if (!txt.includes('비') && !txt.includes('매출')) newPatientCol = c;
                                     }
+                                    if ((txt.includes('진료비') || txt.includes('매출')) && (txt.includes('합계') || txt.includes('총액') || txt.includes('액'))) {
+                                        salesCol = c;
+                                    }
+                                }
+                                if (newPatientCol !== -1 && salesCol !== -1) break;
+                            }
 
-                                    // 신환 매출 추출 (기존 로직 유지)
-                                    if ((cellText.includes('진료비') || cellText.includes('매출') || cellText.includes('액')) && (cellText.includes('합계') || cellText.includes('총계') || cellText.includes('계'))) {
-                                        for (let k = 1; k <= 5; k++) {
-                                            const v = parseNum(row[c + k]);
-                                            if (v > 1000) { 
-                                                extractedNewPatientSales = v; 
-                                                break; 
-                                            }
-                                        }
-                                    }
+                            // 2. 합계 행 탐색 (하단에서 역순으로 '합계' 행 찾기)
+                            for (let r = rawData.length - 1; r >= 0; r--) {
+                                const firstCell = String(rawData[r]?.[0] || rawData[r]?.[1] || '').trim();
+                                if (firstCell === '합계' || firstCell === '총계' || firstCell === '전체합계') {
+                                    totalRowIdx = r;
+                                    break;
                                 }
                             }
 
-                            // 2단계: 하단 합계행 백트래킹 (신환 지표 우선 선택)
+                            // 3. 데이터 추출
+                            if (totalRowIdx !== -1) {
+                                if (newPatientCol !== -1) extractedNewPatients = parseNum(rawData[totalRowIdx][newPatientCol]);
+                                if (salesCol !== -1) extractedNewPatientSales = parseNum(rawData[totalRowIdx][salesCol]);
+                            }
+
+                            // [Fallback] 매트릭스 탐색 실패 시 그리드 서치 수행
                             if (extractedNewPatients === 0 || extractedNewPatientSales === 0) {
-                                for (let r = rawData.length - 1; r >= 0; r--) {
+                                for (let r = 0; r < rawData.length; r++) {
                                     const row = rawData[r] || [];
-                                    const first = String(row[0] || row[1] || '').trim();
-                                    if (first === '합계' || first === '총계' || first.includes('전체합계')) {
-                                        const nums = row.map(v => parseNum(v)).filter(v => v > 0);
-                                        if (nums.length >= 2) {
-                                            const sorted = [...nums].sort((a,b) => a - b);
-                                            // 신환수는 내원객수보다 반드시 작으므로, 가장 작은 숫자를 우선 채택
-                                            if (extractedNewPatients === 0) extractedNewPatients = sorted[0]; 
-                                            if (extractedNewPatientSales === 0) extractedNewPatientSales = sorted.find(n => n > 1000) || 0;
-                                            break;
+                                    for (let c = 0; c < row.length; c++) {
+                                        const cellText = String(row[c] || '').trim().replace(/\s+/g, '');
+                                        if (cellText.includes('신환수') && !cellText.includes('내원') && (cellText.includes('합계') || cellText.includes('계'))) {
+                                            for (let k = 1; k <= 3; k++) {
+                                                const v = parseNum(row[c + k]);
+                                                if (v > 0 && v < 2000) { extractedNewPatients = v; break; }
+                                            }
                                         }
                                     }
                                 }
