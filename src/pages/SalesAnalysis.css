@@ -46,6 +46,8 @@
 .sales-data-table .marker.blue { background: #3b82f6; }
 .sales-data-table .marker.green { background: #10b981; }
 .sales-data-table .marker.indigo { background: #6366f1; }
+.sales-data-table .marker.purple { background: #8b5cf6; }
+.sales-data-table .marker.yellow { background: #f59e0b; }
 .sales-data-table .marker-yellow {
     display: inline-block;
     width: 10px;
