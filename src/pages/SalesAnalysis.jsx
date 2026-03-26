@@ -109,7 +109,7 @@ const SalesAnalysis = () => {
                         dataKey="netSales" 
                         position="top" 
                         offset={10}
-                        formatter={(v) => v > 0 ? `${Math.floor(v/10000).toLocaleString()}만` : ''} 
+                        formatter={(v) => v > 0 ? `${Math.round(v/10000).toLocaleString()}만` : ''} 
                         style={{ fill: '#3b82f6', fontWeight: 'bold', fontSize: '13px' }} 
                       />
                     </Bar>
@@ -131,15 +131,15 @@ const SalesAnalysis = () => {
                     <tbody>
                       <tr>
                         <td className="row-header"><span className="marker blue"></span> 순매출</td>
-                        {currentHalfData.map(d => <td key={d.month}>{(d.netSales/10000).toLocaleString()}만</td>)}
+                        {currentHalfData.map(d => <td key={d.month}>{Number(d.netSales || 0).toLocaleString()}원</td>)}
                       </tr>
                       <tr>
                         <td className="row-header"><span className="marker green"></span> 보험청구</td>
-                        {currentHalfData.map(d => <td key={d.month}>{(d.insurance/10000).toLocaleString()}만</td>)}
+                        {currentHalfData.map(d => <td key={d.month}>{Number(d.insurance || 0).toLocaleString()}원</td>)}
                       </tr>
                       <tr className="font-bold">
                         <td className="row-header"><span className="marker-yellow"></span> 총매출</td>
-                        {currentHalfData.map(d => <td key={d.month}>{(d.total/10000).toLocaleString()}만</td>)}
+                        {currentHalfData.map(d => <td key={d.month}>{Number(d.total || 0).toLocaleString()}원</td>)}
                       </tr>
                       <tr>
                         <td className="row-header"><TrendingUp size={14} /> 신환 수</td>
@@ -189,7 +189,7 @@ const SalesAnalysis = () => {
                     <BarChart data={currentHalfData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="month" tick={{ dy: 10 }} />
-                      <YAxis tickFormatter={(v) => `${(v/10000).toLocaleString()}만`} width={60} />
+                      <YAxis tickFormatter={(v) => `${Math.round(v/10000).toLocaleString()}만`} width={60} />
                       <Tooltip formatter={(v) => `${v.toLocaleString()}원`} />
                       <Legend />
                       <Bar dataKey="card" name="카드" fill="#3b82f6" />
@@ -400,7 +400,7 @@ const SalesAnalysis = () => {
                     <LabelList 
                       dataKey="amount" position="right" 
                       formatter={(val, entry, index) => {
-                        const lbl = `${(val/10000).toLocaleString()}만`;
+                        const lbl = `${(Number(val) || 0).toLocaleString()}원`;
                         return index < 3 ? `${doctorChartData[index].name} (${lbl})` : lbl;
                       }}
                       style={{ fill: '#065f46', fontWeight: 'bold', fontSize: '13px' }}
