@@ -200,33 +200,41 @@ const Admin = () => {
                             let extractedNewPatients = 0;
                             let extractedNewPatientSales = 0;
 
-                            // 1단계: 전체 시트에서 키워드 기반 정밀 탐색 (그리드 서치)
+                            // 1단계: 전체 시트에서 키워드 기반 정밀 탐색 (내원환자 배제 로직 추가)
                             for (let r = 0; r < rawData.length; r++) {
                                 const row = rawData[r] || [];
                                 for (let c = 0; c < row.length; c++) {
                                     const cellText = String(row[c] || '').trim().replace(/\s+/g, '');
                                     
-                                    // 신환 수 키워드 (신환*수*합계 등)
-                                    if ((cellText.includes('신환') || cellText.includes('신규')) && (cellText.includes('합계') || cellText.includes('총계') || cellText.includes('계'))) {
+                                    // [중요] 신환 수 추출: '내원환자' 키워드는 명시적으로 제외하고 '신환수' 또는 '신규' 키워드만 타겟팅
+                                    const isNewPatientLabel = (cellText.includes('신환수') || (cellText.includes('신규') && cellText.includes('수'))) && !cellText.includes('내원환자');
+                                    
+                                    if (isNewPatientLabel && (cellText.includes('합계') || cellText.includes('총계') || cellText.includes('계'))) {
                                         if (!cellText.includes('비') && !cellText.includes('매출') && !cellText.includes('액')) {
-                                            // 주변 5개 셀에서 숫자 찾기
                                             for (let k = 1; k <= 5; k++) {
                                                 const v = parseNum(row[c + k]);
-                                                if (v > 0 && v < 2000) { extractedNewPatients = v; break; }
+                                                if (v > 0 && v < 2000) { 
+                                                    extractedNewPatients = v; 
+                                                    break; 
+                                                }
                                             }
                                         }
                                     }
-                                    // 신환 매출 키워드 (진료비*합계, 매출*계 등)
+
+                                    // 신환 매출 추출 (기존 로직 유지)
                                     if ((cellText.includes('진료비') || cellText.includes('매출') || cellText.includes('액')) && (cellText.includes('합계') || cellText.includes('총계') || cellText.includes('계'))) {
                                         for (let k = 1; k <= 5; k++) {
                                             const v = parseNum(row[c + k]);
-                                            if (v > 1000) { extractedNewPatientSales = v; break; }
+                                            if (v > 1000) { 
+                                                extractedNewPatientSales = v; 
+                                                break; 
+                                            }
                                         }
                                     }
                                 }
                             }
 
-                            // 2단계: 하단 합계행 백트래킹 (위에서 못 찾은 경우 대비 fallback)
+                            // 2단계: 하단 합계행 백트래킹 (신환 지표 우선 선택)
                             if (extractedNewPatients === 0 || extractedNewPatientSales === 0) {
                                 for (let r = rawData.length - 1; r >= 0; r--) {
                                     const row = rawData[r] || [];
@@ -235,7 +243,8 @@ const Admin = () => {
                                         const nums = row.map(v => parseNum(v)).filter(v => v > 0);
                                         if (nums.length >= 2) {
                                             const sorted = [...nums].sort((a,b) => a - b);
-                                            if (extractedNewPatients === 0) extractedNewPatients = sorted.find(n => n < 2000) || 0;
+                                            // 신환수는 내원객수보다 반드시 작으므로, 가장 작은 숫자를 우선 채택
+                                            if (extractedNewPatients === 0) extractedNewPatients = sorted[0]; 
                                             if (extractedNewPatientSales === 0) extractedNewPatientSales = sorted.find(n => n > 1000) || 0;
                                             break;
                                         }
