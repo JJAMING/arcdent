@@ -91,8 +91,8 @@ const SalesAnalysis = () => {
     if (!value || value === 0) return null;
     return (
       <g>
-        <rect x={x + width/2 - 38} y={y - 22} width={76} height={18} rx={4} fill={fill} />
-        <text x={x + width/2} y={y - 10} fill="#fff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '9px', fontWeight: 'bold' }}>
+        <rect x={x + width/2 - 45} y={y - 25} width={90} height={20} rx={4} fill={fill} />
+        <text x={x + width/2} y={y - 14} fill="#fff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '11px', fontWeight: 'bold' }}>
           {value.toLocaleString()}원
         </text>
       </g>
@@ -104,8 +104,8 @@ const SalesAnalysis = () => {
     if (!value || value === 0) return null;
     return (
       <g>
-        <rect x={x - 38} y={y - 28} width={76} height={18} rx={4} fill={stroke} />
-        <text x={x} y={y - 16} fill="#fff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '9px', fontWeight: 'bold' }}>
+        <rect x={x - 45} y={y - 32} width={90} height={20} rx={4} fill={stroke} />
+        <text x={x} y={y - 21} fill="#fff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '11px', fontWeight: 'bold' }}>
           {value.toLocaleString()}원
         </text>
       </g>
@@ -120,13 +120,14 @@ const SalesAnalysis = () => {
           <div className="tab-pane active">
             <div className="dashboard-stack">
               <DashboardCard title="월별 매출 추합 및 목표 대비">
-                <ResponsiveContainer width="100%" height={380}>
+                <ResponsiveContainer width="100%" height={400}>
                   <ComposedChart data={currentHalfData} margin={{ left: 30, right: 30, top: 40, bottom: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                     <XAxis dataKey="month" stroke="var(--text-secondary)" tick={{ dy: 10 }} />
                     <YAxis 
                       stroke="var(--text-secondary)" 
                       width={80}
+                      domain={[0, (dataMax) => dataMax * 1.15]}
                       tickFormatter={(v) => `${Math.floor(v/10000).toLocaleString()}만`} 
                     />
                     <Tooltip formatter={(v) => `${v.toLocaleString()}원`} contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }} />
