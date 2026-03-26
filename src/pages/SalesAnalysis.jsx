@@ -158,55 +158,76 @@ const SalesAnalysis = () => {
         );
 
       case 'payment': // 2. 결제 분포도
+        const paymentPieData = [
+          { name: '카드', value: currentHalfData.reduce((a, b) => a + (b.card || 0), 0), color: '#3b82f6' },
+          { name: '현금', value: currentHalfData.reduce((a, b) => a + (b.cash || 0), 0), color: '#10b981' },
+          { name: '기타/이체', value: currentHalfData.reduce((a, b) => a + (b.other || 0), 0), color: '#f59e0b' }
+        ];
+        
         return (
           <div className="tab-pane active">
-            <div className="dashboard-grid">
-              <DashboardCard title="결제 수단별 매출 비중">
-                <ResponsiveContainer width="100%" height={450}>
-                  <PieChart>
-                    <Pie
-                      data={[
-                        { name: '카드', value: currentHalfData.reduce((a, b) => a + (b.card || 0), 0), color: '#3b82f6' },
-                        { name: '현금', value: currentHalfData.reduce((a, b) => a + (b.cash || 0), 0), color: '#10b981' },
-                        { name: '기타/이체', value: currentHalfData.reduce((a, b) => a + (b.other || 0), 0), color: '#f59e0b' }
-                      ]}
-                      cx="50%" cy="50%" innerRadius={100} outerRadius={150} paddingAngle={5} dataKey="value" stroke="none"
-                    >
-                      {[0,1,2].map((i) => <Cell key={i} fill={['#3b82f6','#10b981','#f59e0b'][i]} />)}
-                    </Pie>
-                    <Tooltip formatter={(v) => `${v.toLocaleString()}원`} />
-                    <Legend verticalAlign="bottom" height={36} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </DashboardCard>
-              <DashboardCard title="결제 수단별 세부 금액">
-                <div className="table-responsive">
-                    <table className="analysis-table">
-                        <thead>
-                            <tr>
-                                <th>결제수단</th>
-                                <th>금액</th>
-                                <th>비율</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>카드 수입</td>
-                                <td>{currentHalfData.reduce((a, b) => a + (b.card || 0), 0).toLocaleString()}원</td>
-                                <td>{((currentHalfData.reduce((a,b)=>a+(b.card||0),0) / currentHalfData.reduce((a,b)=>a+(b.netSales||0),1)) * 100).toFixed(1)}%</td>
-                            </tr>
-                            <tr>
-                                <td>현금 수입</td>
-                                <td>{currentHalfData.reduce((a, b) => a + (b.cash || 0), 0).toLocaleString()}원</td>
-                                <td>{((currentHalfData.reduce((a,b)=>a+(b.cash||0),0) / currentHalfData.reduce((a,b)=>a+(b.netSales||0),1)) * 100).toFixed(1)}%</td>
-                            </tr>
-                            <tr>
-                                <td>기타 수입</td>
-                                <td>{currentHalfData.reduce((a, b) => a + (b.other || 0), 0).toLocaleString()}원</td>
-                                <td>{((currentHalfData.reduce((a,b)=>a+(b.other||0),0) / currentHalfData.reduce((a,b)=>a+(b.netSales||0),1)) * 100).toFixed(1)}%</td>
-                            </tr>
-                        </tbody>
-                    </table>
+            <div className="dashboard-stack">
+              <div className="dashboard-grid">
+                <DashboardCard title="결제 수단별 비중 (%)">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie
+                        data={paymentPieData}
+                        cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value" stroke="none"
+                        label={({ percent }) => `${(percent * 100).toFixed(1)}%`}
+                      >
+                        {paymentPieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                      </Pie>
+                      <Tooltip formatter={(v) => `${v.toLocaleString()}원`} />
+                      <Legend verticalAlign="bottom" height={36} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </DashboardCard>
+                
+                <DashboardCard title="월별 결제 수단 추이">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={currentHalfData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="month" />
+                      <YAxis tickFormatter={(v) => `${(v/10000).toLocaleString()}만`} />
+                      <Tooltip formatter={(v) => `${v.toLocaleString()}원`} />
+                      <Legend />
+                      <Bar dataKey="card" name="카드" fill="#3b82f6" stackId="a" />
+                      <Bar dataKey="cash" name="현금" fill="#10b981" stackId="a" />
+                      <Bar dataKey="other" name="기타/이체" fill="#f59e0b" stackId="a" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </DashboardCard>
+              </div>
+
+              <DashboardCard title="월별 결제 상세 내역">
+                <div className="sales-data-table-container">
+                  <table className="sales-data-table">
+                    <thead>
+                      <tr>
+                        <th className="row-header">결제수단</th>
+                        {currentHalfData.map(d => <th key={d.month}>{d.month}</th>)}
+                        <th>합계</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="row-header"><span className="marker blue"></span> 카드</td>
+                        {currentHalfData.map(d => <td key={d.month}>{(d.card/10000).toLocaleString()}만</td>)}
+                        <td className="font-bold">{ (currentHalfData.reduce((a,b)=>a+(b.card||0),0)/10000).toLocaleString() }만</td>
+                      </tr>
+                      <tr>
+                        <td className="row-header"><span className="marker green"></span> 현금</td>
+                        {currentHalfData.map(d => <td key={d.month}>{(d.cash/10000).toLocaleString()}만</td>)}
+                        <td className="font-bold">{ (currentHalfData.reduce((a,b)=>a+(b.cash||0),0)/10000).toLocaleString() }만</td>
+                      </tr>
+                      <tr>
+                        <td className="row-header"><span className="marker-yellow"></span> 기타/이체</td>
+                        {currentHalfData.map(d => <td key={d.month}>{(d.other/10000).toLocaleString()}만</td>)}
+                        <td className="font-bold">{ (currentHalfData.reduce((a,b)=>a+(b.other||0),0)/10000).toLocaleString() }만</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </DashboardCard>
             </div>
