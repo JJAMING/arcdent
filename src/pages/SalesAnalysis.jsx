@@ -91,62 +91,58 @@ const SalesAnalysis = () => {
       case 'total': // 1. 총 매출 현황
         return (
           <div className="tab-pane active">
-            <div className="dashboard-grid">
-              <div className="grid-col-2">
-                <DashboardCard title="월별 매출 추합 및 목표 대비">
-                  <ResponsiveContainer width="100%" height={350}>
-                    <ComposedChart data={currentHalfData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-                      <XAxis dataKey="month" stroke="var(--text-secondary)" />
-                      <YAxis stroke="var(--text-secondary)" tickFormatter={(v) => `${(v/10000).toLocaleString()}만`} />
-                      <Tooltip formatter={(v) => `${v.toLocaleString()}원`} contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }} />
-                      <Legend />
-                      <Bar dataKey="netSales" name="순매출" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40}>
-                        <LabelList dataKey="netSales" position="top" formatter={(v) => v > 0 ? `${(v/10000).toLocaleString()}만` : ''} style={{ fill: '#3b82f6', fontWeight: 'bold', fontSize: '11px' }} />
-                      </Bar>
-                      <Bar dataKey="insurance" name="보험청구" fill="#93c5fd" radius={[4, 4, 0, 0]} barSize={40} />
-                      <Line type="monotone" dataKey="total" name="총합계" stroke="#f59e0b" strokeWidth={3} dot={{ r: 5, fill: '#f59e0b' }} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </DashboardCard>
-              </div>
+            <div className="dashboard-stack">
+              <DashboardCard title="월별 매출 추합 및 목표 대비">
+                <ResponsiveContainer width="100%" height={350}>
+                  <ComposedChart data={currentHalfData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+                    <XAxis dataKey="month" stroke="var(--text-secondary)" />
+                    <YAxis stroke="var(--text-secondary)" tickFormatter={(v) => `${(v/10000).toLocaleString()}만`} />
+                    <Tooltip formatter={(v) => `${v.toLocaleString()}원`} contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }} />
+                    <Legend />
+                    <Bar dataKey="netSales" name="순매출" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40}>
+                      <LabelList dataKey="netSales" position="top" formatter={(v) => v > 0 ? `${(v/10000).toLocaleString()}만` : ''} style={{ fill: '#3b82f6', fontWeight: 'bold', fontSize: '11px' }} />
+                    </Bar>
+                    <Bar dataKey="insurance" name="보험청구" fill="#93c5fd" radius={[4, 4, 0, 0]} barSize={40} />
+                    <Line type="monotone" dataKey="total" name="총합계" stroke="#f59e0b" strokeWidth={3} dot={{ r: 5, fill: '#f59e0b' }} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </DashboardCard>
               
-              <div className="grid-col-2">
-                <DashboardCard title="매출 통계 상세 지표">
-                  <div className="sales-data-table-container">
-                    <table className="sales-data-table">
-                      <thead>
-                        <tr>
-                          <th className="row-header">구분</th>
-                          {currentHalfData.map(d => <th key={d.month}>{d.month}</th>)}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td className="row-header"><span className="marker blue"></span> 순매출</td>
-                          {currentHalfData.map(d => <td key={d.month}>{(d.netSales/10000).toLocaleString()}만</td>)}
-                        </tr>
-                        <tr>
-                          <td className="row-header"><span className="marker green"></span> 보험청구</td>
-                          {currentHalfData.map(d => <td key={d.month}>{(d.insurance/10000).toLocaleString()}만</td>)}
-                        </tr>
-                        <tr className="font-bold">
-                          <td className="row-header"><span className="marker-yellow"></span> 총매출</td>
-                          {currentHalfData.map(d => <td key={d.month}>{(d.total/10000).toLocaleString()}만</td>)}
-                        </tr>
-                        <tr>
-                          <td className="row-header"><TrendingUp size={14} /> 신환 수</td>
-                          {currentHalfData.map(d => <td key={d.month}>{d.newPatient || 0}</td>)}
-                        </tr>
-                        <tr>
-                          <td className="row-header"><Activity size={14} /> 동의 건수</td>
-                          {currentHalfData.map(d => <td key={d.month}>{d.agreed || 0}</td>)}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </DashboardCard>
-              </div>
+              <DashboardCard title="매출 통계 상세 지표">
+                <div className="sales-data-table-container">
+                  <table className="sales-data-table">
+                    <thead>
+                      <tr>
+                        <th className="row-header">구분</th>
+                        {currentHalfData.map(d => <th key={d.month}>{d.month}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="row-header"><span className="marker blue"></span> 순매출</td>
+                        {currentHalfData.map(d => <td key={d.month}>{(d.netSales/10000).toLocaleString()}만</td>)}
+                      </tr>
+                      <tr>
+                        <td className="row-header"><span className="marker green"></span> 보험청구</td>
+                        {currentHalfData.map(d => <td key={d.month}>{(d.insurance/10000).toLocaleString()}만</td>)}
+                      </tr>
+                      <tr className="font-bold">
+                        <td className="row-header"><span className="marker-yellow"></span> 총매출</td>
+                        {currentHalfData.map(d => <td key={d.month}>{(d.total/10000).toLocaleString()}만</td>)}
+                      </tr>
+                      <tr>
+                        <td className="row-header"><TrendingUp size={14} /> 신환 수</td>
+                        {currentHalfData.map(d => <td key={d.month}>{d.newPatient || 0}</td>)}
+                      </tr>
+                      <tr>
+                        <td className="row-header"><Activity size={14} /> 동의 건수</td>
+                        {currentHalfData.map(d => <td key={d.month}>{d.agreed || 0}</td>)}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </DashboardCard>
             </div>
           </div>
         );
