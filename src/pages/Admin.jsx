@@ -197,38 +197,40 @@ const Admin = () => {
                                 return;
                             }
 
-                            let totalValue = 0;
-                            let found = false;
-                            let colIdx = -1;
-                            for (let r = 0; r < Math.min(10, rawData.length); r++) {
+                            let extractedNewPatients = 0;
+                            let extractedNewPatientRevenue = 0;
+
+                            // 엑셀 전체 셀 탐색 (유연한 시트 구조 대응)
+                            for (let r = 0; r < rawData.length; r++) {
                                 const row = rawData[r] || [];
                                 for (let c = 0; c < row.length; c++) {
-                                    const val = String(row[c] || '').replace(/\s/g, '');
-                                    if (val.includes('총진료비')) { colIdx = c; break; }
-                                }
-                                if (colIdx !== -1) break;
-                            }
-
-                            if (colIdx !== -1) {
-                                for (let r = 0; r < rawData.length; r++) {
-                                    const row = rawData[r] || [];
-                                    const firstColVal = String(row[0] || '').replace(/\s/g, '');
-                                    if (firstColVal === '합계') {
-                                        totalValue = parseNum(row[colIdx]);
-                                        if (totalValue > 0) { found = true; break; }
+                                    const cellText = String(row[c] || '').trim().replace(/\s+/g, '');
+                                    
+                                    // 1. 신환 수 합계 추출
+                                    if (cellText === '신환수합계' || cellText.includes('신환수합계')) {
+                                        for (let k = 1; k <= 3; k++) {
+                                            const val = parseNum(row[c + k]);
+                                            if (val > 0) { extractedNewPatients = val; break; }
+                                        }
+                                    }
+                                    // 2. 총 진료비 합계 매출 추출
+                                    if (cellText === '총진료비합계' || cellText.includes('총진료비합계')) {
+                                        for (let k = 1; k <= 3; k++) {
+                                            const val = parseNum(row[c + k]);
+                                            if (val > 0) { extractedNewPatientRevenue = val; break; }
+                                        }
                                     }
                                 }
                             }
 
-                            if (found) {
-                                const d = currentData.find(item => item.month === monthFromFile);
-                                if (d) {
-                                    d.newPatient = totalValue;
-                                    updatedCount++;
-                                    resolve();
-                                }
+                            const d = currentData.find(item => item.month === monthFromFile);
+                            if (d) {
+                                if (extractedNewPatients > 0) d.newPatient = extractedNewPatients;
+                                if (extractedNewPatientRevenue > 0) d.newPatientRevenue = extractedNewPatientRevenue;
+                                updatedCount++;
+                                resolve();
                             } else {
-                                reject(`합계 금액을 찾을 수 없습니다 (${fileName})`);
+                                reject(`해당 월( ${monthFromFile} )을 대시보드 데이터에서 찾을 수 없습니다.`);
                             }
                         }
                         else if (fileName.includes("수납내역") || fileName.includes("환자별") || fileName.includes("의사별진료비수납액")) {
