@@ -200,66 +200,72 @@ const Admin = () => {
                             let extractedNewPatients = 0;
                             let extractedNewPatientSales = 0;
 
-                            // [매트릭스 파싱] 헤더 열과 합계 행의 교차점 찾기
+                            // [매트릭스 파싱] 헤더 열과 합계 행의 교차점 찾기 (전수 조사 방식)
                             let newPatientCol = -1;
                             let salesCol = -1;
                             let totalRowIdx = -1;
 
                             // 1. 헤더 탐색 (최상단 20행 내에서 '신환수'와 '총진료비' 열 인덱스 확인)
-                            for (let r = 0; r < Math.min(20, rawData.length); r++) {
+                            for (let r = 0; r < Math.min(25, rawData.length); r++) {
                                 const row = rawData[r] || [];
                                 for (let c = 0; c < row.length; c++) {
                                     const txt = String(row[c] || '').trim().replace(/\s+/g, '');
-                                    // '신환수'만 정확히 타겟 (내원객수와 엄격히 구분)
+                                    
+                                    // '신환수' 열 찾기 (내원객수 배제)
                                     if ((txt.includes('신환') || txt.includes('신규')) && (txt.includes('수') || txt.includes('인원')) && !txt.includes('내원')) {
-                                        if (!txt.includes('비') && !txt.includes('매출')) newPatientCol = c;
+                                        if (!txt.includes('비') && !txt.includes('매출') && !txt.includes('액')) {
+                                            newPatientCol = c;
+                                        }
                                     }
-                                    if ((txt.includes('진료비') || txt.includes('매출') || txt.includes('금액') || txt.includes('진료')) && (txt.includes('합계') || txt.includes('총액') || txt.includes('액') || txt.includes('계'))) {
+                                    
+                                    // '총 진료비' 열 찾기 (사용자 지정 가로열)
+                                    if ((txt.includes('진료비') || txt.includes('매출') || txt.includes('금액') || (txt.includes('신환') && txt.includes('합'))) && (txt.includes('합계') || txt.includes('총액') || txt.includes('액') || txt.includes('계') || txt.includes('총'))) {
                                         salesCol = c;
                                     }
                                 }
                                 if (newPatientCol !== -1 && salesCol !== -1) break;
                             }
 
-                            // 2. 합계 행 탐색 (하단에서 역순으로 '합계' 행 찾기)
+                            // 2. 합계 행 탐색 (하단에서 역순으로, 행 전체에서 '합계' 키워드 검색)
                             for (let r = rawData.length - 1; r >= 0; r--) {
-                                const firstCell = String(rawData[r]?.[0] || rawData[r]?.[1] || '').trim();
-                                if (firstCell === '합계' || firstCell === '총계' || firstCell === '전체합계') {
+                                const row = rawData[r] || [];
+                                const hasTotal = row.some(cell => {
+                                    const s = String(cell || '').trim().replace(/\s+/g, '');
+                                    return s === '합계' || s === '총계' || s === '전체합계' || s.includes('전체합계') || s.includes('총합계');
+                                });
+                                if (hasTotal) {
                                     totalRowIdx = r;
                                     break;
                                 }
                             }
 
-                            // 3. 데이터 추출
+                            // 3. 데이터 추출 (교차 부분)
                             if (totalRowIdx !== -1) {
                                 if (newPatientCol !== -1) extractedNewPatients = parseNum(rawData[totalRowIdx][newPatientCol]);
                                 if (salesCol !== -1) extractedNewPatientSales = parseNum(rawData[totalRowIdx][salesCol]);
                             }
 
-                            // [Fallback] 매트릭스 탐색 실패 시 그리드 서치 수행 (매출 항목 추가)
+                            // [Fallback] 매트릭스 탐색 실패 시 주변 서치
                             if (extractedNewPatients === 0 || extractedNewPatientSales === 0) {
                                 for (let r = 0; r < rawData.length; r++) {
                                     const row = rawData[r] || [];
                                     for (let c = 0; c < row.length; c++) {
                                         const cellText = String(row[c] || '').trim().replace(/\s+/g, '');
-                                        
-                                        // 신환 수 폴백 (아직 못 찾은 경우)
+                                        // 신환 수 폴백
                                         if (extractedNewPatients === 0 && (cellText.includes('신환수') || (cellText.includes('신규') && cellText.includes('수'))) && !cellText.includes('내원') && (cellText.includes('합계') || cellText.includes('계'))) {
-                                            for (let k = 1; k <= 5; k++) {
+                                            for (let k = 1; k <= 3; k++) {
                                                 const v = parseNum(row[c + k]);
                                                 if (v > 0 && v < 2000) { extractedNewPatients = v; break; }
                                             }
                                         }
-                                        
-                                        // 신환 매출 폴백 (아직 못 찾은 경우)
-                                        if (extractedNewPatientSales === 0 && (cellText.includes('진료비') || cellText.includes('매출') || cellText.includes('금액') || cellText.includes('진료')) && (cellText.includes('합계') || cellText.includes('총') || cellText.includes('계'))) {
-                                            for (let k = 1; k <= 5; k++) {
+                                        // 신환 매출 폴백
+                                        if (extractedNewPatientSales === 0 && (cellText.includes('진료비') || cellText.includes('매출') || cellText.includes('금액')) && (cellText.includes('합계') || cellText.includes('총'))) {
+                                            for (let k = 1; k <= 3; k++) {
                                                 const v = parseNum(row[c + k]);
                                                 if (v > 1000) { extractedNewPatientSales = v; break; }
                                             }
                                         }
                                     }
-                                    if (extractedNewPatients > 0 && extractedNewPatientSales > 0) break;
                                 }
                             }
 
