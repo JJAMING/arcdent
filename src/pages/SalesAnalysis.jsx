@@ -167,7 +167,7 @@ const SalesAnalysis = () => {
         return (
           <div className="tab-pane active">
             <div className="dashboard-stack">
-              <div className="dashboard-grid">
+              <div className="payment-charts-grid">
                 <DashboardCard title="결제 수단별 비중 (%)">
                   <ResponsiveContainer width="100%" height={300}>
                     <PieChart>
@@ -184,12 +184,12 @@ const SalesAnalysis = () => {
                   </ResponsiveContainer>
                 </DashboardCard>
                 
-                <DashboardCard title="월별 결제 수단 추이">
+                <DashboardCard title="월별 결제 수단 추이" className="flex-2">
                   <ResponsiveContainer width="100%" height={300}>
                     <BarChart data={currentHalfData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="month" />
-                      <YAxis tickFormatter={(v) => `${(v/10000).toLocaleString()}만`} />
+                      <YAxis tickFormatter={(v) => `${(v/10000).toLocaleString()}만`} width={60} />
                       <Tooltip formatter={(v) => `${v.toLocaleString()}원`} />
                       <Legend />
                       <Bar dataKey="card" name="카드" fill="#3b82f6" stackId="a" />
@@ -213,18 +213,18 @@ const SalesAnalysis = () => {
                     <tbody>
                       <tr>
                         <td className="row-header"><span className="marker blue"></span> 카드</td>
-                        {currentHalfData.map(d => <td key={d.month}>{(d.card/10000).toLocaleString()}만</td>)}
-                        <td className="font-bold">{ (currentHalfData.reduce((a,b)=>a+(b.card||0),0)/10000).toLocaleString() }만</td>
+                        {currentHalfData.map(d => <td key={d.month}>{Number(d.card || 0).toLocaleString()}원</td>)}
+                        <td className="font-bold">{ currentHalfData.reduce((a,b)=>a+(Number(b.card)||0),0).toLocaleString() }원</td>
                       </tr>
                       <tr>
                         <td className="row-header"><span className="marker green"></span> 현금</td>
-                        {currentHalfData.map(d => <td key={d.month}>{(d.cash/10000).toLocaleString()}만</td>)}
-                        <td className="font-bold">{ (currentHalfData.reduce((a,b)=>a+(b.cash||0),0)/10000).toLocaleString() }만</td>
+                        {currentHalfData.map(d => <td key={d.month}>{Number(d.cash || 0).toLocaleString()}원</td>)}
+                        <td className="font-bold">{ currentHalfData.reduce((a,b)=>a+(Number(b.cash)||0),0).toLocaleString() }원</td>
                       </tr>
                       <tr>
                         <td className="row-header"><span className="marker-yellow"></span> 기타/이체</td>
-                        {currentHalfData.map(d => <td key={d.month}>{(d.other/10000).toLocaleString()}만</td>)}
-                        <td className="font-bold">{ (currentHalfData.reduce((a,b)=>a+(b.other||0),0)/10000).toLocaleString() }만</td>
+                        {currentHalfData.map(d => <td key={d.month}>{Number(d.other || 0).toLocaleString()}원</td>)}
+                        <td className="font-bold">{ currentHalfData.reduce((a,b)=>a+(Number(b.other)||0),0).toLocaleString() }원</td>
                       </tr>
                     </tbody>
                   </table>

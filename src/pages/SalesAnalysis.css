@@ -188,6 +188,19 @@
     width: 100%;
 }
 
+.payment-charts-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    width: 100%;
+}
+
+@media (min-width: 1024px) {
+    .payment-charts-grid {
+        grid-template-columns: 1fr 1.6fr;
+    }
+}
+
 /* --- 7-Tab Navigation & Page Layout --- */
 .sales-analysis-page {
     padding: 0.5rem;
