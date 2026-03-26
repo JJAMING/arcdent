@@ -200,35 +200,44 @@ const Admin = () => {
                             let extractedNewPatients = 0;
                             let extractedNewPatientSales = 0;
 
-                            // 엑셀 전체 셀 탐색 (유연하고 강력한 정교 매칭)
+                            // 1단계: 전체 시트에서 키워드 기반 정밀 탐색 (그리드 서치)
                             for (let r = 0; r < rawData.length; r++) {
                                 const row = rawData[r] || [];
                                 for (let c = 0; c < row.length; c++) {
                                     const cellText = String(row[c] || '').trim().replace(/\s+/g, '');
                                     
-                                    // 1. 신환 수 합계 추출 (키워드 유연화: '신환', '합계' 조합)
-                                    if ((cellText.includes('신환') || cellText.includes('신규환자')) && (cellText.includes('합계') || cellText.includes('총계') || cellText.includes('계'))) {
-                                        // '진료비'가 포함된 경우 매출 항목이므로 건너뜀 (신환 수만 타겟)
-                                        if (!cellText.includes('진료비') && !cellText.includes('매출') && !cellText.includes('금액')) {
-                                            for (let k = 1; k <= 4; k++) {
-                                                const val = parseNum(row[c + k]);
-                                                if (val > 0 && val < 10000) { // 환자 수는 보통 만 단위 미만
-                                                    extractedNewPatients = val; 
-                                                    break; 
-                                                }
+                                    // 신환 수 키워드 (신환*수*합계 등)
+                                    if ((cellText.includes('신환') || cellText.includes('신규')) && (cellText.includes('합계') || cellText.includes('총계') || cellText.includes('계'))) {
+                                        if (!cellText.includes('비') && !cellText.includes('매출') && !cellText.includes('액')) {
+                                            // 주변 5개 셀에서 숫자 찾기
+                                            for (let k = 1; k <= 5; k++) {
+                                                const v = parseNum(row[c + k]);
+                                                if (v > 0 && v < 2000) { extractedNewPatients = v; break; }
                                             }
                                         }
                                     }
-                                    
-                                    // 2. 총 진료비 합계(신환 매출) 추출
-                                    if ((cellText.includes('진료비') || cellText.includes('매출') || cellText.includes('금액')) && (cellText.includes('합계') || cellText.includes('총계') || cellText.includes('계'))) {
-                                        // 신환 데이터용 파일인 경우에만 추출
-                                        for (let k = 1; k <= 4; k++) {
-                                            const val = parseNum(row[c + k]);
-                                            if (val > 1000) { // 매출은 보통 천 단위 이상
-                                                extractedNewPatientSales = val; 
-                                                break; 
-                                            }
+                                    // 신환 매출 키워드 (진료비*합계, 매출*계 등)
+                                    if ((cellText.includes('진료비') || cellText.includes('매출') || cellText.includes('액')) && (cellText.includes('합계') || cellText.includes('총계') || cellText.includes('계'))) {
+                                        for (let k = 1; k <= 5; k++) {
+                                            const v = parseNum(row[c + k]);
+                                            if (v > 1000) { extractedNewPatientSales = v; break; }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 2단계: 하단 합계행 백트래킹 (위에서 못 찾은 경우 대비 fallback)
+                            if (extractedNewPatients === 0 || extractedNewPatientSales === 0) {
+                                for (let r = rawData.length - 1; r >= 0; r--) {
+                                    const row = rawData[r] || [];
+                                    const first = String(row[0] || row[1] || '').trim();
+                                    if (first === '합계' || first === '총계' || first.includes('전체합계')) {
+                                        const nums = row.map(v => parseNum(v)).filter(v => v > 0);
+                                        if (nums.length >= 2) {
+                                            const sorted = [...nums].sort((a,b) => a - b);
+                                            if (extractedNewPatients === 0) extractedNewPatients = sorted.find(n => n < 2000) || 0;
+                                            if (extractedNewPatientSales === 0) extractedNewPatientSales = sorted.find(n => n > 1000) || 0;
+                                            break;
                                         }
                                     }
                                 }
@@ -236,16 +245,14 @@ const Admin = () => {
 
                             const d = currentData.find(item => item.month === monthFromFile);
                             if (d) {
-                                // 교차 검증: 추출된 데이터가 있을 때만 업데이트
                                 if (extractedNewPatients > 0) d.newPatient = extractedNewPatients;
-                                if (extractedNewPatientSales > 0) d.newPatientSales = extractedNewPatientSales; // 필드명 Sales로 통일
+                                if (extractedNewPatientSales > 0) d.newPatientSales = extractedNewPatientSales;
                                 
-                                // 데이터 영속성 확보
                                 localStorage.setItem('parsed_sales_data', JSON.stringify(currentData));
                                 updatedCount++;
                                 resolve();
                             } else {
-                                reject(`해당 월( ${monthFromFile} )을 대시보드 데이터에서 찾을 수 없습니다.`);
+                                reject(`파일 내 데이터(${extractedNewPatients}명, ${extractedNewPatientSales}원)는 찾았으나, ${monthFromFile} 데이터를 대시보드에 업데이트할 수 없습니다.`);
                             }
                         }
                         else if (fileName.includes("수납내역") || fileName.includes("환자별") || fileName.includes("의사별진료비수납액")) {
