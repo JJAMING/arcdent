@@ -146,11 +146,23 @@ const Admin = () => {
                                 row.forEach((cell, idx) => {
                                     if (cell != null) {
                                         const strCell = String(cell).trim().replace(/\s+/g, '');
+                                        // 월/구분 헤더
                                         if (strCell === '월' || (strCell.includes('구분') && strCell.length <= 5)) colIndices.month = idx;
-                                        if (strCell.includes('현금') && (strCell.includes('수입') || strCell.length <= 5)) { colIndices.cash = idx; foundMetrics++; }
-                                        else if (strCell.includes('카드') && (strCell.includes('수입') || strCell.length <= 5)) { colIndices.card = idx; foundMetrics++; }
-                                        else if (strCell.includes('기타') && (strCell.includes('수입') || strCell.includes('온라인'))) { colIndices.other = idx; foundMetrics++; }
-                                        else if (strCell.includes('공단부담') || strCell.includes('청구액') || (strCell.includes('보험') && strCell.includes('청구'))) { colIndices.insurance = idx; foundMetrics++; }
+                                        
+                                        // 수입 항목 (지출 항목은 명시적 제외)
+                                        if (strCell.includes('현금') && (strCell.includes('수입') || strCell === '현금') && !strCell.includes('지출')) { 
+                                            colIndices.cash = idx; foundMetrics++; 
+                                        }
+                                        else if (strCell.includes('카드') && (strCell.includes('수입') || strCell === '카드') && !strCell.includes('지출')) { 
+                                            colIndices.card = idx; foundMetrics++; 
+                                        }
+                                        else if (strCell.includes('기타') && (strCell.includes('수입') || strCell.includes('온라인')) && !strCell.includes('지출')) { 
+                                            colIndices.other = idx; foundMetrics++; 
+                                        }
+                                        // 보험청구 (공단부담 청구액만 타겟팅)
+                                        else if (strCell.includes('공단부담') && (strCell.includes('청구액') || strCell.includes('청구'))) { 
+                                            colIndices.insurance = idx; foundMetrics++; 
+                                        }
                                     }
                                 });
                                 if (foundMetrics >= 3) { headerRowIdx = i; break; }
