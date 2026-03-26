@@ -1,0 +1,122 @@
+.signup-container {
+    padding: 2rem 1rem;
+}
+
+.signup-card {
+    max-width: 600px;
+}
+
+.signup-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+}
+
+.grid-item {
+    grid-column: span 1;
+}
+
+.required {
+    color: #ef4444;
+    margin-left: 0.25rem;
+}
+
+.privacy-consent {
+    grid-column: span 2;
+    margin-top: 0.5rem;
+    padding: 1rem;
+    background-color: var(--bg-color);
+    border-radius: 0.5rem;
+    border: 1px solid var(--border-color);
+}
+
+.checkbox-container {
+    display: flex;
+    align-items: center;
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+    gap: 0.75rem;
+}
+
+.checkbox-container input {
+    position: absolute;
+    opacity: 0;
+    cursor: pointer;
+    height: 0;
+    width: 0;
+}
+
+.checkmark {
+    height: 20px;
+    width: 20px;
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+}
+
+.checkbox-container:hover input ~ .checkmark {
+    border-color: var(--accent-primary);
+}
+
+.checkbox-container input:checked ~ .checkmark {
+    background-color: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+
+.checkmark:after {
+    content: "";
+    display: none;
+    width: 5px;
+    height: 10px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+    margin-bottom: 2px;
+}
+
+.checkbox-container input:checked ~ .checkmark:after {
+    display: block;
+}
+
+.consent-text {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+}
+
+.auth-submit-btn {
+    grid-column: span 2;
+}
+
+.auth-footer {
+    grid-column: span 2;
+}
+
+.success-card {
+    align-items: center;
+    text-align: center;
+    padding: 4rem 2rem;
+}
+
+.success-icon {
+    color: #10b981;
+    margin-bottom: 1rem;
+}
+
+@media (max-width: 600px) {
+    .signup-form {
+        grid-template-columns: 1fr;
+    }
+    
+    .grid-item {
+        grid-column: span 1;
+    }
+    
+    .privacy-consent, .auth-submit-btn, .auth-footer {
+        grid-column: span 1;
+    }
+}
