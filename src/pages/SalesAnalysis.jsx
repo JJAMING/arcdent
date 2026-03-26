@@ -109,11 +109,19 @@ const SalesAnalysis = () => {
                         dataKey="netSales" 
                         position="top" 
                         offset={10}
-                        formatter={(v) => v > 0 ? `${Math.round(v/10000).toLocaleString()}만` : ''} 
-                        style={{ fill: '#3b82f6', fontWeight: 'bold', fontSize: '13px' }} 
+                        formatter={(v) => v > 0 ? `${v.toLocaleString()}원` : ''} 
+                        style={{ fill: '#3b82f6', fontWeight: 'bold', fontSize: '11px' }} 
                       />
                     </Bar>
-                    <Bar dataKey="insurance" name="보험청구" fill="#93c5fd" radius={[4, 4, 0, 0]} barSize={40} />
+                    <Bar dataKey="insurance" name="보험청구" fill="#93c5fd" radius={[4, 4, 0, 0]} barSize={40}>
+                      <LabelList 
+                        dataKey="insurance" 
+                        position="top" 
+                        offset={10}
+                        formatter={(v) => v > 0 ? `${v.toLocaleString()}원` : ''} 
+                        style={{ fill: '#60a5fa', fontWeight: 'bold', fontSize: '11px' }} 
+                      />
+                    </Bar>
                     <Line type="monotone" dataKey="total" name="총합계" stroke="#f59e0b" strokeWidth={3} dot={{ r: 5, fill: '#f59e0b' }} />
                   </ComposedChart>
                 </ResponsiveContainer>
