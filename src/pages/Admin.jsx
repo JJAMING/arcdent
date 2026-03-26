@@ -346,6 +346,77 @@ const Admin = () => {
                                 reject(`'치료비용계획' 파일 구조 분석 실패: '환자정보', '계약금액' 등의 헤더를 찾을 수 없습니다.`);
                             }
                         }
+                        else if (fileName.includes("환자별 수납내역") || fileName.includes("환자별수납내역")) {
+                            const ExtractedTopPatients = [];
+                            const colMap = {
+                                chartNo: -1,
+                                patientName: -1,
+                                doctor: -1,
+                                revenue: -1,
+                                paid: -1,
+                                path: -1
+                            };
+
+                            // 1. 헤더 행 찾기
+                            let headerRowIdx = -1;
+                            for (let r = 0; r < Math.min(30, rawData.length); r++) {
+                                const row = rawData[r] || [];
+                                row.forEach((cell, c) => {
+                                    if (!cell) return;
+                                    const txt = String(cell).trim().replace(/\s+/g, '');
+                                    if (txt.includes('차트') || txt.includes('번호')) colMap.chartNo = c;
+                                    else if (txt.includes('성명') || txt.includes('이름') || txt.includes('환자명')) colMap.patientName = c;
+                                    else if (txt.includes('담당의') || txt.includes('의사')) colMap.doctor = c;
+                                    else if (txt.includes('진료비') || txt.includes('발생액') || txt.includes('총금액')) colMap.revenue = c;
+                                    else if (txt.includes('수납액') || txt.includes('실수납') || txt.includes('입금액')) colMap.paid = c;
+                                    else if (txt.includes('내원경로') || txt.includes('유입')) colMap.path = c;
+                                });
+                                if (colMap.patientName !== -1 && (colMap.revenue !== -1 || colMap.paid !== -1)) {
+                                    headerRowIdx = r;
+                                    break;
+                                }
+                            }
+
+                            if (headerRowIdx !== -1) {
+                                for (let r = headerRowIdx + 1; r < rawData.length; r++) {
+                                    const row = rawData[r];
+                                    if (!row || !row[colMap.patientName]) continue;
+                                    
+                                    const p = {
+                                        chartNo: String(row[colMap.chartNo] || '').trim(),
+                                        patientName: String(row[colMap.patientName] || '').trim(),
+                                        doctor: String(row[colMap.doctor] || '').trim(),
+                                        revenue: parseNum(row[colMap.revenue]),
+                                        paid: parseNum(row[colMap.paid]),
+                                        path: String(row[colMap.path] || '').trim(),
+                                        month: monthFromFile || ''
+                                    };
+                                    
+                                    if (p.patientName && (p.revenue > 0 || p.paid > 0)) {
+                                        ExtractedTopPatients.push(p);
+                                    }
+                                }
+                                
+                                let currentTopData = [];
+                                try {
+                                    const saved = localStorage.getItem('top_patients_raw_data');
+                                    if (saved) currentTopData = JSON.parse(saved);
+                                } catch (e) {}
+                                
+                                // 중복 월 데이터 교체
+                                if (monthFromFile) {
+                                    currentTopData = currentTopData.filter(p => !p.month || p.month !== monthFromFile);
+                                }
+                                currentTopData = [...currentTopData, ...ExtractedTopPatients];
+                                
+                                localStorage.setItem('top_patients_raw_data', JSON.stringify(currentTopData));
+                                alert(`[환자별 수납내역 연동 완료] ${monthFromFile || '전체'} 데이터 포함 총 ${ExtractedTopPatients.length}건을 가져왔습니다.`);
+                                updatedCount++;
+                                resolve();
+                            } else {
+                                reject(`'환자별 수납내역' 파일 구조 분석 실패: '성명', '수납액' 등의 헤더를 찾을 수 없습니다.`);
+                            }
+                        }
                         else if (fileName.includes("수납내역") || fileName.includes("환자별") || fileName.includes("의사별진료비수납액")) {
                             if (!monthFromFile) {
                                 reject(`파일명에 월 정보가 없습니다 (${fileName})`);

@@ -36,6 +36,9 @@ const SalesAnalysis = () => {
   const [agreedPatients, setAgreedPatients] = useState([]);
   const [comment, setComment] = useState('상반기 매출이 전년 대비 15% 성장하였습니다. 특히 4월과 6월 임플란트 패키지 프로모션으로 인한 순매출 증대가 두드러집니다. 하반기에는 리콜 환자 관리를 통한 재내원율 향상이 주요 과제입니다.');
 
+  const [topPatientsRaw, setTopPatientsRaw] = useState([]);
+  const [selectedTopMonth, setSelectedTopMonth] = useState('전체');
+
   useEffect(() => {
     // 1. 매출 데이터 로드
     const savedSales = localStorage.getItem('parsed_sales_data');
@@ -52,9 +55,15 @@ const SalesAnalysis = () => {
       try { setAgreedPatients(JSON.parse(savedAgreed)); } catch (e) { console.error(e); }
     }
 
+    // 3. 진료비 상위 환자 데이터 로드
+    const savedTop = localStorage.getItem('top_patients_raw_data');
+    if (savedTop) {
+      try { setTopPatientsRaw(JSON.parse(savedTop)); } catch (e) { console.error(e); }
+    }
+
     // Storage 이벤트 리스너
     const handleStorageChange = (e) => {
-      if (e.key === 'parsed_sales_data' || e.key === 'treatment_plan_data') {
+      if (e.key === 'parsed_sales_data' || e.key === 'treatment_plan_data' || e.key === 'top_patients_raw_data') {
         window.location.reload();
       }
     };
@@ -459,38 +468,88 @@ const SalesAnalysis = () => {
         );
 
       case 'topFee': // 5. 진료비 상위
+        const filteredTop = selectedTopMonth === '전체' 
+          ? topPatientsRaw 
+          : topPatientsRaw.filter(p => {
+              const m = (p.month || '');
+              return m === selectedTopMonth || m.includes(selectedTopMonth.replace('월', ''));
+            });
+
+        // 상위 10명 (수납액 기준)
+        const displayTop = [...filteredTop]
+          .sort((a, b) => (b.paid || 0) - (a.paid || 0))
+          .slice(0, 10);
+
+        const topRevenue = filteredTop.reduce((sum, p) => sum + (Number(p.revenue) || 0), 0);
+        const topPaid = filteredTop.reduce((sum, p) => sum + (Number(p.paid) || 0), 0);
+        const topRatio = topRevenue > 0 ? ((topPaid / topRevenue) * 100).toFixed(1) : 0;
+
         return (
           <div className="tab-pane active">
-            <DashboardCard title="진료비 수납 상위 환자 (TOP 10)">
-              <div className="table-responsive">
-                <table className="analysis-table">
-                  <thead>
-                    <tr>
-                      <th>순위</th>
-                      <th>차트번호</th>
-                      <th>성명</th>
-                      <th>담당의</th>
-                      <th style={{ textAlign: 'right' }}>총 수납액</th>
-                      <th>내원경로</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {topPatients.length > 0 ? topPatients.map((p, idx) => (
-                      <tr key={idx}>
-                        <td>{idx + 1}</td>
-                        <td>{p.chartNo}</td>
-                        <td>{p.name}</td>
-                        <td>{p.doctor}</td>
-                        <td style={{ textAlign: 'right' }}>{p.totalPaid.toLocaleString()}원</td>
-                        <td>{p.path}</td>
-                      </tr>
-                    )) : (
-                      <tr><td colSpan="6" className="empty-state">데이터가 없습니다.</td></tr>
-                    )}
-                  </tbody>
-                </table>
+            <div className="dashboard-stack">
+              {/* 월별 필터 버튼 */}
+              <div className="month-filter-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                {['전체', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'].map(m => (
+                  <button 
+                    key={m} 
+                    className={`month-filter-btn ${selectedTopMonth === m ? 'active' : ''}`}
+                    onClick={() => setSelectedTopMonth(m)}
+                  >
+                    {m}
+                  </button>
+                ))}
               </div>
-            </DashboardCard>
+
+              {/* 통계 요약 카드 (색상 마커 포함) */}
+              <div className="stats-header-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginTop: '1rem' }}>
+                <div className="stat-card" style={{ borderLeft: '4px solid #10b981' }}>
+                  <span className="label">총 매출액</span>
+                  <span className="value">{topRevenue.toLocaleString()}원</span>
+                </div>
+                <div className="stat-card" style={{ borderLeft: '4px solid #3b82f6' }}>
+                  <span className="label">총 수납액</span>
+                  <span className="value">{topPaid.toLocaleString()}원</span>
+                </div>
+                <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b' }}>
+                  <span className="label">수납 비중</span>
+                  <span className="value highlight">{topRatio}%</span>
+                </div>
+              </div>
+
+              {/* 환자별 상세 테이블 */}
+              <DashboardCard title={`${selectedTopMonth} 진료비 수납 상위 환자 (TOP 10)`}>
+                <div className="sales-data-table-container">
+                  <table className="sales-data-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>차트번호</th>
+                        <th>성명</th>
+                        <th>담당의</th>
+                        <th>총매출(진료비)</th>
+                        <th>총수납액</th>
+                        <th>내원경로</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayTop.length > 0 ? displayTop.map((p, idx) => (
+                        <tr key={idx}>
+                          <td>{idx + 1}</td>
+                          <td>{p.chartNo}</td>
+                          <td className="font-bold" style={{ textAlign: 'left', color: 'var(--text-primary)' }}>{p.patientName}</td>
+                          <td>{p.doctor}</td>
+                          <td style={{ textAlign: 'right' }}>{(Number(p.revenue) || 0).toLocaleString()}원</td>
+                          <td style={{ textAlign: 'right', color: '#3b82f6', fontWeight: 'bold' }}>{(Number(p.paid) || 0).toLocaleString()}원</td>
+                          <td>{p.path}</td>
+                        </tr>
+                      )) : (
+                        <tr><td colSpan="7" className="empty-state">해당 기간의 데이터가 없습니다. (환자별 수납내역 엑셀을 업로드해주세요)</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </DashboardCard>
+            </div>
           </div>
         );
 
