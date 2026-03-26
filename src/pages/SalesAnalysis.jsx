@@ -138,6 +138,7 @@ const SalesAnalysis = () => {
   };
 
   const [selectedMonth, setSelectedMonth] = useState('전체');
+  const [selectedAgreedMonth, setSelectedAgreedMonth] = useState('전체');
 
   // --- 탭별 렌더링 로직 (7개 탭) ---
   const renderTabContent = () => {
@@ -372,44 +373,51 @@ const SalesAnalysis = () => {
         );
 
       case 'agreed': // 4. 동의환자 수납액
+        const filteredAgreed = selectedAgreedMonth === '전체' 
+          ? agreedPatients 
+          : agreedPatients.filter(p => {
+              const mMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/-(\d+)-/);
+              return mMatch && parseInt(mMatch[1]) + '월' === selectedAgreedMonth;
+            });
+
+        const fTotalAgreed = filteredAgreed.reduce((sum, p) => sum + (Number(p.contractAmount) || 0), 0);
+        const fTotalPaid = filteredAgreed.reduce((sum, p) => sum + (Number(p.paidAmount) || 0), 0);
+        const fRate = fTotalAgreed > 0 ? ((fTotalPaid / fTotalAgreed) * 100).toFixed(1) : 0;
+
         return (
           <div className="tab-pane active">
             <div className="dashboard-stack">
-              {/* 통계 요약 카드 */}
-              <div className="stats-header-grid" style={{ gap: '1rem', marginBottom: '0rem' }}>
-                <div className="stat-card">
+              {/* 월별 필터 버튼 */}
+              <div className="month-filter-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                {['전체', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'].map(m => (
+                  <button 
+                    key={m} 
+                    className={`month-filter-btn ${selectedAgreedMonth === m ? 'active' : ''}`}
+                    onClick={() => setSelectedAgreedMonth(m)}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+
+              {/* 통계 요약 카드 (색상 마커 포함) */}
+              <div className="stats-header-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginTop: '1rem' }}>
+                <div className="stat-card" style={{ borderLeft: '4px solid #10b981' }}>
                   <span className="label">총 계약금액</span>
-                  <span className="value">{totalAgreed.toLocaleString()}원</span>
+                  <span className="value">{fTotalAgreed.toLocaleString()}원</span>
                 </div>
-                <div className="stat-card">
+                <div className="stat-card" style={{ borderLeft: '4px solid #3b82f6' }}>
                   <span className="label">총 수납액</span>
-                  <span className="value">{totalPaid.toLocaleString()}원</span>
+                  <span className="value">{fTotalPaid.toLocaleString()}원</span>
                 </div>
-                <div className="stat-card">
+                <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b' }}>
                   <span className="label">평균 수납률</span>
-                  <span className="value highlight">{collectionRate}%</span>
+                  <span className="value highlight">{fRate}%</span>
                 </div>
               </div>
 
-              {/* 월별 트렌드 차트 */}
-              <DashboardCard title="월별 계약 및 수납 현황 트렌드">
-                <ResponsiveContainer width="100%" height={350}>
-                  <ComposedChart data={currentHalfAgreedStats} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-                    <XAxis dataKey="month" tick={{ dy: 10 }} stroke="var(--text-secondary)" />
-                    <YAxis tickFormatter={(v) => `${(v/10000).toLocaleString()}만`} width={65} stroke="var(--text-secondary)" />
-                    <Tooltip formatter={(v) => `${Number(v).toLocaleString()}원`} contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }} />
-                    <Legend verticalAlign="top" align="right" height={36} />
-                    <Bar dataKey="contract" name="계약금액" fill="#10b981" radius={[4, 4, 0, 0]}>
-                      <LabelList dataKey="contract" content={<CustomizedLabel fill="#10b981" />} />
-                    </Bar>
-                    <Line type="monotone" dataKey="paid" name="실제수납액" stroke="#3b82f6" strokeWidth={3} dot={{ r: 5 }} />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </DashboardCard>
-
               {/* 환자별 상세 테이블 */}
-              <DashboardCard title="치료비용계획 환자별 상세 내역">
+              <DashboardCard title={`${selectedAgreedMonth} 치료비용계획 환자별 상세 내역`}>
                 <div className="table-responsive">
                   <table className="analysis-table">
                     <thead>
@@ -427,7 +435,7 @@ const SalesAnalysis = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {agreedPatients.length > 0 ? agreedPatients.map((p, idx) => (
+                      {filteredAgreed.length > 0 ? filteredAgreed.map((p, idx) => (
                         <tr key={idx}>
                           <td>{idx + 1}</td>
                           <td>{p.patientName}</td>
@@ -441,7 +449,7 @@ const SalesAnalysis = () => {
                           <td>{p.nextAppt}</td>
                         </tr>
                       )) : (
-                        <tr><td colSpan="10" className="empty-state">업로드된 데이터가 없습니다. (치료비용계획 엑셀을 업로드해주세요)</td></tr>
+                        <tr><td colSpan="10" className="empty-state">해당 기간의 데이터가 없습니다. (치료비용계획 엑셀을 업로드해주세요)</td></tr>
                       )}
                     </tbody>
                   </table>
