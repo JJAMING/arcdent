@@ -146,11 +146,11 @@ const Admin = () => {
                                 row.forEach((cell, idx) => {
                                     if (cell != null) {
                                         const strCell = String(cell).trim().replace(/\s+/g, '');
-                                        if (strCell === '월' || (strCell.includes('구분') && !colIndices.month)) colIndices.month = idx;
-                                        if (strCell.includes('현금수입')) { colIndices.cash = idx; foundMetrics++; }
-                                        else if (strCell.includes('카드수입')) { colIndices.card = idx; foundMetrics++; }
-                                        else if (strCell.includes('기타') && strCell.includes('수입')) { colIndices.other = idx; foundMetrics++; }
-                                        else if (strCell.includes('공단부담') || (strCell.includes('보험') && strCell.includes('청구'))) { colIndices.insurance = idx; foundMetrics++; }
+                                        if (strCell === '월' || (strCell.includes('구분') && strCell.length <= 5)) colIndices.month = idx;
+                                        if (strCell.includes('현금') && (strCell.includes('수입') || strCell.length <= 5)) { colIndices.cash = idx; foundMetrics++; }
+                                        else if (strCell.includes('카드') && (strCell.includes('수입') || strCell.length <= 5)) { colIndices.card = idx; foundMetrics++; }
+                                        else if (strCell.includes('기타') && (strCell.includes('수입') || strCell.includes('온라인'))) { colIndices.other = idx; foundMetrics++; }
+                                        else if (strCell.includes('공단부담') || strCell.includes('청구액') || (strCell.includes('보험') && strCell.includes('청구'))) { colIndices.insurance = idx; foundMetrics++; }
                                     }
                                 });
                                 if (foundMetrics >= 3) { headerRowIdx = i; break; }
@@ -159,7 +159,8 @@ const Admin = () => {
                             if (headerRowIdx !== -1) {
                                 for (let i = headerRowIdx + 1; i < rawData.length; i++) {
                                     const row = rawData[i] || [];
-                                    const monthVal = extractMonth(String(row[colIndices.month || 0] || ''));
+                                    const monthValRaw = String(row[colIndices.month || 0] || '');
+                                    const monthVal = extractMonth(monthValRaw);
                                     if (monthVal) {
                                         const d = currentData.find(item => item.month === monthVal);
                                         if (d) {
@@ -175,7 +176,7 @@ const Admin = () => {
                                 updatedCount++;
                                 resolve();
                             } else {
-                                reject(`파일 구조 분석 실패 (${fileName})`);
+                                reject(`연간장부 파일 구조 분석 실패: '카드', '현금', '기타(온라인)', '공단부담(청구액)' 헤더를 확인해주세요. (${fileName})`);
                             }
                         }
                         else if (fileName.includes("내원경로") || fileName.includes("신환")) {
