@@ -82,6 +82,31 @@ const SalesAnalysis = () => {
     .map(([name, amount]) => ({ name, amount }))
     .sort((a, b) => b.amount - a.amount);
 
+  // --- 동의환자 월별 통계 집계 (차트용) ---
+  const agreedMonthlyStats = [
+    { month: '1월', contract: 0, paid: 0 }, { month: '2월', contract: 0, paid: 0 },
+    { month: '3월', contract: 0, paid: 0 }, { month: '4월', contract: 0, paid: 0 },
+    { month: '5월', contract: 0, paid: 0 }, { month: '6월', contract: 0, paid: 0 },
+    { month: '7월', contract: 0, paid: 0 }, { month: '8월', contract: 0, paid: 0 },
+    { month: '9월', contract: 0, paid: 0 }, { month: '10월', contract: 0, paid: 0 },
+    { month: '11월', contract: 0, paid: 0 }, { month: '12월', contract: 0, paid: 0 }
+  ];
+
+  agreedPatients.forEach(p => {
+    const monthMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/-(\d+)-/);
+    if (monthMatch) {
+      const mNum = parseInt(monthMatch[1]);
+      const mStr = mNum + '월';
+      const stat = agreedMonthlyStats.find(s => s.month === mStr);
+      if (stat) {
+        stat.contract += (Number(p.contractAmount) || 0);
+        stat.paid += (Number(p.paidAmount) || 0);
+      }
+    }
+  });
+
+  const currentHalfAgreedStats = half === 'first' ? agreedMonthlyStats.slice(0, 6) : agreedMonthlyStats.slice(6, 12);
+
   // --- 진료비 상위 환자 (최근 월 기준) ---
   const topPatients = (currentHalfData[currentHalfData.length - 1]?.topPatients || []).slice(0, 20);
 
@@ -349,58 +374,80 @@ const SalesAnalysis = () => {
       case 'agreed': // 4. 동의환자 수납액
         return (
           <div className="tab-pane active">
-            <div className="stats-header-grid" style={{ marginBottom: '1.5rem' }}>
-              <div className="stat-card">
-                <span className="label">계약금액 합계</span>
-                <span className="value">{totalAgreed.toLocaleString()}원</span>
+            <div className="dashboard-stack">
+              {/* 통계 요약 카드 */}
+              <div className="stats-header-grid" style={{ gap: '1rem', marginBottom: '0rem' }}>
+                <div className="stat-card">
+                  <span className="label">총 계약금액</span>
+                  <span className="value">{totalAgreed.toLocaleString()}원</span>
+                </div>
+                <div className="stat-card">
+                  <span className="label">총 수납액</span>
+                  <span className="value">{totalPaid.toLocaleString()}원</span>
+                </div>
+                <div className="stat-card">
+                  <span className="label">평균 수납률</span>
+                  <span className="value highlight">{collectionRate}%</span>
+                </div>
               </div>
-              <div className="stat-card">
-                <span className="label">현재수납액 합계</span>
-                <span className="value">{totalPaid.toLocaleString()}원</span>
-              </div>
-              <div className="stat-card">
-                <span className="label">수납률</span>
-                <span className="value highlight">{collectionRate}%</span>
-              </div>
-            </div>
-            <DashboardCard title="치료비용계획 및 수납 현황 상세">
-              <div className="table-responsive">
-                <table className="analysis-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>환자정보</th>
-                      <th>작성일</th>
-                      <th>진행상태</th>
-                      <th>수납상태</th>
-                      <th style={{ textAlign: 'right' }}>계약금액</th>
-                      <th style={{ textAlign: 'right' }}>현재수납액</th>
-                      <th style={{ textAlign: 'right' }}>잔액</th>
-                      <th>최종내원</th>
-                      <th>다음 예약</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {agreedPatients.length > 0 ? agreedPatients.map((p, idx) => (
-                      <tr key={idx}>
-                        <td>{idx + 1}</td>
-                        <td>{p.patientName}</td>
-                        <td>{p.createdAt}</td>
-                        <td>{p.status}</td>
-                        <td>{p.payStatus}</td>
-                        <td style={{ textAlign: 'right' }}>{(Number(p.contractAmount) || 0).toLocaleString()}원</td>
-                        <td style={{ textAlign: 'right' }}>{(Number(p.paidAmount) || 0).toLocaleString()}원</td>
-                        <td style={{ textAlign: 'right' }}>{(Number(p.contractAmount - p.paidAmount) || 0).toLocaleString()}원</td>
-                        <td>{p.lastVisit}</td>
-                        <td>{p.nextAppt}</td>
+
+              {/* 월별 트렌드 차트 */}
+              <DashboardCard title="월별 계약 및 수납 현황 트렌드">
+                <ResponsiveContainer width="100%" height={350}>
+                  <ComposedChart data={currentHalfAgreedStats} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+                    <XAxis dataKey="month" tick={{ dy: 10 }} stroke="var(--text-secondary)" />
+                    <YAxis tickFormatter={(v) => `${(v/10000).toLocaleString()}만`} width={65} stroke="var(--text-secondary)" />
+                    <Tooltip formatter={(v) => `${Number(v).toLocaleString()}원`} contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }} />
+                    <Legend verticalAlign="top" align="right" height={36} />
+                    <Bar dataKey="contract" name="계약금액" fill="#10b981" radius={[4, 4, 0, 0]}>
+                      <LabelList dataKey="contract" content={<CustomizedLabel fill="#10b981" />} />
+                    </Bar>
+                    <Line type="monotone" dataKey="paid" name="실제수납액" stroke="#3b82f6" strokeWidth={3} dot={{ r: 5 }} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </DashboardCard>
+
+              {/* 환자별 상세 테이블 */}
+              <DashboardCard title="치료비용계획 환자별 상세 내역">
+                <div className="table-responsive">
+                  <table className="analysis-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>환자정보</th>
+                        <th>작성일</th>
+                        <th>진행상태</th>
+                        <th>수납상태</th>
+                        <th style={{ textAlign: 'right' }}>계약금액</th>
+                        <th style={{ textAlign: 'right' }}>현재수납액</th>
+                        <th style={{ textAlign: 'right' }}>잔액</th>
+                        <th>최종내원</th>
+                        <th>다음 예약</th>
                       </tr>
-                    )) : (
-                      <tr><td colSpan="10" className="empty-state">업로드된 데이터가 없습니다.</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </DashboardCard>
+                    </thead>
+                    <tbody>
+                      {agreedPatients.length > 0 ? agreedPatients.map((p, idx) => (
+                        <tr key={idx}>
+                          <td>{idx + 1}</td>
+                          <td>{p.patientName}</td>
+                          <td>{p.createdAt}</td>
+                          <td>{p.status}</td>
+                          <td><span className={`status-pill ${p.payStatus && p.payStatus.includes('완료') ? 'complete' : ''}`}>{p.payStatus}</span></td>
+                          <td style={{ textAlign: 'right' }}>{(Number(p.contractAmount) || 0).toLocaleString()}원</td>
+                          <td style={{ textAlign: 'right' }}>{(Number(p.paidAmount) || 0).toLocaleString()}원</td>
+                          <td style={{ textAlign: 'right' }}>{(Number(p.contractAmount - p.paidAmount) || 0).toLocaleString()}원</td>
+                          <td>{p.lastVisit}</td>
+                          <td>{p.nextAppt}</td>
+                        </tr>
+                      )) : (
+                        <tr><td colSpan="10" className="empty-state">업로드된 데이터가 없습니다. (치료비용계획 엑셀을 업로드해주세요)</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </DashboardCard>
+            </div>
           </div>
         );
 

@@ -282,6 +282,70 @@ const Admin = () => {
                                 reject(`파일 내 데이터(${extractedNewPatients}명, ${extractedNewPatientSales}원)는 찾았으나, ${monthFromFile} 데이터를 대시보드에 업데이트할 수 없습니다.`);
                             }
                         }
+                        else if (fileName.includes("치료비용계획")) {
+                            const ExtractedAgreedPatients = [];
+                            const colMap = {
+                                patientName: -1,
+                                createdAt: -1,
+                                status: -1,
+                                payStatus: -1,
+                                contractAmount: -1,
+                                paidAmount: -1,
+                                lastVisit: -1,
+                                nextAppt: -1
+                            };
+
+                            // 1. 헤더 행 찾기
+                            let headerRowIdx = -1;
+                            for (let r = 0; r < Math.min(25, rawData.length); r++) {
+                                const row = rawData[r] || [];
+                                row.forEach((cell, c) => {
+                                    if (!cell) return;
+                                    const txt = String(cell).trim().replace(/\s+/g, '');
+                                    if (txt.includes('환자정보') || txt.includes('환자명')) colMap.patientName = c;
+                                    else if (txt.includes('작성일')) colMap.createdAt = c;
+                                    else if (txt.includes('진행상태')) colMap.status = c;
+                                    else if (txt.includes('수납상태')) colMap.payStatus = c;
+                                    else if (txt.includes('계약금액')) colMap.contractAmount = c;
+                                    else if (txt.includes('현재수납액')) colMap.paidAmount = c;
+                                    else if (txt.includes('최종내원')) colMap.lastVisit = c;
+                                    else if (txt.includes('다음예약')) colMap.nextAppt = c;
+                                });
+                                if (colMap.patientName !== -1 && colMap.contractAmount !== -1) {
+                                    headerRowIdx = r;
+                                    break;
+                                }
+                            }
+
+                            if (headerRowIdx !== -1) {
+                                for (let r = headerRowIdx + 1; r < rawData.length; r++) {
+                                    const row = rawData[r];
+                                    if (!row || (!row[colMap.patientName] && !row[colMap.contractAmount])) continue;
+                                    
+                                    const p = {
+                                        patientName: String(row[colMap.patientName] || '').trim(),
+                                        createdAt: String(row[colMap.createdAt] || '').trim(),
+                                        status: String(row[colMap.status] || '').trim(),
+                                        payStatus: String(row[colMap.payStatus] || '').trim(),
+                                        contractAmount: parseNum(row[colMap.contractAmount]),
+                                        paidAmount: parseNum(row[colMap.paidAmount]),
+                                        lastVisit: String(row[colMap.lastVisit] || '').trim(),
+                                        nextAppt: String(row[colMap.nextAppt] || '').trim()
+                                    };
+                                    
+                                    if (p.patientName || p.contractAmount > 0) {
+                                        ExtractedAgreedPatients.push(p);
+                                    }
+                                }
+                                
+                                localStorage.setItem('treatment_plan_data', JSON.stringify(ExtractedAgreedPatients));
+                                alert(`[치료비용계획 연동 완료] 총 ${ExtractedAgreedPatients.length}명의 상담/계약 내역을 가져왔습니다.`);
+                                updatedCount++;
+                                resolve();
+                            } else {
+                                reject(`'치료비용계획' 파일 구조 분석 실패: '환자정보', '계약금액' 등의 헤더를 찾을 수 없습니다.`);
+                            }
+                        }
                         else if (fileName.includes("수납내역") || fileName.includes("환자별") || fileName.includes("의사별진료비수납액")) {
                             if (!monthFromFile) {
                                 reject(`파일명에 월 정보가 없습니다 (${fileName})`);
