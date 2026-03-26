@@ -19,18 +19,18 @@ const Admin = () => {
 
         const savedDataStr = localStorage.getItem('parsed_sales_data');
         const defaultData = [
-            { month: '1월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0 },
-            { month: '2월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0 },
-            { month: '3월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0 },
-            { month: '4월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0 },
-            { month: '5월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0 },
-            { month: '6월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0 },
-            { month: '7월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0 },
-            { month: '8월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0 },
-            { month: '9월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0 },
-            { month: '10월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0 },
-            { month: '11월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0 },
-            { month: '12월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0 }
+            { month: '1월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 },
+            { month: '2월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 },
+            { month: '3월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 },
+            { month: '4월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 },
+            { month: '5월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 },
+            { month: '6월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 },
+            { month: '7월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 },
+            { month: '8월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 },
+            { month: '9월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 },
+            { month: '10월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 },
+            { month: '11월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 },
+            { month: '12월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 }
         ];
         let currentData = savedDataStr ? JSON.parse(savedDataStr) : defaultData;
         let updatedCount = 0;
@@ -214,7 +214,7 @@ const Admin = () => {
                                     if ((txt.includes('신환') || txt.includes('신규')) && (txt.includes('수') || txt.includes('인원')) && !txt.includes('내원')) {
                                         if (!txt.includes('비') && !txt.includes('매출')) newPatientCol = c;
                                     }
-                                    if ((txt.includes('진료비') || txt.includes('매출')) && (txt.includes('합계') || txt.includes('총액') || txt.includes('액'))) {
+                                    if ((txt.includes('진료비') || txt.includes('매출') || txt.includes('금액') || txt.includes('진료')) && (txt.includes('합계') || txt.includes('총액') || txt.includes('액') || txt.includes('계'))) {
                                         salesCol = c;
                                     }
                                 }
@@ -252,7 +252,7 @@ const Admin = () => {
                                         }
                                         
                                         // 신환 매출 폴백 (아직 못 찾은 경우)
-                                        if (extractedNewPatientSales === 0 && (cellText.includes('진료비') || cellText.includes('매출') || cellText.includes('금액')) && (cellText.includes('합계') || cellText.includes('총') || cellText.includes('계'))) {
+                                        if (extractedNewPatientSales === 0 && (cellText.includes('진료비') || cellText.includes('매출') || cellText.includes('금액') || cellText.includes('진료')) && (cellText.includes('합계') || cellText.includes('총') || cellText.includes('계'))) {
                                             for (let k = 1; k <= 5; k++) {
                                                 const v = parseNum(row[c + k]);
                                                 if (v > 1000) { extractedNewPatientSales = v; break; }
@@ -269,6 +269,7 @@ const Admin = () => {
                                 if (extractedNewPatientSales > 0) d.newPatientSales = extractedNewPatientSales;
                                 
                                 localStorage.setItem('parsed_sales_data', JSON.stringify(currentData));
+                                alert(`[데이터 연동 완료] ${monthFromFile} 신환 수: ${extractedNewPatients || '미발견'}명 / 신환 매출: ${(extractedNewPatientSales || 0).toLocaleString()}원`);
                                 updatedCount++;
                                 resolve();
                             } else {
