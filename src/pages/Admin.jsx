@@ -236,19 +236,30 @@ const Admin = () => {
                                 if (salesCol !== -1) extractedNewPatientSales = parseNum(rawData[totalRowIdx][salesCol]);
                             }
 
-                            // [Fallback] 매트릭스 탐색 실패 시 그리드 서치 수행
+                            // [Fallback] 매트릭스 탐색 실패 시 그리드 서치 수행 (매출 항목 추가)
                             if (extractedNewPatients === 0 || extractedNewPatientSales === 0) {
                                 for (let r = 0; r < rawData.length; r++) {
                                     const row = rawData[r] || [];
                                     for (let c = 0; c < row.length; c++) {
                                         const cellText = String(row[c] || '').trim().replace(/\s+/g, '');
-                                        if (cellText.includes('신환수') && !cellText.includes('내원') && (cellText.includes('합계') || cellText.includes('계'))) {
-                                            for (let k = 1; k <= 3; k++) {
+                                        
+                                        // 신환 수 폴백 (아직 못 찾은 경우)
+                                        if (extractedNewPatients === 0 && (cellText.includes('신환수') || (cellText.includes('신규') && cellText.includes('수'))) && !cellText.includes('내원') && (cellText.includes('합계') || cellText.includes('계'))) {
+                                            for (let k = 1; k <= 5; k++) {
                                                 const v = parseNum(row[c + k]);
                                                 if (v > 0 && v < 2000) { extractedNewPatients = v; break; }
                                             }
                                         }
+                                        
+                                        // 신환 매출 폴백 (아직 못 찾은 경우)
+                                        if (extractedNewPatientSales === 0 && (cellText.includes('진료비') || cellText.includes('매출') || cellText.includes('금액')) && (cellText.includes('합계') || cellText.includes('총') || cellText.includes('계'))) {
+                                            for (let k = 1; k <= 5; k++) {
+                                                const v = parseNum(row[c + k]);
+                                                if (v > 1000) { extractedNewPatientSales = v; break; }
+                                            }
+                                        }
                                     }
+                                    if (extractedNewPatients > 0 && extractedNewPatientSales > 0) break;
                                 }
                             }
 
