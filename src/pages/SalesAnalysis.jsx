@@ -186,9 +186,9 @@ const SalesAnalysis = () => {
                 
                 <DashboardCard title="월별 결제 수단 추이" className="flex-2">
                   <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={currentHalfData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                    <BarChart data={currentHalfData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="month" />
+                      <XAxis dataKey="month" tick={{ dy: 10 }} />
                       <YAxis tickFormatter={(v) => `${(v/10000).toLocaleString()}만`} width={60} />
                       <Tooltip formatter={(v) => `${v.toLocaleString()}원`} />
                       <Legend />
