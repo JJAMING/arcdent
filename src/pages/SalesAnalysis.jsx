@@ -94,14 +94,23 @@ const SalesAnalysis = () => {
             <div className="dashboard-stack">
               <DashboardCard title="월별 매출 추합 및 목표 대비">
                 <ResponsiveContainer width="100%" height={350}>
-                  <ComposedChart data={currentHalfData}>
+                  <ComposedChart data={currentHalfData} margin={{ left: 30, right: 30, top: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                     <XAxis dataKey="month" stroke="var(--text-secondary)" />
-                    <YAxis stroke="var(--text-secondary)" tickFormatter={(v) => `${(v/10000).toLocaleString()}만`} />
+                    <YAxis 
+                      stroke="var(--text-secondary)" 
+                      width={80}
+                      tickFormatter={(v) => `${Math.floor(v/10000).toLocaleString()}만`} 
+                    />
                     <Tooltip formatter={(v) => `${v.toLocaleString()}원`} contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }} />
                     <Legend />
                     <Bar dataKey="netSales" name="순매출" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40}>
-                      <LabelList dataKey="netSales" position="top" formatter={(v) => v > 0 ? `${(v/10000).toLocaleString()}만` : ''} style={{ fill: '#3b82f6', fontWeight: 'bold', fontSize: '11px' }} />
+                      <LabelList 
+                        dataKey="netSales" 
+                        position="top" 
+                        formatter={(v) => v > 0 ? `${Math.floor(v/10000).toLocaleString()}만` : ''} 
+                        style={{ fill: '#3b82f6', fontWeight: 'bold', fontSize: '11px' }} 
+                      />
                     </Bar>
                     <Bar dataKey="insurance" name="보험청구" fill="#93c5fd" radius={[4, 4, 0, 0]} barSize={40} />
                     <Line type="monotone" dataKey="total" name="총합계" stroke="#f59e0b" strokeWidth={3} dot={{ r: 5, fill: '#f59e0b' }} />
