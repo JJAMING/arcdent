@@ -198,26 +198,37 @@ const Admin = () => {
                             }
 
                             let extractedNewPatients = 0;
-                            let extractedNewPatientRevenue = 0;
+                            let extractedNewPatientSales = 0;
 
-                            // 엑셀 전체 셀 탐색 (유연한 시트 구조 대응)
+                            // 엑셀 전체 셀 탐색 (유연하고 강력한 정교 매칭)
                             for (let r = 0; r < rawData.length; r++) {
                                 const row = rawData[r] || [];
                                 for (let c = 0; c < row.length; c++) {
                                     const cellText = String(row[c] || '').trim().replace(/\s+/g, '');
                                     
-                                    // 1. 신환 수 합계 추출
-                                    if (cellText === '신환수합계' || cellText.includes('신환수합계')) {
-                                        for (let k = 1; k <= 3; k++) {
-                                            const val = parseNum(row[c + k]);
-                                            if (val > 0) { extractedNewPatients = val; break; }
+                                    // 1. 신환 수 합계 추출 (키워드 유연화: '신환', '합계' 조합)
+                                    if ((cellText.includes('신환') || cellText.includes('신규환자')) && (cellText.includes('합계') || cellText.includes('총계') || cellText.includes('계'))) {
+                                        // '진료비'가 포함된 경우 매출 항목이므로 건너뜀 (신환 수만 타겟)
+                                        if (!cellText.includes('진료비') && !cellText.includes('매출') && !cellText.includes('금액')) {
+                                            for (let k = 1; k <= 4; k++) {
+                                                const val = parseNum(row[c + k]);
+                                                if (val > 0 && val < 10000) { // 환자 수는 보통 만 단위 미만
+                                                    extractedNewPatients = val; 
+                                                    break; 
+                                                }
+                                            }
                                         }
                                     }
-                                    // 2. 총 진료비 합계 매출 추출
-                                    if (cellText === '총진료비합계' || cellText.includes('총진료비합계')) {
-                                        for (let k = 1; k <= 3; k++) {
+                                    
+                                    // 2. 총 진료비 합계(신환 매출) 추출
+                                    if ((cellText.includes('진료비') || cellText.includes('매출') || cellText.includes('금액')) && (cellText.includes('합계') || cellText.includes('총계') || cellText.includes('계'))) {
+                                        // 신환 데이터용 파일인 경우에만 추출
+                                        for (let k = 1; k <= 4; k++) {
                                             const val = parseNum(row[c + k]);
-                                            if (val > 0) { extractedNewPatientRevenue = val; break; }
+                                            if (val > 1000) { // 매출은 보통 천 단위 이상
+                                                extractedNewPatientSales = val; 
+                                                break; 
+                                            }
                                         }
                                     }
                                 }
@@ -225,10 +236,11 @@ const Admin = () => {
 
                             const d = currentData.find(item => item.month === monthFromFile);
                             if (d) {
+                                // 교차 검증: 추출된 데이터가 있을 때만 업데이트
                                 if (extractedNewPatients > 0) d.newPatient = extractedNewPatients;
-                                if (extractedNewPatientRevenue > 0) d.newPatientRevenue = extractedNewPatientRevenue;
+                                if (extractedNewPatientSales > 0) d.newPatientSales = extractedNewPatientSales; // 필드명 Sales로 통일
                                 
-                                // 데이터 영속성 확보 (localStorage 저장 누락 수정)
+                                // 데이터 영속성 확보
                                 localStorage.setItem('parsed_sales_data', JSON.stringify(currentData));
                                 updatedCount++;
                                 resolve();
