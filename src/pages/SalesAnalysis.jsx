@@ -416,10 +416,9 @@ const SalesAnalysis = () => {
                 </div>
               </div>
 
-              {/* 환자별 상세 테이블 */}
               <DashboardCard title={`${selectedAgreedMonth} 치료비용계획 환자별 상세 내역`}>
-                <div className="table-responsive">
-                  <table className="analysis-table">
+                <div className="sales-data-table-container">
+                  <table className="sales-data-table">
                     <thead>
                       <tr>
                         <th>#</th>
@@ -427,9 +426,9 @@ const SalesAnalysis = () => {
                         <th>작성일</th>
                         <th>진행상태</th>
                         <th>수납상태</th>
-                        <th style={{ textAlign: 'right' }}>계약금액</th>
-                        <th style={{ textAlign: 'right' }}>현재수납액</th>
-                        <th style={{ textAlign: 'right' }}>잔액</th>
+                        <th>계약금액</th>
+                        <th>현재수납액</th>
+                        <th>잔액</th>
                         <th>최종내원</th>
                         <th>다음 예약</th>
                       </tr>
@@ -438,13 +437,13 @@ const SalesAnalysis = () => {
                       {filteredAgreed.length > 0 ? filteredAgreed.map((p, idx) => (
                         <tr key={idx}>
                           <td>{idx + 1}</td>
-                          <td>{p.patientName}</td>
+                          <td className="font-bold" style={{ textAlign: 'left', color: 'var(--text-primary)' }}>{p.patientName}</td>
                           <td>{p.createdAt}</td>
                           <td>{p.status}</td>
                           <td><span className={`status-pill ${p.payStatus && p.payStatus.includes('완료') ? 'complete' : ''}`}>{p.payStatus}</span></td>
                           <td style={{ textAlign: 'right' }}>{(Number(p.contractAmount) || 0).toLocaleString()}원</td>
                           <td style={{ textAlign: 'right' }}>{(Number(p.paidAmount) || 0).toLocaleString()}원</td>
-                          <td style={{ textAlign: 'right' }}>{(Number(p.contractAmount - p.paidAmount) || 0).toLocaleString()}원</td>
+                          <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#ef4444' }}>{(Number(p.contractAmount - p.paidAmount) || 0).toLocaleString()}원</td>
                           <td>{p.lastVisit}</td>
                           <td>{p.nextAppt}</td>
                         </tr>
