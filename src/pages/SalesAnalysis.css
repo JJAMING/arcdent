@@ -232,6 +232,41 @@
     box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 }
 
+/* --- Month Filter Buttons --- */
+.month-filter-container {
+    display: flex;
+    gap: 0.4rem;
+    background: rgba(0, 0, 0, 0.03);
+    padding: 0.35rem;
+    border-radius: 0.8rem;
+    width: fit-content;
+}
+
+.filter-btn {
+    padding: 0.45rem 1.1rem;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: 0.6rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.filter-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--text-primary);
+}
+
+.filter-btn.active {
+    background: var(--card-bg);
+    color: var(--primary-color);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    font-weight: 700;
+    transform: translateY(-1px);
+}
+
 .tab-navigation {
     background: var(--card-bg);
     border: 1px solid var(--border-color);

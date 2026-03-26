@@ -112,6 +112,8 @@ const SalesAnalysis = () => {
     );
   };
 
+  const [selectedMonth, setSelectedMonth] = useState('전체');
+
   // --- 탭별 렌더링 로직 (7개 탭) ---
   const renderTabContent = () => {
     switch (subTab) {
@@ -184,17 +186,35 @@ const SalesAnalysis = () => {
         );
 
       case 'payment': // 2. 결제 분포도
+        const displayData = selectedMonth === '전체' 
+          ? currentHalfData 
+          : currentHalfData.filter(d => d.month === selectedMonth);
+
         const paymentPieData = [
-          { name: '카드', value: currentHalfData.reduce((a, b) => a + (b.card || 0), 0), color: '#3b82f6' },
-          { name: '현금', value: currentHalfData.reduce((a, b) => a + (b.cash || 0), 0), color: '#10b981' },
-          { name: '기타(온라인)', value: currentHalfData.reduce((a, b) => a + (b.other || 0), 0), color: '#f59e0b' }
+          { name: '카드', value: displayData.reduce((a, b) => a + (Number(b.card) || 0), 0), color: '#3b82f6' },
+          { name: '현금', value: displayData.reduce((a, b) => a + (Number(b.cash) || 0), 0), color: '#10b981' },
+          { name: '기타(온라인)', value: displayData.reduce((a, b) => a + (Number(b.other) || 0), 0), color: '#f59e0b' }
         ];
         
         return (
           <div className="tab-pane active">
             <div className="dashboard-stack">
+              <div className="month-filter-container" style={{ marginBottom: '1rem', display: 'flex', gap: '8px' }}>
+                <button 
+                  className={`filter-btn ${selectedMonth === '전체' ? 'active' : ''}`}
+                  onClick={() => setSelectedMonth('전체')}
+                >전체보기</button>
+                {currentHalfData.map(d => (
+                  <button 
+                    key={d.month}
+                    className={`filter-btn ${selectedMonth === d.month ? 'active' : ''}`}
+                    onClick={() => setSelectedMonth(d.month)}
+                  >{d.month}</button>
+                ))}
+              </div>
+
               <div className="payment-charts-grid">
-                <DashboardCard title="결제 수단별 비중 (%)">
+                <DashboardCard title={`${selectedMonth} 결제 수단별 비중 (%)`}>
                   <ResponsiveContainer width="100%" height={300}>
                     <PieChart>
                       <Pie
