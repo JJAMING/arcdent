@@ -227,6 +227,9 @@ const Admin = () => {
                             if (d) {
                                 if (extractedNewPatients > 0) d.newPatient = extractedNewPatients;
                                 if (extractedNewPatientRevenue > 0) d.newPatientRevenue = extractedNewPatientRevenue;
+                                
+                                // 데이터 영속성 확보 (localStorage 저장 누락 수정)
+                                localStorage.setItem('parsed_sales_data', JSON.stringify(currentData));
                                 updatedCount++;
                                 resolve();
                             } else {
