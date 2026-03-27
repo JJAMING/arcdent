@@ -132,11 +132,13 @@ const SalesAnalysis = () => {
       const entry = { 
         month: month.month || 'Unknown', 
         total: isNaN(Number(month.total)) ? 0 : Number(month.total),
-        netSales: isNaN(Number(month.netSales)) ? 0 : Number(month.netSales)
+        netSales: isNaN(Number(month.netSales)) ? 0 : Number(month.netSales),
+        insurance: isNaN(Number(month.insurance)) ? 0 : Number(month.insurance)
       };
       
       const doctorValues = [];
-      let calculatedTotal = 0;
+      let totalPure = 0;
+      let totalInsurance = 0;
       let hasDoctorData = false;
 
       doctorNames.forEach(name => {
@@ -155,15 +157,18 @@ const SalesAnalysis = () => {
           }
         }
         
+        totalPure += pureVal;
+        totalInsurance += insVal;
         const combined = pureVal + insVal;
-        calculatedTotal += combined;
         entry[name] = isNaN(combined) ? 0 : combined;
         doctorValues.push({ name, value: entry[name] });
       });
 
-      // 의사별 데이터가 있을 경우, 총매출(total)을 의사 합계로 갱신하여 곡선 그래프에 반영
+      // 의사별 데이터가 있을 경우, 기본 지표들을 의사 합계로 갱신 (의사별 매출 -> 전체 매출 동기화)
       if (hasDoctorData) {
-        entry.total = calculatedTotal;
+        entry.netSales = totalPure;
+        entry.insurance = totalInsurance;
+        entry.total = totalPure + totalInsurance;
       }
 
       // 해당 월의 1, 2위 의사 식별
@@ -249,7 +254,7 @@ const SalesAnalysis = () => {
             <div className="dashboard-stack">
               <DashboardCard title="월별 매출 추합 및 목표 대비">
                 <ResponsiveContainer width="100%" height={400}>
-                  <ComposedChart data={currentHalfData} margin={{ left: 30, right: 30, top: 40, bottom: 20 }}>
+                  <ComposedChart data={doctorChartData} margin={{ left: 30, right: 30, top: 40, bottom: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                     <XAxis dataKey="month" stroke="var(--text-secondary)" tick={{ dy: 10 }} />
                     <YAxis 
@@ -279,21 +284,21 @@ const SalesAnalysis = () => {
                     <thead>
                       <tr>
                         <th className="row-header">구분</th>
-                        {currentHalfData.map(d => <th key={d.month}>{d.month}</th>)}
+                        {doctorChartData.map(d => <th key={d.month}>{d.month}</th>)}
                       </tr>
                     </thead>
                     <tbody>
                       <tr>
                         <td className="row-header"><span className="marker blue"></span> 순매출</td>
-                        {currentHalfData.map(d => <td key={d.month}>{Number(d.netSales || 0).toLocaleString()}원</td>)}
+                        {doctorChartData.map(d => <td key={d.month}>{Number(d.netSales || 0).toLocaleString()}원</td>)}
                       </tr>
                       <tr>
                         <td className="row-header"><span className="marker green"></span> 보험청구</td>
-                        {currentHalfData.map(d => <td key={d.month}>{Number(d.insurance || 0).toLocaleString()}원</td>)}
+                        {doctorChartData.map(d => <td key={d.month}>{Number(d.insurance || 0).toLocaleString()}원</td>)}
                       </tr>
                       <tr className="font-bold">
                         <td className="row-header"><span className="marker-yellow"></span> 총매출</td>
-                        {currentHalfData.map(d => <td key={d.month}>{Number(d.total || 0).toLocaleString()}원</td>)}
+                        {doctorChartData.map(d => <td key={d.month}>{Number(d.total || 0).toLocaleString()}원</td>)}
                       </tr>
                       <tr>
                         <td className="row-header"><TrendingUp size={14} /> 신환 수</td>
