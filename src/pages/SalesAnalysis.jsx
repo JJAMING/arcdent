@@ -234,10 +234,20 @@ const SalesAnalysis = () => {
         otherRatio: d.netSales > 0 ? ((Number(d.other || 0) / d.netSales) * 100).toFixed(1) : 0
       };
 
-      // 진료비 상위 비중 계산
-      const monthlyTop = topPatientsRaw.filter(p => p.month === d.month || (p.month && p.month.includes(d.month.replace('월', ''))));
-      const topSum = monthlyTop.reduce((sum, p) => sum + (Number(p.paid) || 0), 0);
-      metrics.topFeeRatio = d.netSales > 0 ? ((topSum / d.netSales) * 100).toFixed(1) : 0;
+      // 진료비 상위 비중 계산 (동일 환자 합산 후 상위 20명 기준)
+      const monthlyTopData = topPatientsRaw.filter(p => p.month === d.month || (p.month && p.month.includes(d.month.replace('월', ''))));
+      const monthlyAggregated = {};
+      monthlyTopData.forEach(p => {
+        const key = `${p.patientName}_${p.chartNo || ''}`;
+        if (!monthlyAggregated[key]) monthlyAggregated[key] = 0;
+        monthlyAggregated[key] += (Number(p.paid) || 0);
+      });
+      const top20Sum = Object.values(monthlyAggregated)
+        .sort((a, b) => b - a)
+        .slice(0, 20)
+        .reduce((sum, val) => sum + val, 0);
+      
+      metrics.topFeeRatio = d.netSales > 0 ? ((top20Sum / d.netSales) * 100).toFixed(1) : 0;
 
       // 동의환자 수납율 계산
       const monthlyAgreed = agreedPatients.filter(p => {
