@@ -418,7 +418,7 @@ const SalesAnalysis = () => {
             <div className="dashboard-stack">
               <DashboardCard title="월별 신환 매출 기여도 비교">
                 <ResponsiveContainer width="100%" height={400}>
-                  <BarChart data={currentHalfData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                  <BarChart data={doctorChartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="month" tick={{ dy: 10 }} />
                     <YAxis 
@@ -444,30 +444,30 @@ const SalesAnalysis = () => {
                     <thead>
                       <tr>
                         <th className="row-header">분석 항목</th>
-                        {currentHalfData.map(d => <th key={d.month}>{d.month}</th>)}
+                        {doctorChartData.map(d => <th key={d.month}>{d.month}</th>)}
                         <th>평균/합계</th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr>
                         <td className="row-header"><span className="marker blue"></span> 전체 순매출</td>
-                        {currentHalfData.map(d => <td key={d.month}>{Number(d.netSales || 0).toLocaleString()}원</td>)}
-                        <td className="font-bold">{ currentHalfData.reduce((a,b)=>a+(Number(b.netSales)||0),0).toLocaleString() }원</td>
+                        {doctorChartData.map(d => <td key={d.month}>{Number(d.netSales || 0).toLocaleString()}원</td>)}
+                        <td className="font-bold">{ doctorChartData.reduce((a,b)=>a+(Number(b.netSales)||0),0).toLocaleString() }원</td>
                       </tr>
                       <tr>
                         <td className="row-header"><span className="marker purple"></span> 신환 매출</td>
-                        {currentHalfData.map(d => <td key={d.month}>{Number(d.newPatientSales || 0).toLocaleString()}원</td>)}
-                        <td className="font-bold">{ currentHalfData.reduce((a,b)=>a+(Number(b.newPatientSales)||0),0).toLocaleString() }원</td>
+                        {doctorChartData.map(d => <td key={d.month}>{Number(d.newPatientSales || 0).toLocaleString()}원</td>)}
+                        <td className="font-bold">{ doctorChartData.reduce((a,b)=>a+(Number(b.newPatientSales)||0),0).toLocaleString() }원</td>
                       </tr>
                       <tr className="bg-highlight">
                         <td className="row-header"><span className="marker yellow"></span> 신환 수익 비중 (%)</td>
-                        {currentHalfData.map(d => {
+                        {doctorChartData.map(d => {
                           const ratio = (Number(d.newPatientSales || 0) / Number(d.netSales || 1)) * 100;
                           return <td key={d.month} className="highlight text-blue">{ratio.toFixed(1)}%</td>;
                         })}
                         <td className="font-bold highlight text-blue">
-                          {((currentHalfData.reduce((a,b)=>a+(Number(b.newPatientSales)||0),0) / 
-                             currentHalfData.reduce((a,b)=>a+(Number(b.netSales)||0),1)) * 100).toFixed(1)}%
+                          {((doctorChartData.reduce((a,b)=>a+(Number(b.newPatientSales)||0),0) / 
+                            doctorChartData.reduce((a,b)=>a+(Number(b.netSales)||0), 1)) * 100).toFixed(1)}%
                         </td>
                       </tr>
                     </tbody>
