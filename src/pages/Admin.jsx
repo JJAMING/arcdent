@@ -442,20 +442,24 @@ const Admin = () => {
                             let headerRowIdx = -1;
                             
                             // Find headers
-                            for (let i = 0; i < Math.min(20, rawData.length); i++) {
+                            for (let i = 0; i < Math.min(25, rawData.length); i++) {
                                 const row = rawData[i] || [];
                                 row.forEach((cell, idx) => {
                                     if (cell != null) {
                                         const strCell = String(cell).trim().replace(/\s+/g, '');
+                                        // 담당의/의사 식별
                                         if (strCell.includes('차트번호')) colIndices.chartNo = idx;
-                                        else if (strCell === '성명' || strCell === '이름' || strCell === '환자명') colIndices.name = idx;
-                                        else if (strCell.includes('담당의') || strCell.includes('의사')) colIndices.doctor = idx;
-                                        else if (strCell.includes('총수납액') || strCell.includes('수납합계') || strCell === '수납액' || strCell === '실수납액') colIndices.amount = idx;
-                                        else if (strCell.includes('공단부담') || strCell.includes('보험청구')) colIndices.insurance = idx;
+                                        else if (strCell === '성명' || strCell === '이름' || strCell === '환자명' || strCell === '환자이름') colIndices.name = idx;
+                                        else if (strCell.includes('담당의') || strCell.includes('의사') || strCell.includes('의사이름') || strCell.includes('의사명')) colIndices.doctor = idx;
+                                        // 순수 수납액 식별 (카드/현금 등)
+                                        else if (strCell.includes('총수납액') || strCell.includes('수납합계') || strCell.includes('수납액') || strCell.includes('실수납액') || strCell.includes('수납금액') || strCell === '수납' || strCell === '납부액') colIndices.amount = idx;
+                                        // 보험 청구액 식별 (공단부담금)
+                                        else if (strCell.includes('공단부담') || strCell.includes('보험청구') || strCell.includes('의료보험') || strCell.includes('청구액')) colIndices.insurance = idx;
                                         else if (strCell.includes('내원경로') || strCell.includes('유입')) colIndices.path = idx;
                                     }
                                 });
-                                if ((colIndices.chartNo !== -1 || colIndices.doctor !== -1) && colIndices.amount !== -1) {
+                                // 의사 식별 + (수납액 혹은 보험액 중 하나라도 있으면) 헤더로 인정
+                                if ((colIndices.chartNo !== -1 || colIndices.doctor !== -1) && (colIndices.amount !== -1 || colIndices.insurance !== -1)) {
                                     headerRowIdx = i;
                                     break;
                                 }
@@ -493,6 +497,8 @@ const Admin = () => {
                                     }
                                     d.doctorData = doctorAgg;
                                     updatedCount++;
+                                    const drList = Object.keys(doctorAgg).join(', ');
+                                    alert(`[의사별 매출 연동 성공] ${monthFromFile} 데이터가 업데이트되었습니다.\n(연동된 의사: ${drList || '없음'})`);
                                     resolve();
                                 } else {
                                     reject(`월 데이터를 찾을 수 없습니다 (${monthFromFile})`);
