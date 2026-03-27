@@ -960,8 +960,53 @@ const SalesAnalysis = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {/* Section 1: 총매출 */}
+                      {/* Section 1: 매출대비 (Now First) */}
                       <tr>
+                        <td rowSpan="3" className="bg-light-gray font-bold">매출대비</td>
+                        <td className="text-left"><span className="marker" style={{ background: '#3b82f6' }}></span> 진료비 상위</td>
+                        <td className="bg-yellow font-bold" style={{ color: '#ef4444' }}>{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.topFeeRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        {summaryMonthlyMetrics.map(d => <td key={d.month} className="font-bold">{d.topFeeRatio}%</td>)}
+                        <td className="text-red font-bold">
+                          {(() => {
+                            const last = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-1].topFeeRatio);
+                            const prev = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-2]?.topFeeRatio || last);
+                            const diff = (last - prev).toFixed(1);
+                            return `${diff > 0 ? '+' : ''}${diff}%`;
+                          })()}
+                        </td>
+                        <td>상위 20명 매출 집중도</td>
+                      </tr>
+                      <tr>
+                        <td className="text-left"><span className="marker" style={{ background: '#ef4444' }}></span> 동의환자결재율</td>
+                        <td className="bg-yellow font-bold" style={{ color: '#8b5cf6' }}>{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.agreedCollectionRate), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        {summaryMonthlyMetrics.map(d => <td key={d.month} className="font-bold">{d.agreedCollectionRate}%</td>)}
+                        <td className="text-purple font-bold">
+                          {(() => {
+                            const last = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-1].agreedCollectionRate);
+                            const prev = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-2]?.agreedCollectionRate || last);
+                            const diff = (last - prev).toFixed(1);
+                            return `${diff > 0 ? '+' : ''}${diff}%`;
+                          })()}
+                        </td>
+                        <td>계약 대비 실제 수납율</td>
+                      </tr>
+                      <tr>
+                        <td className="text-left"><span className="marker" style={{ background: '#10b981' }}></span> 신환 수익</td>
+                        <td className="bg-yellow font-bold" style={{ color: '#10b981' }}>{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.newPatientRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        {summaryMonthlyMetrics.map(d => <td key={d.month} className="font-bold">{d.newPatientRatio}%</td>)}
+                        <td className="text-green font-bold">
+                          {(() => {
+                            const last = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-1].newPatientRatio);
+                            const prev = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-2]?.newPatientRatio || last);
+                            const diff = (last - prev).toFixed(1);
+                            return `${diff > 0 ? '+' : ''}${diff}%`;
+                          })()}
+                        </td>
+                        <td>전체 순매출 중 신환 기여도</td>
+                      </tr>
+
+                      {/* Section 2: 총매출 */}
+                      <tr style={{ borderTop: '2px solid var(--border-color)' }}>
                         <td rowSpan="2" className="bg-light-gray font-bold">총매출</td>
                         <td className="text-left"><span className="marker blue"></span> 순수매출</td>
                         <td className="bg-yellow font-bold">{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.pureRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
@@ -989,51 +1034,6 @@ const SalesAnalysis = () => {
                           })()}
                         </td>
                         <td>공단 부담금 비중</td>
-                      </tr>
-
-                      {/* Section 2: 매출대비 비중 */}
-                      <tr style={{ borderTop: '2px solid var(--border-color)' }}>
-                        <td rowSpan="3" className="bg-light-gray font-bold">매출대비</td>
-                        <td className="text-left"><span className="marker-yellow"></span> 진료비 상위</td>
-                        <td className="bg-yellow font-bold" style={{ color: '#ef4444' }}>{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.topFeeRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
-                        {summaryMonthlyMetrics.map(d => <td key={d.month} className="font-bold">{d.topFeeRatio}%</td>)}
-                        <td className="text-red font-bold">
-                          {(() => {
-                            const last = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-1].topFeeRatio);
-                            const prev = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-2]?.topFeeRatio || last);
-                            const diff = (last - prev).toFixed(1);
-                            return `${diff > 0 ? '+' : ''}${diff}%`;
-                          })()}
-                        </td>
-                        <td>상위 20명 매출 집중도</td>
-                      </tr>
-                      <tr>
-                        <td className="text-left"><span className="marker purple"></span> 동의환자결재율</td>
-                        <td className="bg-yellow font-bold" style={{ color: '#8b5cf6' }}>{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.agreedCollectionRate), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
-                        {summaryMonthlyMetrics.map(d => <td key={d.month} className="font-bold">{d.agreedCollectionRate}%</td>)}
-                        <td className="text-purple font-bold">
-                          {(() => {
-                            const last = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-1].agreedCollectionRate);
-                            const prev = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-2]?.agreedCollectionRate || last);
-                            const diff = (last - prev).toFixed(1);
-                            return `${diff > 0 ? '+' : ''}${diff}%`;
-                          })()}
-                        </td>
-                        <td>계약 대비 실제 수납율</td>
-                      </tr>
-                      <tr>
-                        <td className="text-left"><span className="marker-highlight"></span> 신환 수익</td>
-                        <td className="bg-yellow font-bold" style={{ color: '#10b981' }}>{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.newPatientRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
-                        {summaryMonthlyMetrics.map(d => <td key={d.month} className="font-bold">{d.newPatientRatio}%</td>)}
-                        <td className="text-green font-bold">
-                          {(() => {
-                            const last = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-1].newPatientRatio);
-                            const prev = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-2]?.newPatientRatio || last);
-                            const diff = (last - prev).toFixed(1);
-                            return `${diff > 0 ? '+' : ''}${diff}%`;
-                          })()}
-                        </td>
-                        <td>전체 순매출 중 신환 기여도</td>
                       </tr>
 
                       {/* Section 3: 순수매출 구성 */}
