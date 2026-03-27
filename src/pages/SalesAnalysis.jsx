@@ -173,10 +173,19 @@ const SalesAnalysis = () => {
       }
 
       // 동의환자 데이터(치료종결, 진행중) 카운트하여 동의 건수에 연동
-      entry.agreed = agreedPatients.filter(p => {
-        const mMatch = p.createdAt?.match(/(\d+)월/) || p.createdAt?.match(/-(\d+)-/);
-        const mStr = mMatch ? parseInt(mMatch[1]) + '월' : null;
-        const statusMatch = (p.status || '').includes('치료종결') || (p.status || '').includes('진행중');
+      entry.agreed = (agreedPatients || []).filter(p => {
+        if (!p.createdAt) return false;
+        // Parse month from various formats: 2024-03-27, 2024.03.27, 3월 27일 등
+        const mMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/[\.\-\/](\d{1,2})[\.\-\/]/) || p.createdAt.match(/^(\d{1,2})[\.\-\/]/);
+        let mStr = null;
+        if (mMatch) {
+            const mNum = parseInt(mMatch[1]);
+            if (mNum >= 1 && mNum <= 12) mStr = mNum + '월';
+        }
+        
+        const status = (p.status || '').replace(/\s+/g, ''); // 공백 제거 후 비교
+        const statusMatch = status.includes('치료종결') || status.includes('진행중');
+        
         return mStr === entry.month && statusMatch;
       }).length;
 
@@ -364,7 +373,7 @@ const SalesAnalysis = () => {
                       </tr>
                       <tr>
                         <td className="row-header"><Activity size={14} /> 동의 건수</td>
-                        {currentHalfData.map(d => <td key={d.month}>{d.agreed || 0}</td>)}
+                        {doctorChartData.map(d => <td key={d.month}>{d.agreed || 0}</td>)}
                       </tr>
                     </tbody>
                   </table>
