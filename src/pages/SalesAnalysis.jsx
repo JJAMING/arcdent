@@ -1008,7 +1008,7 @@ const SalesAnalysis = () => {
                       {/* Section 2: 총매출 */}
                       <tr style={{ borderTop: '2px solid var(--border-color)' }}>
                         <td rowSpan="2" className="bg-light-gray font-bold">총매출</td>
-                        <td className="text-left"><span className="marker blue"></span> 순수매출</td>
+                        <td className="text-left no-marker">순수매출</td>
                         <td className="bg-yellow font-bold">{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.pureRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
                         {summaryMonthlyMetrics.map(d => <td key={d.month}>{d.pureRatio}%</td>)}
                         <td className="text-blue font-bold">
@@ -1022,7 +1022,7 @@ const SalesAnalysis = () => {
                         <td>전체 매출 중 순수 수납 비중</td>
                       </tr>
                       <tr>
-                        <td className="text-left"><span className="marker green"></span> 보험청구매출</td>
+                        <td className="text-left no-marker">보험청구매출</td>
                         <td className="bg-yellow font-bold">{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.insRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
                         {summaryMonthlyMetrics.map(d => <td key={d.month}>{d.insRatio}%</td>)}
                         <td className="text-blue font-bold">
