@@ -172,6 +172,14 @@ const SalesAnalysis = () => {
         entry.total = totalPure + totalInsurance;
       }
 
+      // 동의환자 데이터(치료종결, 진행중) 카운트하여 동의 건수에 연동
+      entry.agreed = agreedPatients.filter(p => {
+        const mMatch = p.createdAt?.match(/(\d+)월/) || p.createdAt?.match(/-(\d+)-/);
+        const mStr = mMatch ? parseInt(mMatch[1]) + '월' : null;
+        const statusMatch = (p.status || '').includes('치료종결') || (p.status || '').includes('진행중');
+        return mStr === entry.month && statusMatch;
+      }).length;
+
       // 해당 월의 1, 2위 의사 식별
       entry.top2Names = doctorValues
         .sort((a, b) => b.value - a.value)
