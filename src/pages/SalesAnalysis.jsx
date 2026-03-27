@@ -29,6 +29,30 @@ const MOCK_DATA = [
   { month: '12월', netSales: 55000000, insurance: 16000000, total: 71000000, cash: 17500000, card: 37500000, other: 16000000, newPatient: 260, agreed: 190, newPatientSales: 26000000, doctorData: { '김원장': 25000000, '이원장': 21000000, '박원장': 9000000 } }
 ];
 
+// --- Error Boundary for Robustness ---
+class TabErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  componentDidCatch(error, errorInfo) { console.error("Tab Error:", error, errorInfo); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="tab-pane active">
+          <div className="empty-state" style={{ color: '#ef4444', padding: '3rem' }}>
+            <h3>탭 화면을 불러오는 중 오류가 발생했습니다.</h3>
+            <p>데이터 형식이 일치하지 않거나 렌더링 충돌이 발생했을 수 있습니다.</p>
+            <button onClick={() => window.location.reload()} className="auth-submit-btn" style={{ marginTop: '1rem', width: 'auto', padding: '0.5rem 1.5rem' }}>새로고침</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const SalesAnalysis = () => {
   const [half, setHalf] = useState('first');
   const [subTab, setSubTab] = useState('total'); // 기본탭: 총 매출 현황
@@ -798,7 +822,9 @@ const SalesAnalysis = () => {
                 exit={{ opacity: 0, y: -15 }}
                 transition={{ duration: 0.25 }}
             >
-                {renderTabContent()}
+                <TabErrorBoundary key={subTab}>
+                    {renderTabContent()}
+                </TabErrorBoundary>
             </motion.div>
         </AnimatePresence>
       </div>
