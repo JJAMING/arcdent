@@ -110,25 +110,34 @@ const SalesAnalysis = () => {
   // --- 의사별 데이터 집계 (Stacked Bar + Line 용) ---
   const doctorNames = React.useMemo(() => {
     const names = new Set();
-    if (Array.isArray(salesData)) {
-      salesData.forEach(month => {
-        if (month && month.doctorData) {
-          Object.keys(month.doctorData).forEach(name => {
-            if (name) names.add(name);
-          });
-        }
-      });
-    }
+    const dataArray = Array.isArray(salesData) ? salesData : [];
+    
+    dataArray.forEach(month => {
+      if (month && typeof month === 'object' && month.doctorData && typeof month.doctorData === 'object') {
+        Object.keys(month.doctorData).forEach(name => {
+          if (name && typeof name === 'string' && name.trim() !== '') {
+            names.add(name.trim());
+          }
+        });
+      }
+    });
     return Array.from(names);
   }, [salesData]);
 
   const doctorChartData = React.useMemo(() => {
-    if (!Array.isArray(currentHalfData)) return [];
-    return currentHalfData.map(month => {
-      const entry = { month: month.month || '', total: Number(month.total || 0) };
+    const dataArray = Array.isArray(currentHalfData) ? currentHalfData : [];
+    return dataArray.map(month => {
+      if (!month || typeof month !== 'object') return { month: 'Unknown', total: 0 };
+      
+      const entry = { 
+        month: month.month || 'Unknown', 
+        total: isNaN(Number(month.total)) ? 0 : Number(month.total) 
+      };
+      
       doctorNames.forEach(name => {
-        // NaN 방지를 위해 명시적으로 0 또는 숫자임을 보장
-        const val = month.doctorData ? Number(month.doctorData[name] || 0) : 0;
+        const val = (month.doctorData && typeof month.doctorData === 'object') 
+          ? Number(month.doctorData[name] || 0) 
+          : 0;
         entry[name] = isNaN(val) ? 0 : val;
       });
       return entry;
