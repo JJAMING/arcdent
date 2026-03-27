@@ -438,7 +438,7 @@ const Admin = () => {
                                 return;
                             }
 
-                            const colIndices = { chartNo: -1, name: -1, doctor: -1, amount: -1, path: -1 };
+                            const colIndices = { chartNo: -1, name: -1, doctor: -1, amount: -1, insurance: -1, path: -1 };
                             let headerRowIdx = -1;
                             
                             // Find headers
@@ -450,7 +450,8 @@ const Admin = () => {
                                         if (strCell.includes('차트번호')) colIndices.chartNo = idx;
                                         else if (strCell === '성명' || strCell === '이름' || strCell === '환자명') colIndices.name = idx;
                                         else if (strCell.includes('담당의') || strCell.includes('의사')) colIndices.doctor = idx;
-                                        else if (strCell.includes('총수납액') || strCell.includes('수납합계')) colIndices.amount = idx;
+                                        else if (strCell.includes('총수납액') || strCell.includes('수납합계') || strCell === '수납액' || strCell === '실수납액') colIndices.amount = idx;
+                                        else if (strCell.includes('공단부담') || strCell.includes('보험청구')) colIndices.insurance = idx;
                                         else if (strCell.includes('내원경로') || strCell.includes('유입')) colIndices.path = idx;
                                     }
                                 });
@@ -466,10 +467,11 @@ const Admin = () => {
                                 for (let i = headerRowIdx + 1; i < rawData.length; i++) {
                                     const row = rawData[i] || [];
                                     const amount = parseNum(row[colIndices.amount]);
+                                    const insurance = colIndices.insurance !== -1 ? parseNum(row[colIndices.insurance]) : 0;
                                     const docName = String(row[colIndices.doctor] || '공동').trim() || '공동';
                                     const chartNo = colIndices.chartNo !== -1 ? String(row[colIndices.chartNo] || '').trim() : null;
                                     
-                                    if (docName && amount > 0 && docName !== '합계' && docName !== '총합계' && docName !== '의사명') {
+                                    if (docName && (amount > 0 || insurance > 0) && docName !== '합계' && docName !== '총합계' && docName !== '의사명') {
                                         if (chartNo && chartNo !== '합계') {
                                             patients.push({
                                                 chartNo: chartNo,
