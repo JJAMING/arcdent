@@ -964,7 +964,7 @@ const SalesAnalysis = () => {
                       <tr>
                         <td rowSpan="3" className="bg-light-gray font-bold">매출대비</td>
                         <td className="text-left"><span className="marker" style={{ background: '#3b82f6' }}></span> 진료비 상위</td>
-                        <td className="bg-yellow font-bold" style={{ color: '#ef4444' }}>{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.topFeeRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        <td className="bg-yellow font-bold" style={{ color: '#3b82f6' }}>{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.topFeeRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
                         {summaryMonthlyMetrics.map(d => <td key={d.month} className="font-bold">{d.topFeeRatio}%</td>)}
                         <td className="text-red font-bold">
                           {(() => {
@@ -978,7 +978,7 @@ const SalesAnalysis = () => {
                       </tr>
                       <tr>
                         <td className="text-left"><span className="marker" style={{ background: '#ef4444' }}></span> 동의환자결재율</td>
-                        <td className="bg-yellow font-bold" style={{ color: '#8b5cf6' }}>{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.agreedCollectionRate), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        <td className="bg-yellow font-bold" style={{ color: '#ef4444' }}>{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.agreedCollectionRate), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
                         {summaryMonthlyMetrics.map(d => <td key={d.month} className="font-bold">{d.agreedCollectionRate}%</td>)}
                         <td className="text-purple font-bold">
                           {(() => {
