@@ -561,20 +561,20 @@ const SalesAnalysis = () => {
         const rightTop = sortedTop.slice(10, 20);
 
         // --- 정교화된 통계 계산 ---
-        // 1. 총 매출액: 총 매출현황의 해당 월(또는 전체) 총매출 데이터 사용
-        let topRevenue = 0;
+        // 1. 순매출액: 총 매출현황의 해당 월(또는 전체) 순매출 데이터 사용
+        let topNetSales = 0;
         if (selectedTopMonth === '전체') {
-            topRevenue = currentHalfData.reduce((sum, d) => sum + (Number(d.total) || 0), 0);
+            topNetSales = currentHalfData.reduce((sum, d) => sum + (Number(d?.netSales) ?? 0), 0);
         } else {
             const mData = salesData.find(d => d.month === selectedTopMonth);
-            topRevenue = mData ? (Number(mData.total) || 0) : 0;
+            topNetSales = mData ? (Number(mData?.netSales) ?? 0) : 0;
         }
 
         // 2. 총 수납액: 상위 20명 환자의 수납액 합계
         const topPaid = sortedTop.reduce((sum, p) => sum + (Number(p.paid) || 0), 0);
 
-        // 3. 수납 비중: 총 매출액 대비 상위 20명 수납액 비중
-        const topRatio = topRevenue > 0 ? ((topPaid / topRevenue) * 100).toFixed(1) : 0;
+        // 3. 수납 비중: 순매출액 대비 상위 20명 수납액 비중
+        const topRatio = topNetSales > 0 ? ((topPaid / topNetSales) * 100).toFixed(1) : 0;
 
         const renderTopTable = (patients, startRank) => (
           <div className="sales-data-table-container" style={{ marginTop: 0 }}>
@@ -622,8 +622,8 @@ const SalesAnalysis = () => {
               {/* 통계 요약 카드 */}
               <div className="stats-header-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginTop: '1rem' }}>
                 <div className="stat-card" style={{ borderLeft: '4px solid #10b981' }}>
-                  <span className="label">총 매출액</span>
-                  <span className="value">{topRevenue.toLocaleString()}원</span>
+                  <span className="label">순매출액</span>
+                  <span className="value">{topNetSales.toLocaleString()}원</span>
                 </div>
                 <div className="stat-card" style={{ borderLeft: '4px solid #3b82f6' }}>
                   <span className="label">총 수납액</span>
