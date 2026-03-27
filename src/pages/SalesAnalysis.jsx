@@ -130,6 +130,7 @@ const SalesAnalysis = () => {
       if (!month || typeof month !== 'object') return { month: 'Unknown', total: 0, top2Names: [] };
       
       const entry = { 
+        ...month,
         month: month.month || 'Unknown', 
         total: isNaN(Number(month.total)) ? 0 : Number(month.total),
         netSales: isNaN(Number(month.netSales)) ? 0 : Number(month.netSales),
