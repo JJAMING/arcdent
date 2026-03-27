@@ -45,15 +45,68 @@ const Admin = () => {
                     try {
                         const bstr = evt.target.result;
                         const wb = XLSX.read(bstr, { type: 'binary' });
-                        const wsname = wb.SheetNames[0];
-                        const ws = wb.Sheets[wsname];
-                        const rawData = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                        let rawData = [];
+                        let colIndices = { chartNo: -1, name: -1, doctor: -1, amount: -1, insurance: -1, path: -1 };
+                        let headerRowIdx = -1;
+                        let targetSheetName = wb.SheetNames[0];
+
+                        // 모든 시트를 순회하며 헤더를 찾음
+                        for (const sName of wb.SheetNames) {
+                            const ws = wb.Sheets[sName];
+                            const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                            const tempColIndices = { chartNo: -1, name: -1, doctor: -1, amount: -1, insurance: -1, path: -1 };
+                            let tempHeaderRowIdx = -1;
+
+                            for (let i = 0; i < Math.min(40, data.length); i++) {
+                                const row = data[i] || [];
+                                row.forEach((cell, idx) => {
+                                    if (cell != null) {
+                                        const strCell = String(cell).trim().replace(/\s+/g, '');
+                                        if (strCell.includes('차트번호')) tempColIndices.chartNo = idx;
+                                        else if (strCell === '성명' || strCell === '이름' || strCell === '환자명' || strCell === '환자이름' || strCell === '의사이름' || strCell === '의사명') {
+                                            if (strCell.includes('의사')) tempColIndices.doctor = idx;
+                                            else tempColIndices.name = idx;
+                                        }
+                                        else if (strCell.includes('담당의') || strCell.includes('의사') || strCell === '의사명' || strCell === '의사이름') tempColIndices.doctor = idx;
+                                        
+                                        // 공단부담금 (보다 명확한 매칭 우선)
+                                        if (strCell === '공단부담금' || strCell === '공단부담' || strCell === '보험청구액' || strCell === '보험청구') tempColIndices.insurance = idx;
+                                        else if (strCell.includes('공단부담') || strCell.includes('보험청구') || strCell.includes('의료보험') || (strCell.includes('공단') && strCell.includes('금'))) {
+                                            if (tempColIndices.insurance === -1) tempColIndices.insurance = idx;
+                                        }
+
+                                        // 수납액
+                                        if (strCell === '총수납액' || strCell === '수납합계' || strCell === '실수납액' || strCell === '수납금액') tempColIndices.amount = idx;
+                                        else if (strCell.includes('총수납') || strCell.includes('수납액') || strCell === '수납' || strCell === '납부액' || strCell.includes('본인부담')) {
+                                            if (tempColIndices.amount === -1 && tempColIndices.insurance !== idx) tempColIndices.amount = idx;
+                                        }
+
+                                        if (strCell.includes('내원경로') || strCell.includes('유입')) tempColIndices.path = idx;
+                                    }
+                                });
+                                // 의사 + (보험 혹은 수납) 둘 중 하나만 있어도 OK
+                                if (tempColIndices.doctor !== -1 && (tempColIndices.amount !== -1 || tempColIndices.insurance !== -1)) {
+                                    tempHeaderRowIdx = i;
+                                    break;
+                                }
+                            }
+
+                            if (tempHeaderRowIdx !== -1) {
+                                rawData = data;
+                                colIndices = tempColIndices;
+                                headerRowIdx = tempHeaderRowIdx;
+                                targetSheetName = sName;
+                                break;
+                            }
+                        }
+
+                        console.log(`[Excel Debug] FileName: ${fileName}, Sheet: ${targetSheetName}`, {headerRowIdx, colIndices});
 
                         const parseNum = (val) => {
                             if (typeof val === 'number') return val;
                             if (typeof val === 'string') {
-                                const cleaned = val.replace(/[^0-9.-]/g, '');
-                                const num = parseFloat(cleaned);
+                                const cleaned = val.replace(/[^0-9.,-]/g, ''); // 쉼표 포함 제거
+                                const num = parseFloat(cleaned.replace(/,/g, ''));
                                 return isNaN(num) ? 0 : num;
                             }
                             return 0;
@@ -433,94 +486,50 @@ const Admin = () => {
                             }
                         }
                         else if (fileName.includes("수납내역") || fileName.includes("환자별") || fileName.includes("의사별진료비수납액")) {
-                            if (!monthFromFile) {
-                                reject(`파일명에 월 정보가 없습니다 (${fileName})`);
-                                return;
-                            }
-
-                            const colIndices = { chartNo: -1, name: -1, doctor: -1, amount: -1, insurance: -1, path: -1 };
-                            let headerRowIdx = -1;
-                            
-                            // Find headers
-                            for (let i = 0; i < Math.min(30, rawData.length); i++) {
-                                const row = rawData[i] || [];
-                                row.forEach((cell, idx) => {
-                                    if (cell != null) {
-                                        const strCell = String(cell).trim().replace(/\s+/g, '');
-                                        // 담당의/의사 식별
-                                        if (strCell.includes('차트번호')) colIndices.chartNo = idx;
-                                        else if (strCell === '성명' || strCell === '이름' || strCell === '환자명' || strCell === '환자이름' || strCell === '의사이름' || strCell === '의사명') {
-                                            if (strCell.includes('의사')) colIndices.doctor = idx;
-                                            else colIndices.name = idx;
-                                        }
-                                        else if (strCell.includes('담당의') || strCell.includes('의사') || strCell === '의사명' || strCell === '의사이름') colIndices.doctor = idx;
-                                        
-                                        // 순수 수납액 식별 (카드/현금 등)
-                                        else if (strCell.includes('총수납액') || strCell.includes('수납합계') || strCell.includes('수납액') || strCell.includes('실수납액') || strCell.includes('수납금액') || strCell === '수납' || strCell === '납부액' || strCell.includes('본인부담')) {
-                                            if (colIndices.amount === -1) colIndices.amount = idx;
-                                        }
-                                        
-                                        // 보험 청구액 식별 (공단부담금)
-                                        else if (strCell.includes('공단부담') || strCell.includes('보험청구') || strCell.includes('의료보험') || strCell.includes('청구액') || strCell.includes('보험액') || strCell.includes('공단')) {
-                                            if (colIndices.insurance === -1) colIndices.insurance = idx;
-                                        }
-                                        
-                                        else if (strCell.includes('내원경로') || strCell.includes('유입')) colIndices.path = idx;
-                                    }
-                                });
-                                // 의사 식별 + (수납액 혹은 보험액 중 하나라도 있으면) 헤더로 인정
-                                if ((colIndices.chartNo !== -1 || colIndices.doctor !== -1) && (colIndices.amount !== -1 || colIndices.insurance !== -1)) {
-                                    headerRowIdx = i;
-                                    break;
-                                }
-                            }
-                            
-                            // 디버깅용 알림 (운영 상에서도 헤더 매칭 확인에 유용)
-                            if (headerRowIdx !== -1) {
-                                console.log(`[Header Match] Doctor:${colIndices.doctor}, Pure:${colIndices.amount}, Insurance:${colIndices.insurance}`);
-                            }
-
                             if (headerRowIdx !== -1) {
                                 const patients = [];
                                 const doctorAgg = {};
                                 for (let i = headerRowIdx + 1; i < rawData.length; i++) {
                                     const row = rawData[i] || [];
-                                    const amount = parseNum(row[colIndices.amount]);
+                                    const amount = colIndices.amount !== -1 ? parseNum(row[colIndices.amount]) : 0;
                                     const insurance = colIndices.insurance !== -1 ? parseNum(row[colIndices.insurance]) : 0;
                                     const docName = String(row[colIndices.doctor] || '공동').trim() || '공동';
                                     const chartNo = colIndices.chartNo !== -1 ? String(row[colIndices.chartNo] || '').trim() : null;
                                     
-                                    if (docName && (amount > 0 || insurance > 0) && docName !== '합계' && docName !== '총합계' && docName !== '의사명') {
-                                        if (chartNo && chartNo !== '합계') {
+                                    if (docName && (amount !== 0 || insurance !== 0) && docName !== '합계' && docName !== '총합계' && docName !== '의사명') {
+                                        if (chartNo && chartNo !== '합계' && chartNo !== '번호') {
                                             patients.push({
                                                 chartNo: chartNo,
-                                                name: String(row[colIndices.name] || '미기재'),
+                                                name: colIndices.name !== -1 ? String(row[colIndices.name] || '미기재') : '미기재',
                                                 doctor: docName,
-                                                totalPaid: amount,
-                                                path: String(row[colIndices.path] || '직접내원')
+                                                pure: amount,
+                                                insurance: insurance,
+                                                path: colIndices.path !== -1 ? String(row[colIndices.path] || '직접내원') : '직접내원'
                                             });
                                         }
-                                        doctorAgg[docName] = (doctorAgg[docName] || 0) + amount;
+                                        if (!doctorAgg[docName]) doctorAgg[docName] = { pure: 0, insurance: 0 };
+                                        doctorAgg[docName].pure += amount;
+                                        doctorAgg[docName].insurance += insurance;
                                     }
                                 }
 
                                 const d = currentData.find(item => item.month === monthFromFile);
                                 if (d) {
                                     if (patients.length > 0) {
-                                        patients.sort((a, b) => b.totalPaid - a.totalPaid);
+                                        patients.sort((a, b) => (b.pure + b.insurance) - (a.pure + a.insurance));
                                         d.topPatients = patients.slice(0, 20);
                                     }
                                     d.doctorData = doctorAgg;
                                     updatedCount++;
                                     const drList = Object.keys(doctorAgg).join(', ');
-                                    const colInfo = `[컬럼 매칭 정보]\n의사: ${colIndices.doctor+1}번, 순수액: ${colIndices.amount+1}번, 보험액: ${colIndices.insurance+1}번`;
-                                    alert(`[의사별 매출 연동 성공] ${monthFromFile} 데이터가 업데이트되었습니다.\n${colInfo}\n(연동된 의사: ${drList || '없음'})`);
+                                    const colInfo = `[컬럼 매칭 정보]\n의사: ${colIndices.doctor+1}번, 순수액: ${colIndices.amount===-1 ? '없음' : (colIndices.amount+1)+'번'}, 보험액: ${colIndices.insurance===-1 ? '없음' : (colIndices.insurance+1)+'번'}`;
+                                    alert(`[의사별 매출 연동 성공] ${targetSheetName} 시트에서 ${monthFromFile} 데이터를 업데이트했습니다.\n${colInfo}\n(연동된 의사: ${drList})`);
                                     resolve();
                                 } else {
                                     reject(`월 데이터를 찾을 수 없습니다 (${monthFromFile})`);
                                 }
                             } else {
-                                reject(`파일 구조 분석 실패 (${fileName})`);
+                                reject(`파일 구조 분석 실패 (${fileName}): 의사명 및 금액 컬럼을 찾을 수 없습니다.`);
                             }
                         }
                         else {
