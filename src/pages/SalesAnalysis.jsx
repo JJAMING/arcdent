@@ -55,7 +55,7 @@ class TabErrorBoundary extends React.Component {
 
 const SalesAnalysis = () => {
   const [half, setHalf] = useState('first');
-  const [subTab, setSubTab] = useState('summary'); // 기본탭: 매출 분석 정리
+  const [subTab, setSubTab] = useState('total'); // 기본탭: 총 매출 현황
   const [salesData, setSalesData] = useState(MOCK_DATA);
   const [agreedPatients, setAgreedPatients] = useState([]);
   const [comment, setComment] = useState('상반기 매출이 전년 대비 15% 성장하였습니다. 특히 4월과 6월 임플란트 패키지 프로모션으로 인한 순매출 증대가 두드러집니다. 하반기에는 리콜 환자 관리를 통한 재내원율 향상이 주요 과제입니다.');
@@ -1086,13 +1086,13 @@ const SalesAnalysis = () => {
       <nav className="tab-navigation">
         <ul className="tab-list">
           {[
-            { id: 'summary', label: '매출 분석 정리', icon: <FileText size={18} /> },
             { id: 'total', label: '총 매출 현황', icon: <BarChart3 size={18} /> },
             { id: 'payment', label: '결제 분포도', icon: <PieIcon size={18} /> },
             { id: 'newPatient', label: '신환수익 비교', icon: <UserPlus size={18} /> },
             { id: 'agreed', label: '동의환자 수납액', icon: <UserCheck size={18} /> },
             { id: 'topFee', label: '진료비 상위', icon: <Award size={18} /> },
-            { id: 'doctor', label: '매출분석(의사)', icon: <Activity size={18} /> }
+            { id: 'doctor', label: '매출분석(의사)', icon: <Activity size={18} /> },
+            { id: 'summary', label: '매출 분석 정리', icon: <FileText size={18} /> }
           ].map(tab => (
             <li key={tab.id} className={subTab === tab.id ? 'active' : ''} onClick={() => setSubTab(tab.id)}>
               {tab.icon}
