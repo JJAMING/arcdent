@@ -690,8 +690,7 @@ const SalesAnalysis = () => {
                         dataKey={name} 
                         name={name}
                         fill={doctorColors[idx % doctorColors.length]} 
-                        stackId="a" 
-                        barSize={40}
+                        barSize={15}
                         isAnimationActive={false} 
                       />
                     ))}
