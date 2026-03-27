@@ -55,7 +55,7 @@ class TabErrorBoundary extends React.Component {
 
 const SalesAnalysis = () => {
   const [half, setHalf] = useState('first');
-  const [subTab, setSubTab] = useState('total'); // 기본탭: 총 매출 현황
+  const [subTab, setSubTab] = useState('summary'); // 기본탭: 매출 분석 정리
   const [salesData, setSalesData] = useState(MOCK_DATA);
   const [agreedPatients, setAgreedPatients] = useState([]);
   const [comment, setComment] = useState('상반기 매출이 전년 대비 15% 성장하였습니다. 특히 4월과 6월 임플란트 패키지 프로모션으로 인한 순매출 증대가 두드러집니다. 하반기에는 리콜 환자 관리를 통한 재내원율 향상이 주요 과제입니다.');
@@ -212,6 +212,45 @@ const SalesAnalysis = () => {
     half === 'all' ? agreedMonthlyStats :
     half === 'first' ? agreedMonthlyStats.slice(0, 6) : 
     agreedMonthlyStats.slice(6, 12);
+
+  // --- 매출 분석 정리 (Summary) 데이터 집계 ---
+  const summaryMonthlyMetrics = React.useMemo(() => {
+    return doctorChartData.map(d => {
+      const metrics = { 
+        month: d.month,
+        pureRatio: d.total > 0 ? ((d.netSales / d.total) * 100).toFixed(1) : 0,
+        insRatio: d.total > 0 ? ((d.insurance / d.total) * 100).toFixed(1) : 0,
+        
+        // 1. 진료비 상위 비중 (순매출 대비 상위 20명 수납액)
+        topFeeRatio: 0,
+        // 2. 동의환자 수납율 (개별 달 기준)
+        agreedCollectionRate: 0,
+        // 3. 신환 수익 비중
+        newPatientRatio: d.netSales > 0 ? ((Number(d.newPatientSales || 0) / d.netSales) * 100).toFixed(1) : 0,
+        
+        // 결제 수단 비중 (순매출 대비)
+        cardRatio: d.netSales > 0 ? ((Number(d.card || 0) / d.netSales) * 100).toFixed(1) : 0,
+        cashRatio: d.netSales > 0 ? ((Number(d.cash || 0) / d.netSales) * 100).toFixed(1) : 0,
+        otherRatio: d.netSales > 0 ? ((Number(d.other || 0) / d.netSales) * 100).toFixed(1) : 0
+      };
+
+      // 진료비 상위 비중 계산
+      const monthlyTop = topPatientsRaw.filter(p => p.month === d.month || (p.month && p.month.includes(d.month.replace('월', ''))));
+      const topSum = monthlyTop.reduce((sum, p) => sum + (Number(p.paid) || 0), 0);
+      metrics.topFeeRatio = d.netSales > 0 ? ((topSum / d.netSales) * 100).toFixed(1) : 0;
+
+      // 동의환자 수납율 계산
+      const monthlyAgreed = agreedPatients.filter(p => {
+        const mMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/-(\d+)-/);
+        return mMatch && parseInt(mMatch[1]) + '월' === d.month;
+      });
+      const contractSum = monthlyAgreed.reduce((sum, p) => sum + (Number(p.contractAmount) || 0), 0);
+      const paidSum = monthlyAgreed.reduce((sum, p) => sum + (Number(p.paidAmount) || 0), 0);
+      metrics.agreedCollectionRate = contractSum > 0 ? ((paidSum / contractSum) * 100).toFixed(1) : 0;
+
+      return metrics;
+    });
+  }, [doctorChartData, topPatientsRaw, agreedPatients]);
 
   // --- 진료비 상위 환자 (최근 월 기준) ---
   const topPatients = (currentHalfData[currentHalfData.length - 1]?.topPatients || []).slice(0, 20);
@@ -871,26 +910,150 @@ const SalesAnalysis = () => {
 
       case 'summary': // 7. 매출 분석 정리
         return (
-          <div className="tab-pane active">
-             <div className="dashboard-grid">
-                <DashboardCard title="데이터 기반 종합 분석 리포트">
-                    <div className="report-container" style={{ padding: '1rem' }}>
-                        <div className="ai-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#6366f1', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '0.8rem', marginBottom: '1rem' }}>
-                            <Activity size={14} /> AI 분석 서비스
-                        </div>
-                        <p style={{ fontSize: '1.05rem', lineHeight: '1.8', color: 'var(--text-primary)' }}>{comment}</p>
-                        
-                        <div className="divider" style={{ margin: '2rem 0', height: '1px', background: 'var(--border-color)' }}></div>
-                        
-                        <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>매출 증대를 위한 주요 제언</h3>
-                        <ul className="recommendation-list">
-                            <li><TrendingUp size={16} /> 신환 상담 동의율이 74%로 양호하나, 고액 치료 계획의 분할 납부 옵션 강화 제안</li>
-                            <li><Users size={16} /> 하반기 리콜 환자 예약율을 10% 높일 경우 매출액 4,500만원 추가 확보 가능</li>
-                            <li><DollarSign size={16} /> 카드 결제 편중 현상 해결을 위한 현금 영수증 프로모션 검토 필요</li>
-                        </ul>
-                    </div>
-                </DashboardCard>
-             </div>
+          <div className="tab-pane active animated-fade-in">
+            <div className="dashboard-stack">
+              {/* 상단 통합 비중 차트 */}
+              <DashboardCard title="월별 주요 비중 추이 (%)" subtitle="진료비 상위, 동의환자 수납율, 신환 수익 비중 비교">
+                <ResponsiveContainer width="100%" height={350}>
+                  <BarChart data={summaryMonthlyMetrics} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+                    <XAxis dataKey="month" tick={{ dy: 10 }} />
+                    <YAxis tickFormatter={(v) => `${v}%`} width={50} domain={[0, (dataMax) => Math.max(100, dataMax * 1.1)]} />
+                    <Tooltip formatter={(v) => `${v}%`} cursor={{ fill: 'var(--bg-hover)' }} />
+                    <Legend verticalAlign="top" align="right" height={36} iconType="rect" />
+                    
+                    <Bar dataKey="topFeeRatio" name="진료비 상위" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20}>
+                      <LabelList dataKey="topFeeRatio" position="top" formatter={(v) => `${v}%`} style={{ fontSize: '10px', fill: 'var(--text-secondary)' }} />
+                    </Bar>
+                    <Bar dataKey="agreedCollectionRate" name="동의환자 수납율" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={20}>
+                      <LabelList dataKey="agreedCollectionRate" position="top" formatter={(v) => `${v}%`} style={{ fontSize: '10px', fill: 'var(--text-secondary)' }} />
+                    </Bar>
+                    <Bar dataKey="newPatientRatio" name="신환 수익" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20}>
+                      <LabelList dataKey="newPatientRatio" position="top" formatter={(v) => `${v}%`} style={{ fontSize: '10px', fill: 'var(--text-secondary)' }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </DashboardCard>
+
+              {/* 하단 매출 분석 정리 표 */}
+              <DashboardCard title="매출 분석 종합 요약">
+                <div className="sales-data-table-container">
+                  <table className="sales-data-table summary-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: '80px' }}>비중</th>
+                        <th style={{ width: '120px' }}>구분</th>
+                        <th style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>평균</th>
+                        {summaryMonthlyMetrics.map(d => <th key={d.month}>{d.month}</th>)}
+                        <th style={{ width: '80px' }}>증감</th>
+                        <th>비고</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Section 1: 총매출 */}
+                      <tr>
+                        <td rowSpan="2" className="bg-light-gray font-bold">총매출</td>
+                        <td className="text-left"><span className="marker blue"></span> 순수매출</td>
+                        <td className="bg-yellow font-bold">{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.pureRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        {summaryMonthlyMetrics.map(d => <td key={d.month}>{d.pureRatio}%</td>)}
+                        <td className="text-blue font-bold">
+                          {(() => {
+                            const last = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-1].pureRatio);
+                            const prev = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-2]?.pureRatio || last);
+                            const diff = (last - prev).toFixed(1);
+                            return `${diff > 0 ? '+' : ''}${diff}%`;
+                          })()}
+                        </td>
+                        <td>전체 매출 중 순수 수납 비중</td>
+                      </tr>
+                      <tr>
+                        <td className="text-left"><span className="marker green"></span> 보험청구매출</td>
+                        <td className="bg-yellow font-bold">{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.insRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        {summaryMonthlyMetrics.map(d => <td key={d.month}>{d.insRatio}%</td>)}
+                        <td className="text-blue font-bold">
+                          {(() => {
+                            const last = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-1].insRatio);
+                            const prev = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-2]?.insRatio || last);
+                            const diff = (last - prev).toFixed(1);
+                            return `${diff > 0 ? '+' : ''}${diff}%`;
+                          })()}
+                        </td>
+                        <td>공단 부담금 비중</td>
+                      </tr>
+
+                      {/* Section 2: 매출대비 비중 */}
+                      <tr style={{ borderTop: '2px solid var(--border-color)' }}>
+                        <td rowSpan="3" className="bg-light-gray font-bold">매출대비</td>
+                        <td className="text-left"><span className="marker-yellow"></span> 진료비 상위</td>
+                        <td className="bg-yellow font-bold" style={{ color: '#ef4444' }}>{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.topFeeRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        {summaryMonthlyMetrics.map(d => <td key={d.month} className="font-bold">{d.topFeeRatio}%</td>)}
+                        <td className="text-red font-bold">
+                          {(() => {
+                            const last = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-1].topFeeRatio);
+                            const prev = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-2]?.topFeeRatio || last);
+                            const diff = (last - prev).toFixed(1);
+                            return `${diff > 0 ? '+' : ''}${diff}%`;
+                          })()}
+                        </td>
+                        <td>상위 20명 매출 집중도</td>
+                      </tr>
+                      <tr>
+                        <td className="text-left"><span className="marker purple"></span> 동의환자결재율</td>
+                        <td className="bg-yellow font-bold" style={{ color: '#8b5cf6' }}>{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.agreedCollectionRate), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        {summaryMonthlyMetrics.map(d => <td key={d.month} className="font-bold">{d.agreedCollectionRate}%</td>)}
+                        <td className="text-purple font-bold">
+                          {(() => {
+                            const last = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-1].agreedCollectionRate);
+                            const prev = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-2]?.agreedCollectionRate || last);
+                            const diff = (last - prev).toFixed(1);
+                            return `${diff > 0 ? '+' : ''}${diff}%`;
+                          })()}
+                        </td>
+                        <td>계약 대비 실제 수납율</td>
+                      </tr>
+                      <tr>
+                        <td className="text-left"><span className="marker-highlight"></span> 신환 수익</td>
+                        <td className="bg-yellow font-bold" style={{ color: '#10b981' }}>{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.newPatientRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        {summaryMonthlyMetrics.map(d => <td key={d.month} className="font-bold">{d.newPatientRatio}%</td>)}
+                        <td className="text-green font-bold">
+                          {(() => {
+                            const last = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-1].newPatientRatio);
+                            const prev = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-2]?.newPatientRatio || last);
+                            const diff = (last - prev).toFixed(1);
+                            return `${diff > 0 ? '+' : ''}${diff}%`;
+                          })()}
+                        </td>
+                        <td>전체 순매출 중 신환 기여도</td>
+                      </tr>
+
+                      {/* Section 3: 순수매출 구성 */}
+                      <tr style={{ borderTop: '2px solid var(--border-color)' }}>
+                        <td rowSpan="3" className="bg-light-gray font-bold">순수매출</td>
+                        <td className="text-left no-marker">카드</td>
+                        <td className="bg-yellow font-bold">{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.cardRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        {summaryMonthlyMetrics.map(d => <td key={d.month}>{d.cardRatio}%</td>)}
+                        <td>-</td>
+                        <td>카드 결제 비중</td>
+                      </tr>
+                      <tr>
+                        <td className="text-left no-marker">현금</td>
+                        <td className="bg-yellow font-bold">{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.cashRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        {summaryMonthlyMetrics.map(d => <td key={d.month}>{d.cashRatio}%</td>)}
+                        <td>-</td>
+                        <td>현금 수납 비중</td>
+                      </tr>
+                      <tr>
+                        <td className="text-left no-marker">기타/무통장</td>
+                        <td className="bg-yellow font-bold">{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.otherRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        {summaryMonthlyMetrics.map(d => <td key={d.month}>{d.otherRatio}%</td>)}
+                        <td>-</td>
+                        <td>온라인/기타 수납 비중</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </DashboardCard>
+            </div>
           </div>
         );
 
@@ -918,13 +1081,13 @@ const SalesAnalysis = () => {
       <nav className="tab-navigation">
         <ul className="tab-list">
           {[
+            { id: 'summary', label: '매출 분석 정리', icon: <FileText size={18} /> },
             { id: 'total', label: '총 매출 현황', icon: <BarChart3 size={18} /> },
             { id: 'payment', label: '결제 분포도', icon: <PieIcon size={18} /> },
             { id: 'newPatient', label: '신환수익 비교', icon: <UserPlus size={18} /> },
             { id: 'agreed', label: '동의환자 수납액', icon: <UserCheck size={18} /> },
             { id: 'topFee', label: '진료비 상위', icon: <Award size={18} /> },
-            { id: 'doctor', label: '매출분석(의사)', icon: <Activity size={18} /> },
-            { id: 'summary', label: '매출 분석 정리', icon: <FileText size={18} /> }
+            { id: 'doctor', label: '매출분석(의사)', icon: <Activity size={18} /> }
           ].map(tab => (
             <li key={tab.id} className={subTab === tab.id ? 'active' : ''} onClick={() => setSubTab(tab.id)}>
               {tab.icon}
