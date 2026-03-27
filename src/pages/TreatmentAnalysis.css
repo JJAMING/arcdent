@@ -1,0 +1,169 @@
+/* TreatmentAnalysis.css - Consistent with SalesAnalysis.css */
+
+.treatment-analysis-page {
+    padding: 0.5rem;
+}
+
+.tab-navigation {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 0.85rem;
+    padding: 0.4rem;
+    margin-top: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.tab-list {
+    display: flex;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    gap: 0.4rem;
+    overflow-x: auto;
+}
+
+.tab-list li {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.85rem 0.5rem;
+    border-radius: 0.6rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    min-width: 110px;
+    text-align: center;
+}
+
+.tab-list li:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.tab-list li.active {
+    background: var(--accent-primary);
+    color: white;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+    transform: translateY(-1px);
+}
+
+.tab-pane {
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.dashboard-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    width: 100%;
+}
+
+/* --- Table Styles --- */
+.treatment-data-table-container {
+    overflow-x: auto;
+    margin-top: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+}
+
+.treatment-data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.treatment-data-table th, 
+.treatment-data-table td {
+    padding: 0.85rem 0.5rem;
+    border: 1px solid var(--border-color);
+}
+
+.treatment-data-table th {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.treatment-data-table .row-header {
+    text-align: left;
+    padding-left: 1rem;
+    background: var(--bg-secondary);
+    font-weight: 600;
+    min-width: 150px;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.treatment-data-table .highlight-row {
+    background: rgba(59, 130, 246, 0.03);
+}
+
+.treatment-data-table .font-bold {
+    font-weight: 700;
+    color: var(--accent-primary);
+}
+
+.marker {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.marker.blue { background: #3b82f6; }
+.marker.green { background: #10b981; }
+.marker.orange { background: #f59e0b; }
+.marker.purple { background: #8b5cf6; }
+
+/* Period Filter */
+.period-tabs {
+    display: flex;
+    gap: 0.5rem;
+    background: var(--bg-secondary);
+    padding: 0.35rem;
+    border-radius: 0.75rem;
+}
+
+.period-tabs button {
+    padding: 0.45rem 1rem;
+    border-radius: 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: all 0.2s;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.period-tabs button.active {
+    background: var(--card-bg);
+    color: var(--accent-primary);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .treatment-data-table {
+        font-size: 0.75rem;
+    }
+    .treatment-data-table .row-header {
+        min-width: 120px;
+    }
+    .tab-list li {
+        min-width: 80px;
+        font-size: 0.75rem;
+    }
+}
