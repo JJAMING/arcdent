@@ -678,7 +678,7 @@ const SalesAnalysis = () => {
                       tickFormatter={(v) => `${Math.floor(v/10000).toLocaleString()}만`} 
                     />
                     <Tooltip 
-                      formatter={(v) => `${Number(v).toLocaleString()}원`} 
+                      formatter={(v) => `${Number(v || 0).toLocaleString()}원`} 
                       contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }} 
                     />
                     <Legend verticalAlign="top" height={36}/>
@@ -728,8 +728,8 @@ const SalesAnalysis = () => {
                             {name}
                           </td>
                           {(currentHalfData || []).map(d => (
-                            <td key={`${d.month}-${name}`}>
-                              {(d.doctorData && Number(d.doctorData[name] || 0)).toLocaleString()}원
+                            <td key={`${d?.month}-${name}`}>
+                              {Number(d?.doctorData?.[name] ?? 0).toLocaleString()}원
                             </td>
                           ))}
                         </tr>
@@ -739,8 +739,8 @@ const SalesAnalysis = () => {
                       <tr className="font-bold" style={{ borderTop: '2px solid var(--border-color)' }}>
                         <td className="row-header"><span className="marker-yellow"></span> 총매출</td>
                         {(currentHalfData || []).map(d => (
-                          <td key={`${d.month}-total`}>
-                            {Number(d.total || 0).toLocaleString()}원
+                          <td key={`${d?.month}-total`}>
+                            {Number(d?.total ?? 0).toLocaleString()}원
                           </td>
                         ))}
                       </tr>
