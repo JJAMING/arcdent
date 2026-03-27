@@ -136,6 +136,9 @@ const SalesAnalysis = () => {
       };
       
       const doctorValues = [];
+      let calculatedTotal = 0;
+      let hasDoctorData = false;
+
       doctorNames.forEach(name => {
         const dData = (month.doctorData && typeof month.doctorData === 'object') ? month.doctorData[name] : null;
         
@@ -143,6 +146,7 @@ const SalesAnalysis = () => {
         let insVal = 0;
         
         if (dData) {
+          hasDoctorData = true;
           if (typeof dData === 'object') {
             pureVal = Number(dData.pure || 0);
             insVal = Number(dData.insurance || 0);
@@ -151,11 +155,16 @@ const SalesAnalysis = () => {
           }
         }
         
-        // 차트 막대는 순수매출+보험청구매출 합계로 표시
         const combined = pureVal + insVal;
+        calculatedTotal += combined;
         entry[name] = isNaN(combined) ? 0 : combined;
         doctorValues.push({ name, value: entry[name] });
       });
+
+      // 의사별 데이터가 있을 경우, 총매출(total)을 의사 합계로 갱신하여 곡선 그래프에 반영
+      if (hasDoctorData) {
+        entry.total = calculatedTotal;
+      }
 
       // 해당 월의 1, 2위 의사 식별
       entry.top2Names = doctorValues
