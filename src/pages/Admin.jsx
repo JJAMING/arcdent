@@ -354,7 +354,8 @@ const Admin = () => {
                                 doctor: -1,
                                 revenue: -1,
                                 paid: -1,
-                                path: -1
+                                path: -1,
+                                rowMonth: -1
                             };
 
                             // 1. 헤더 행 찾기
@@ -370,6 +371,7 @@ const Admin = () => {
                                     else if (txt.includes('진료비') || txt.includes('발생액') || txt.includes('총금액')) colMap.revenue = c;
                                     else if (txt.includes('수납액') || txt.includes('실수납') || txt.includes('입금액')) colMap.paid = c;
                                     else if (txt.includes('내원경로') || txt.includes('유입')) colMap.path = c;
+                                    else if (txt === '월' || txt === '해당월' || txt.includes('진료월') || txt.includes('날짜') || txt.includes('일자')) colMap.rowMonth = c;
                                 });
                                 if (colMap.patientName !== -1 && (colMap.revenue !== -1 || colMap.paid !== -1)) {
                                     headerRowIdx = r;
@@ -382,6 +384,14 @@ const Admin = () => {
                                     const row = rawData[r];
                                     if (!row || !row[colMap.patientName]) continue;
                                     
+                                    // 행별 월 정보 추출 시도
+                                    let rowMonth = monthFromFile || '';
+                                    if (!rowMonth && colMap.rowMonth !== -1) {
+                                        const rawMonthVal = String(row[colMap.rowMonth] || '');
+                                        const mMatch = rawMonthVal.match(/(\d{1,2})월/) || rawMonthVal.match(/-(\d{2})-/);
+                                        if (mMatch) rowMonth = parseInt(mMatch[1]) + '월';
+                                    }
+
                                     const p = {
                                         chartNo: String(row[colMap.chartNo] || '').trim(),
                                         patientName: String(row[colMap.patientName] || '').trim(),
@@ -389,7 +399,7 @@ const Admin = () => {
                                         revenue: parseNum(row[colMap.revenue]),
                                         paid: parseNum(row[colMap.paid]),
                                         path: String(row[colMap.path] || '').trim(),
-                                        month: monthFromFile || ''
+                                        month: rowMonth
                                     };
                                     
                                     if (p.patientName && (p.revenue > 0 || p.paid > 0)) {
@@ -403,14 +413,19 @@ const Admin = () => {
                                     if (saved) currentTopData = JSON.parse(saved);
                                 } catch (e) {}
                                 
-                                // 중복 월 데이터 교체
-                                if (monthFromFile) {
-                                    currentTopData = currentTopData.filter(p => !p.month || p.month !== monthFromFile);
-                                }
-                                currentTopData = [...currentTopData, ...ExtractedTopPatients];
+                                // 데이터 병합 및 중복 제거 (월/이름/차트번호 기준)
+                                ExtractedTopPatients.forEach(newP => {
+                                    const idx = currentTopData.findIndex(oldP => 
+                                        oldP.month === newP.month && 
+                                        oldP.patientName === newP.patientName && 
+                                        oldP.chartNo === newP.chartNo
+                                    );
+                                    if (idx !== -1) currentTopData[idx] = newP;
+                                    else currentTopData.push(newP);
+                                });
                                 
                                 localStorage.setItem('top_patients_raw_data', JSON.stringify(currentTopData));
-                                alert(`[환자별 수납내역 연동 완료] ${monthFromFile || '전체'} 데이터 포함 총 ${ExtractedTopPatients.length}건을 가져왔습니다.`);
+                                alert(`[환자별 수납내역 연동 완료] 총 ${ExtractedTopPatients.length}건의 데이터를 가져왔습니다.`);
                                 updatedCount++;
                                 resolve();
                             } else {

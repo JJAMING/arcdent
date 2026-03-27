@@ -38,6 +38,7 @@ const SalesAnalysis = () => {
 
   const [topPatientsRaw, setTopPatientsRaw] = useState([]);
   const [selectedTopMonth, setSelectedTopMonth] = useState('전체');
+  const [selectedDoctorMonth, setSelectedDoctorMonth] = useState('전체');
 
   useEffect(() => {
     // 1. 매출 데이터 로드
@@ -71,25 +72,44 @@ const SalesAnalysis = () => {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  const currentHalfData = half === 'first' ? salesData.slice(0, 6) : salesData.slice(6, 12);
+  const currentHalfData = 
+    half === 'all' ? salesData :
+    half === 'first' ? salesData.slice(0, 6) : 
+    salesData.slice(6, 12);
+
   
   // --- 공통 통계 계산 ---
   const totalAgreed = agreedPatients.reduce((sum, p) => sum + (Number(p.contractAmount) || 0), 0);
   const totalPaid = agreedPatients.reduce((sum, p) => sum + (Number(p.paidAmount) || 0), 0);
   const collectionRate = totalAgreed > 0 ? ((totalPaid / totalAgreed) * 100).toFixed(1) : 0;
 
-  // --- 의사별 데이터 집계 ---
-  const aggregatedDoctorData = {};
-  currentHalfData.forEach(month => {
-    if (month.doctorData) {
-      Object.entries(month.doctorData).forEach(([name, amount]) => {
-        aggregatedDoctorData[name] = (aggregatedDoctorData[name] || 0) + amount;
+  // --- 의사별 데이터 집계 (Stacked Bar + Line 용) ---
+  const doctorNames = React.useMemo(() => {
+    const names = new Set();
+    if (Array.isArray(salesData)) {
+      salesData.forEach(month => {
+        if (month && month.doctorData) {
+          Object.keys(month.doctorData).forEach(name => {
+            if (name) names.add(name);
+          });
+        }
       });
     }
-  });
-  const doctorChartData = Object.entries(aggregatedDoctorData)
-    .map(([name, amount]) => ({ name, amount }))
-    .sort((a, b) => b.amount - a.amount);
+    return Array.from(names);
+  }, [salesData]);
+
+  const doctorChartData = React.useMemo(() => {
+    if (!Array.isArray(currentHalfData)) return [];
+    return currentHalfData.map(month => {
+      const entry = { month: month.month || '', total: Number(month.total) || 0 };
+      doctorNames.forEach(name => {
+        entry[name] = (month.doctorData && Number(month.doctorData[name])) || 0;
+      });
+      return entry;
+    });
+  }, [currentHalfData, doctorNames]);
+
+
 
   // --- 동의환자 월별 통계 집계 (차트용) ---
   const agreedMonthlyStats = [
@@ -382,8 +402,13 @@ const SalesAnalysis = () => {
         );
 
       case 'agreed': // 4. 동의환자 수납액
+        const currentAgreedMonths = currentHalfData.map(d => d.month);
         const filteredAgreed = selectedAgreedMonth === '전체' 
-          ? agreedPatients 
+          ? agreedPatients.filter(p => {
+              const mMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/-(\d+)-/);
+              const mStr = mMatch ? parseInt(mMatch[1]) + '월' : null;
+              return mStr && currentAgreedMonths.includes(mStr);
+            })
           : agreedPatients.filter(p => {
               const mMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/-(\d+)-/);
               return mMatch && parseInt(mMatch[1]) + '월' === selectedAgreedMonth;
@@ -398,7 +423,7 @@ const SalesAnalysis = () => {
             <div className="dashboard-stack">
               {/* 월별 필터 버튼 */}
               <div className="month-filter-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                {['전체', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'].map(m => (
+                {['전체', ...currentAgreedMonths].map(m => (
                   <button 
                     key={m} 
                     className={`month-filter-btn ${selectedAgreedMonth === m ? 'active' : ''}`}
@@ -468,21 +493,77 @@ const SalesAnalysis = () => {
         );
 
       case 'topFee': // 5. 진료비 상위
+        const currentMonths = currentHalfData.map(d => d.month);
         const filteredTop = selectedTopMonth === '전체' 
-          ? topPatientsRaw 
+          ? topPatientsRaw.filter(p => currentMonths.includes(p.month)) 
           : topPatientsRaw.filter(p => {
               const m = (p.month || '');
               return m === selectedTopMonth || m.includes(selectedTopMonth.replace('월', ''));
             });
 
-        // 상위 10명 (수납액 기준)
-        const displayTop = [...filteredTop]
-          .sort((a, b) => (b.paid || 0) - (a.paid || 0))
-          .slice(0, 10);
 
-        const topRevenue = filteredTop.reduce((sum, p) => sum + (Number(p.revenue) || 0), 0);
-        const topPaid = filteredTop.reduce((sum, p) => sum + (Number(p.paid) || 0), 0);
+        // --- 데이터 집계 (Aggregation) ---
+        // 동일 환자가 여러 달에 걸쳐 존재할 경우 합산하여 순위 산정
+        const aggregated = {};
+        filteredTop.forEach(p => {
+          const key = `${p.patientName}_${p.chartNo || ''}`;
+          if (!aggregated[key]) {
+            aggregated[key] = { ...p, revenue: 0, paid: 0 };
+          }
+          aggregated[key].revenue += (Number(p.revenue) || 0);
+          aggregated[key].paid += (Number(p.paid) || 0);
+        });
+
+        const sortedTop = Object.values(aggregated)
+          .sort((a, b) => (b.paid || 0) - (a.paid || 0))
+          .slice(0, 20);
+
+        
+        const leftTop = sortedTop.slice(0, 10);
+        const rightTop = sortedTop.slice(10, 20);
+
+        // --- 정교화된 통계 계산 ---
+        // 1. 총 매출액: 총 매출현황의 해당 월(또는 전체) 총매출 데이터 사용
+        let topRevenue = 0;
+        if (selectedTopMonth === '전체') {
+            topRevenue = currentHalfData.reduce((sum, d) => sum + (Number(d.total) || 0), 0);
+        } else {
+            const mData = salesData.find(d => d.month === selectedTopMonth);
+            topRevenue = mData ? (Number(mData.total) || 0) : 0;
+        }
+
+        // 2. 총 수납액: 상위 20명 환자의 수납액 합계
+        const topPaid = sortedTop.reduce((sum, p) => sum + (Number(p.paid) || 0), 0);
+
+        // 3. 수납 비중: 총 매출액 대비 상위 20명 수납액 비중
         const topRatio = topRevenue > 0 ? ((topPaid / topRevenue) * 100).toFixed(1) : 0;
+
+        const renderTopTable = (patients, startRank) => (
+          <div className="sales-data-table-container" style={{ marginTop: 0 }}>
+            <table className="sales-data-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '40px' }}>#</th>
+                  <th>성명</th>
+                  <th>담당의</th>
+                  <th>총수납액</th>
+                </tr>
+              </thead>
+              <tbody>
+                {patients.length > 0 ? patients.map((p, idx) => (
+                  <tr key={idx}>
+                    <td className="font-bold" style={{ color: 'var(--text-secondary)' }}>{startRank + idx}</td>
+                    <td className="font-bold" style={{ textAlign: 'left', color: 'var(--text-primary)' }}>{p.patientName}</td>
+                    <td>{p.doctor}</td>
+                    <td style={{ textAlign: 'right', color: '#3b82f6', fontWeight: 'bold' }}>{(Number(p.paid) || 0).toLocaleString()}원</td>
+                  </tr>
+                )) : (
+                  <tr><td colSpan="4" className="empty-state" style={{ padding: '2rem 1rem' }}>데이터 없음</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        );
 
         return (
           <div className="tab-pane active">
@@ -500,7 +581,7 @@ const SalesAnalysis = () => {
                 ))}
               </div>
 
-              {/* 통계 요약 카드 (색상 마커 포함) */}
+              {/* 통계 요약 카드 */}
               <div className="stats-header-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginTop: '1rem' }}>
                 <div className="stat-card" style={{ borderLeft: '4px solid #10b981' }}>
                   <span className="label">총 매출액</span>
@@ -516,35 +597,98 @@ const SalesAnalysis = () => {
                 </div>
               </div>
 
-              {/* 환자별 상세 테이블 */}
-              <DashboardCard title={`${selectedTopMonth} 진료비 수납 상위 환자 (TOP 10)`}>
+              <div style={{ marginTop: '1rem' }}>
+                <h3 style={{ fontSize: '1.2rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                   <Award size={20} color="#f59e0b" /> {selectedTopMonth} 진료비 수납 상위 환자 (TOP 20)
+                </h3>
+                
+                <div className="top-patients-grid">
+                  <div className="top-patients-column">
+                    <h4><span className="rank-badge">1 ~ 10위</span></h4>
+                    {renderTopTable(leftTop, 1)}
+                  </div>
+                  <div className="top-patients-column">
+                    <h4><span className="rank-badge">11 ~ 20위</span></h4>
+                    {renderTopTable(rightTop, 11)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+
+
+      case 'doctor': // 6. 매출분석(의사)
+        const doctorColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+        const totalDoctorRevenue = currentHalfData.reduce((sum, d) => sum + (Number(d.total) || 0), 0);
+        
+        return (
+          <div className="tab-pane active">
+            <div className="dashboard-stack">
+              <DashboardCard title="월별 의사 기여도 및 병원 매출 추이">
+                <ResponsiveContainer width="100%" height={450}>
+                  <ComposedChart data={doctorChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+                    <XAxis dataKey="month" axisLine={false} tickLine={false} stroke="var(--text-secondary)" />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      stroke="var(--text-secondary)"
+                      tickFormatter={(v) => `${Math.floor(v/10000).toLocaleString()}만`} 
+                    />
+                    <Tooltip formatter={(v) => `${v.toLocaleString()}원`} contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }} />
+                    <Legend verticalAlign="top" height={36}/>
+                    
+                    {doctorNames.map((name, index) => (
+                      <Bar 
+                        key={name}
+                        dataKey={name} 
+                        name={name} 
+                        stackId="a" 
+                        fill={doctorColors[index % doctorColors.length]} 
+                        barSize={40} 
+                      />
+                    ))}
+                    
+                    <Line 
+                      type="monotone" 
+                      dataKey="total" 
+                      name="총매출합계" 
+                      stroke="#6366f1" 
+                      strokeWidth={3} 
+                      dot={{ r: 5, fill: '#6366f1' }} 
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </DashboardCard>
+              
+              <DashboardCard title="의사별 월간 매출 상세 지표">
                 <div className="sales-data-table-container">
                   <table className="sales-data-table">
                     <thead>
                       <tr>
-                        <th>#</th>
-                        <th>차트번호</th>
-                        <th>성명</th>
-                        <th>담당의</th>
-                        <th>총매출(진료비)</th>
-                        <th>총수납액</th>
-                        <th>내원경로</th>
+                        <th className="row-header">구분</th>
+                        {currentHalfData.map(d => <th key={d.month}>{d.month}</th>)}
                       </tr>
                     </thead>
                     <tbody>
-                      {displayTop.length > 0 ? displayTop.map((p, idx) => (
-                        <tr key={idx}>
-                          <td>{idx + 1}</td>
-                          <td>{p.chartNo}</td>
-                          <td className="font-bold" style={{ textAlign: 'left', color: 'var(--text-primary)' }}>{p.patientName}</td>
-                          <td>{p.doctor}</td>
-                          <td style={{ textAlign: 'right' }}>{(Number(p.revenue) || 0).toLocaleString()}원</td>
-                          <td style={{ textAlign: 'right', color: '#3b82f6', fontWeight: 'bold' }}>{(Number(p.paid) || 0).toLocaleString()}원</td>
-                          <td>{p.path}</td>
+                      {doctorNames.map((name, index) => (
+                        <tr key={name}>
+                          <td className="row-header">
+                            <span className="marker" style={{ backgroundColor: doctorColors[index % doctorColors.length] }}></span> 
+                            {name}
+                          </td>
+                          {currentHalfData.map(d => (
+                            <td key={d.month}>
+                              {(d.doctorData && Number(d.doctorData[name] || 0)).toLocaleString()}원
+                            </td>
+                          ))}
                         </tr>
-                      )) : (
-                        <tr><td colSpan="7" className="empty-state">해당 기간의 데이터가 없습니다. (환자별 수납내역 엑셀을 업로드해주세요)</td></tr>
-                      )}
+                      ))}
+                      <tr className="font-bold" style={{ borderTop: '2px solid var(--border-color)' }}>
+                        <td className="row-header"><span className="marker-yellow"></span> 총매출</td>
+                        {currentHalfData.map(d => <td key={d.month}>{Number(d.total || 0).toLocaleString()}원</td>)}
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -553,31 +697,7 @@ const SalesAnalysis = () => {
           </div>
         );
 
-      case 'doctor': // 6. 매출분석(의사)
-        return (
-          <div className="tab-pane active">
-            <DashboardCard title="의사별 매출 기여도 분석">
-              <ResponsiveContainer width="100%" height={450}>
-                <BarChart data={doctorChartData} layout="vertical" margin={{ left: 40, right: 120 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="var(--border-color)" />
-                  <XAxis type="number" hide />
-                  <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} stroke="var(--text-secondary)" width={100} />
-                  <Tooltip formatter={(v) => `${v.toLocaleString()}원`} />
-                  <Bar dataKey="amount" name="매출액" fill="#10b981" radius={[0, 4, 4, 0]} barSize={35}>
-                    <LabelList 
-                      dataKey="amount" position="right" 
-                      formatter={(val, entry, index) => {
-                        const lbl = `${(Number(val) || 0).toLocaleString()}원`;
-                        return index < 3 ? `${doctorChartData[index].name} (${lbl})` : lbl;
-                      }}
-                      style={{ fill: '#065f46', fontWeight: 'bold', fontSize: '13px' }}
-                    />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </DashboardCard>
-          </div>
-        );
+
 
       case 'summary': // 7. 매출 분석 정리
         return (
@@ -617,9 +737,11 @@ const SalesAnalysis = () => {
             <p>치과의 주요 경영 지표와 매출 통계를 한눈에 확인합니다.</p>
           </div>
           <div className="period-tabs">
+            <button className={half === 'all' ? 'active' : ''} onClick={() => setHalf('all')}>전체</button>
             <button className={half === 'first' ? 'active' : ''} onClick={() => setHalf('first')}>상반기</button>
             <button className={half === 'second' ? 'active' : ''} onClick={() => setHalf('second')}>하반기</button>
           </div>
+
         </div>
       </div>
 
