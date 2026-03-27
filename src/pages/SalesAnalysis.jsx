@@ -127,19 +127,29 @@ const SalesAnalysis = () => {
   const doctorChartData = React.useMemo(() => {
     const dataArray = Array.isArray(currentHalfData) ? currentHalfData : [];
     return dataArray.map(month => {
-      if (!month || typeof month !== 'object') return { month: 'Unknown', total: 0 };
+      if (!month || typeof month !== 'object') return { month: 'Unknown', total: 0, top2Names: [] };
       
       const entry = { 
         month: month.month || 'Unknown', 
         total: isNaN(Number(month.total)) ? 0 : Number(month.total) 
       };
       
+      const doctorValues = [];
       doctorNames.forEach(name => {
         const val = (month.doctorData && typeof month.doctorData === 'object') 
           ? Number(month.doctorData[name] || 0) 
           : 0;
         entry[name] = isNaN(val) ? 0 : val;
+        doctorValues.push({ name, value: entry[name] });
       });
+
+      // 해당 월의 1, 2위 의사 식별
+      entry.top2Names = doctorValues
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 2)
+        .filter(d => d.value > 0)
+        .map(d => d.name);
+
       return entry;
     });
   }, [currentHalfData, doctorNames]);
@@ -692,7 +702,24 @@ const SalesAnalysis = () => {
                         fill={doctorColors[idx % doctorColors.length]} 
                         barSize={15}
                         isAnimationActive={false} 
-                      />
+                      >
+                         <LabelList 
+                          dataKey={name} 
+                          position="top"
+                          content={(props) => {
+                            const { x, y, width, value, index } = props;
+                            const monthData = doctorChartData[index];
+                            if (monthData?.top2Names?.includes(name)) {
+                              return (
+                                <text x={x + width / 2} y={y - 5} fill="var(--text-primary)" fontSize={10} textAnchor="middle" fontWeight="bold">
+                                  {Math.floor(value / 10000).toLocaleString()}만
+                                </text>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                      </Bar>
                     ))}
                     
                     {/* 병원 총 매출 (Line) */}
@@ -704,7 +731,15 @@ const SalesAnalysis = () => {
                       strokeWidth={3} 
                       dot={{ r: 5, fill: '#6366f1' }}
                       isAnimationActive={false}
-                    />
+                    >
+                      <LabelList 
+                        dataKey="total" 
+                        position="top" 
+                        offset={15}
+                        formatter={(v) => `${Number(v || 0).toLocaleString()}원`} 
+                        style={{ fill: '#6366f1', fontSize: '11px', fontWeight: 'bold' }}
+                      />
+                    </Line>
                   </ComposedChart>
                 </ResponsiveContainer>
               </DashboardCard>
@@ -726,11 +761,19 @@ const SalesAnalysis = () => {
                             <span className="marker" style={{ backgroundColor: doctorColors[idx % doctorColors.length] }}></span> 
                             {name}
                           </td>
-                          {(currentHalfData || []).map(d => (
-                            <td key={`${d?.month}-${name}`}>
-                              {Number(d?.doctorData?.[name] ?? 0).toLocaleString()}원
-                            </td>
-                          ))}
+                          {(currentHalfData || []).map(d => {
+                            const amount = Number(d?.doctorData?.[name] ?? 0);
+                            const total = Number(d?.total ?? 1);
+                            const ratio = ((amount / (total || 1)) * 100).toFixed(1);
+                            return (
+                              <td key={`${d?.month}-${name}`}>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                  <span style={{ fontWeight: 'bold' }}>{amount.toLocaleString()}원</span>
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>({ratio}%)</span>
+                                </div>
+                              </td>
+                            );
+                          })}
                         </tr>
                       ))}
                       
