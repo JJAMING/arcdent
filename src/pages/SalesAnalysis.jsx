@@ -101,9 +101,11 @@ const SalesAnalysis = () => {
   const doctorChartData = React.useMemo(() => {
     if (!Array.isArray(currentHalfData)) return [];
     return currentHalfData.map(month => {
-      const entry = { month: month.month || '', total: Number(month.total) || 0 };
+      const entry = { month: month.month || '', total: Number(month.total || 0) };
       doctorNames.forEach(name => {
-        entry[name] = (month.doctorData && Number(month.doctorData[name])) || 0;
+        // NaN 방지를 위해 명시적으로 0 또는 숫자임을 보장
+        const val = month.doctorData ? Number(month.doctorData[name] || 0) : 0;
+        entry[name] = isNaN(val) ? 0 : val;
       });
       return entry;
     });
@@ -134,7 +136,10 @@ const SalesAnalysis = () => {
     }
   });
 
-  const currentHalfAgreedStats = half === 'first' ? agreedMonthlyStats.slice(0, 6) : agreedMonthlyStats.slice(6, 12);
+  const currentHalfAgreedStats = 
+    half === 'all' ? agreedMonthlyStats :
+    half === 'first' ? agreedMonthlyStats.slice(0, 6) : 
+    agreedMonthlyStats.slice(6, 12);
 
   // --- 진료비 상위 환자 (최근 월 기준) ---
   const topPatients = (currentHalfData[currentHalfData.length - 1]?.topPatients || []).slice(0, 20);
