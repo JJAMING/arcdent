@@ -620,12 +620,20 @@ const SalesAnalysis = () => {
 
       case 'doctor': // 6. 매출분석(의사)
         const doctorColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
-        const totalDoctorRevenue = currentHalfData.reduce((sum, d) => sum + (Number(d.total) || 0), 0);
         
+        // 데이터가 유효하지 않을 경우를 대비한 가드
+        if (!doctorChartData || doctorChartData.length === 0) {
+          return (
+            <div className="tab-pane active">
+              <div className="empty-state">차트 데이터를 불러오지 못했습니다. 매출 데이터를 다시 업로드해주세요.</div>
+            </div>
+          );
+        }
+
         return (
           <div className="tab-pane active">
             <div className="dashboard-stack">
-              <DashboardCard title="월별 의사 기여도 및 병원 매출 추이">
+              <DashboardCard title="월별 의사별 매출 기여도 및 전체 추이">
                 <ResponsiveContainer width="100%" height={450}>
                   <ComposedChart data={doctorChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -634,19 +642,26 @@ const SalesAnalysis = () => {
                       axisLine={false} 
                       tickLine={false} 
                       stroke="var(--text-secondary)"
-                      tickFormatter={(v) => `${Math.floor(v/10000).toLocaleString()}만`} 
+                      tickFormatter={(v) => {
+                        if (v === 0) return '0';
+                        return `${Math.floor(v/10000).toLocaleString()}만`;
+                      }} 
                     />
-                    <Tooltip formatter={(v) => `${v.toLocaleString()}원`} contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }} />
+                    <Tooltip 
+                      formatter={(v) => (v ? `${Number(v).toLocaleString()}원` : '0원')} 
+                      contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }} 
+                    />
                     <Legend verticalAlign="top" height={36}/>
                     
-                    {doctorNames.map((name, index) => (
+                    {Array.isArray(doctorNames) && doctorNames.map((name, index) => (
                       <Bar 
-                        key={name}
+                        key={`${name}-${index}`}
                         dataKey={name} 
                         name={name} 
                         stackId="a" 
                         fill={doctorColors[index % doctorColors.length]} 
                         barSize={40} 
+                        isAnimationActive={false}
                       />
                     ))}
                     
@@ -657,6 +672,7 @@ const SalesAnalysis = () => {
                       stroke="#6366f1" 
                       strokeWidth={3} 
                       dot={{ r: 5, fill: '#6366f1' }} 
+                      isAnimationActive={false}
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -668,18 +684,18 @@ const SalesAnalysis = () => {
                     <thead>
                       <tr>
                         <th className="row-header">구분</th>
-                        {currentHalfData.map(d => <th key={d.month}>{d.month}</th>)}
+                        {(currentHalfData || []).map(d => <th key={d.month || Math.random()}>{d.month || '-'}</th>)}
                       </tr>
                     </thead>
                     <tbody>
-                      {doctorNames.map((name, index) => (
+                      {Array.isArray(doctorNames) && doctorNames.map((name, index) => (
                         <tr key={name}>
                           <td className="row-header">
                             <span className="marker" style={{ backgroundColor: doctorColors[index % doctorColors.length] }}></span> 
                             {name}
                           </td>
-                          {currentHalfData.map(d => (
-                            <td key={d.month}>
+                          {(currentHalfData || []).map((d, dIdx) => (
+                            <td key={`${d.month}-${dIdx}`}>
                               {(d.doctorData && Number(d.doctorData[name] || 0)).toLocaleString()}원
                             </td>
                           ))}
@@ -687,7 +703,7 @@ const SalesAnalysis = () => {
                       ))}
                       <tr className="font-bold" style={{ borderTop: '2px solid var(--border-color)' }}>
                         <td className="row-header"><span className="marker-yellow"></span> 총매출</td>
-                        {currentHalfData.map(d => <td key={d.month}>{Number(d.total || 0).toLocaleString()}원</td>)}
+                        {(currentHalfData || []).map((d, dIdx) => <td key={`${d.month}-total-${dIdx}`}>{Number(d.total || 0).toLocaleString()}원</td>)}
                       </tr>
                     </tbody>
                   </table>
@@ -696,6 +712,7 @@ const SalesAnalysis = () => {
             </div>
           </div>
         );
+
 
 
 
