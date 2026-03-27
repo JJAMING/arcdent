@@ -15,18 +15,18 @@ import './SalesAnalysis.css';
 
 // --- MOCK DATA (100% Matching Structure) ---
 const MOCK_DATA = [
-  { month: '1월', netSales: 32000000, insurance: 8000000, total: 40000000, cash: 10000000, card: 22000000, other: 8000000, newPatient: 120, agreed: 85, newPatientSales: 12000000, doctorData: { '김원장': 15000000, '이원장': 12000000, '박원장': 5000000 } },
-  { month: '2월', netSales: 35000000, insurance: 9000000, total: 44000000, cash: 11000000, card: 24000000, other: 9000000, newPatient: 140, agreed: 95, newPatientSales: 15000000, doctorData: { '김원장': 16000000, '이원장': 14000000, '박원장': 5000000 } },
-  { month: '3월', netSales: 31000000, insurance: 8500000, total: 39500000, cash: 10000000, card: 21000000, other: 8500000, newPatient: 110, agreed: 75, newPatientSales: 11000000, doctorData: { '김원장': 14000000, '이원장': 12000000, '박원장': 5000000 } },
-  { month: '4월', netSales: 42000000, insurance: 11000000, total: 53000000, cash: 13000000, card: 29000000, other: 11000000, newPatient: 180, agreed: 120, newPatientSales: 20000000, doctorData: { '김원장': 20000000, '이원장': 15000000, '박원장': 7000000 } },
-  { month: '5월', netSales: 40000000, insurance: 10500000, total: 50500000, cash: 12500000, card: 27500000, other: 10500000, newPatient: 160, agreed: 110, newPatientSales: 18000000, doctorData: { '김원장': 18000000, '이원장': 15000000, '박원장': 7000000 } },
-  { month: '6월', netSales: 48000000, insurance: 13000000, total: 61000000, cash: 15000000, card: 33000000, other: 13000000, newPatient: 210, agreed: 150, newPatientSales: 25000000, doctorData: { '김원장': 22000000, '이원장': 18000000, '박원장': 8000000 } },
-  { month: '7월', netSales: 45000000, insurance: 12000000, total: 57000000, cash: 14000000, card: 31000000, other: 12000000, newPatient: 190, agreed: 130, newPatientSales: 19000000, doctorData: { '김원장': 20000000, '이원장': 17000000, '박원장': 8000000 } },
-  { month: '8월', netSales: 49000000, insurance: 13000000, total: 62000000, cash: 15500000, card: 33500000, other: 13000000, newPatient: 220, agreed: 160, newPatientSales: 22000000, doctorData: { '김원장': 22000000, '이원장': 19000000, '박원장': 8000000 } },
-  { month: '9월', netSales: 42000000, insurance: 11500000, total: 53500000, cash: 13000000, card: 29000000, other: 11500000, newPatient: 180, agreed: 120, newPatientSales: 18000000, doctorData: { '김원장': 19000000, '이원장': 16000000, '박원장': 7000000 } },
-  { month: '10월', netSales: 51000000, insurance: 14000000, total: 65000000, cash: 16000000, card: 35000000, other: 14000000, newPatient: 230, agreed: 170, newPatientSales: 23000000, doctorData: { '김원장': 23000000, '이원장': 20000000, '박원장': 8000000 } },
-  { month: '11월', netSales: 48000000, insurance: 13500000, total: 61500000, cash: 15000000, card: 33000000, other: 13500000, newPatient: 210, agreed: 150, newPatientSales: 21000000, doctorData: { '김원장': 22000000, '이원장': 18500000, '박원장': 7500000 } },
-  { month: '12월', netSales: 55000000, insurance: 16000000, total: 71000000, cash: 17500000, card: 37500000, other: 16000000, newPatient: 260, agreed: 190, newPatientSales: 26000000, doctorData: { '김원장': 25000000, '이원장': 21000000, '박원장': 9000000 } }
+  { month: '1월', netSales: 32000000, insurance: 8000000, total: 40000000, cash: 10000000, card: 22000000, other: 8000000, newPatient: 120, agreed: 85, newPatientSales: 12000000, doctorData: { '김원장': { pure: 15000000, insurance: 3000000 }, '이원장': { pure: 12000000, insurance: 3000000 }, '박원장': { pure: 5000000, insurance: 2000000 } } },
+  { month: '2월', netSales: 35000000, insurance: 9000000, total: 44000000, cash: 11000000, card: 24000000, other: 9000000, newPatient: 140, agreed: 95, newPatientSales: 15000000, doctorData: { '김원장': { pure: 16000000, insurance: 4000000 }, '이원장': { pure: 14000000, insurance: 3000000 }, '박원장': { pure: 5000000, insurance: 2000000 } } },
+  { month: '3월', netSales: 31000000, insurance: 8500000, total: 39500000, cash: 10000000, card: 21000000, other: 8500000, newPatient: 110, agreed: 75, newPatientSales: 11000000, doctorData: { '김원장': { pure: 14000000, insurance: 3500000 }, '이원장': { pure: 12000000, insurance: 3000000 }, '박원장': { pure: 5000000, insurance: 2000000 } } },
+  { month: '4월', netSales: 42000000, insurance: 11000000, total: 53000000, cash: 13000000, card: 29000000, other: 11000000, newPatient: 180, agreed: 120, newPatientSales: 20000000, doctorData: { '김원장': { pure: 20000000, insurance: 5000000 }, '이원장': { pure: 15000000, insurance: 4000000 }, '박원장': { pure: 7000000, insurance: 2000000 } } },
+  { month: '5월', netSales: 40000000, insurance: 10500000, total: 50500000, cash: 12500000, card: 27500000, other: 10500000, newPatient: 160, agreed: 110, newPatientSales: 18000000, doctorData: { '김원장': { pure: 18000000, insurance: 4500000 }, '이원장': { pure: 15000000, insurance: 4000000 }, '박원장': { pure: 7000000, insurance: 2000000 } } },
+  { month: '6월', netSales: 48000000, insurance: 13000000, total: 61000000, cash: 15000000, card: 33000000, other: 13000000, newPatient: 210, agreed: 150, newPatientSales: 25000000, doctorData: { '김원장': { pure: 22000000, insurance: 6000000 }, '이원장': { pure: 18000000, insurance: 5000000 }, '박원장': { pure: 8000000, insurance: 2000000 } } },
+  { month: '7월', netSales: 45000000, insurance: 12000000, total: 57000000, cash: 14000000, card: 31000000, other: 12000000, newPatient: 190, agreed: 130, newPatientSales: 19000000, doctorData: { '김원장': { pure: 20000000, insurance: 5500000 }, '이원장': { pure: 17000000, insurance: 4500000 }, '박원장': { pure: 8000000, insurance: 2000000 } } },
+  { month: '8월', netSales: 49000000, insurance: 13000000, total: 62000000, cash: 15500000, card: 33500000, other: 13000000, newPatient: 220, agreed: 160, newPatientSales: 22000000, doctorData: { '김원장': { pure: 22000000, insurance: 6500000 }, '이원장': { pure: 19000000, insurance: 4500000 }, '박원장': { pure: 8000000, insurance: 2000000 } } },
+  { month: '9월', netSales: 42000000, insurance: 11500000, total: 53500000, cash: 13000000, card: 29000000, other: 11500000, newPatient: 180, agreed: 120, newPatientSales: 18000000, doctorData: { '김원장': { pure: 19000000, insurance: 5000000 }, '이원장': { pure: 16000000, insurance: 4500000 }, '박원장': { pure: 7000000, insurance: 2000000 } } },
+  { month: '10월', netSales: 51000000, insurance: 14000000, total: 65000000, cash: 16000000, card: 35000000, other: 14000000, newPatient: 230, agreed: 170, newPatientSales: 23000000, doctorData: { '김원장': { pure: 23000000, insurance: 7000000 }, '이원장': { pure: 20000000, insurance: 5000000 }, '박원장': { pure: 8000000, insurance: 2000000 } } },
+  { month: '11월', netSales: 48000000, insurance: 13500000, total: 61500000, cash: 15000000, card: 33000000, other: 13500000, newPatient: 210, agreed: 150, newPatientSales: 21000000, doctorData: { '김원장': { pure: 22000000, insurance: 6000000 }, '이원장': { pure: 18500000, insurance: 5000000 }, '박원장': { pure: 7500000, insurance: 2500000 } } },
+  { month: '12월', netSales: 55000000, insurance: 16000000, total: 71000000, cash: 17500000, card: 37500000, other: 16000000, newPatient: 260, agreed: 190, newPatientSales: 26000000, doctorData: { '김원장': { pure: 25000000, insurance: 8000000 }, '이원장': { pure: 21000000, insurance: 6000000 }, '박원장': { pure: 9000000, insurance: 2000000 } } }
 ];
 
 // --- Error Boundary for Robustness ---
@@ -131,15 +131,29 @@ const SalesAnalysis = () => {
       
       const entry = { 
         month: month.month || 'Unknown', 
-        total: isNaN(Number(month.total)) ? 0 : Number(month.total) 
+        total: isNaN(Number(month.total)) ? 0 : Number(month.total),
+        netSales: isNaN(Number(month.netSales)) ? 0 : Number(month.netSales)
       };
       
       const doctorValues = [];
       doctorNames.forEach(name => {
-        const val = (month.doctorData && typeof month.doctorData === 'object') 
-          ? Number(month.doctorData[name] || 0) 
-          : 0;
-        entry[name] = isNaN(val) ? 0 : val;
+        const dData = (month.doctorData && typeof month.doctorData === 'object') ? month.doctorData[name] : null;
+        
+        let pureVal = 0;
+        let insVal = 0;
+        
+        if (dData) {
+          if (typeof dData === 'object') {
+            pureVal = Number(dData.pure || 0);
+            insVal = Number(dData.insurance || 0);
+          } else {
+            pureVal = Number(dData || 0);
+          }
+        }
+        
+        // 차트 막대는 순수매출+보험청구매출 합계로 표시
+        const combined = pureVal + insVal;
+        entry[name] = isNaN(combined) ? 0 : combined;
         doctorValues.push({ name, value: entry[name] });
       });
 
@@ -710,10 +724,29 @@ const SalesAnalysis = () => {
                             const { x, y, width, value, index } = props;
                             const monthData = doctorChartData[index];
                             if (monthData?.top2Names?.includes(name)) {
+                              const labelText = `${Number(value || 0).toLocaleString()}원`;
+                              const textWidth = labelText.length * 6.5; 
                               return (
-                                <text x={x + width / 2} y={y - 5} fill="var(--text-primary)" fontSize={10} textAnchor="middle" fontWeight="bold">
-                                  {Math.floor(value / 10000).toLocaleString()}만
-                                </text>
+                                <g>
+                                  <rect 
+                                    x={x + width / 2 - textWidth / 2 - 5} 
+                                    y={y - 25} 
+                                    width={textWidth + 10} 
+                                    height={20} 
+                                    rx={4} 
+                                    fill={doctorColors[idx % doctorColors.length]} 
+                                  />
+                                  <text 
+                                    x={x + width / 2} 
+                                    y={y - 11} 
+                                    fill="#fff" 
+                                    fontSize={10} 
+                                    textAnchor="middle" 
+                                    fontWeight="bold"
+                                  >
+                                    {labelText}
+                                  </text>
+                                </g>
                               );
                             }
                             return null;
@@ -762,14 +795,27 @@ const SalesAnalysis = () => {
                             {name}
                           </td>
                           {(currentHalfData || []).map(d => {
-                            const amount = Number(d?.doctorData?.[name] ?? 0);
-                            const total = Number(d?.total ?? 1);
-                            const ratio = ((amount / (total || 1)) * 100).toFixed(1);
+                            const dData = d?.doctorData?.[name];
+                            let pure = 0;
+                            let insurance = 0;
+                            if (dData) {
+                              if (typeof dData === 'object') {
+                                pure = Number(dData.pure || 0);
+                                insurance = Number(dData.insurance || 0);
+                              } else {
+                                pure = Number(dData || 0);
+                              }
+                            }
+                            
+                            const salesBase = Number(d?.netSales ?? 1); // 비중은 순수매출 대비로 계산
+                            const ratio = ((pure / (salesBase || 1)) * 100).toFixed(1);
+                            
                             return (
                               <td key={`${d?.month}-${name}`}>
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                                  <span style={{ fontWeight: 'bold' }}>{amount.toLocaleString()}원</span>
-                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>({ratio}%)</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                                  <div style={{ fontWeight: 'bold' }}>{pure.toLocaleString()}원 <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>(순수)</span></div>
+                                  <div style={{ color: '#6366f1', fontSize: '0.85rem' }}>{insurance.toLocaleString()}원 <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>(보험)</span></div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>비중: {ratio}%</div>
                                 </div>
                               </td>
                             );
