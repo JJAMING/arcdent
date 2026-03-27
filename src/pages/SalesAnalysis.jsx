@@ -816,15 +816,18 @@ const SalesAnalysis = () => {
                               }
                             }
                             
-                            const salesBase = Number(d?.netSales ?? 1); // 비중은 순수매출 대비로 계산
-                            const ratio = ((pure / (salesBase || 1)) * 100).toFixed(1);
+                            const monthEntry = doctorChartData.find(e => e.month === d.month);
+                            const combined = pure + insurance;
+                            
+                            const hospitalTotal = monthEntry ? monthEntry.total : Number(d?.total || 1); 
+                            const ratio = ((combined / (hospitalTotal || 1)) * 100).toFixed(1);
                             
                             return (
                               <td key={`${d?.month}-${name}`}>
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
                                   <div style={{ fontWeight: 'bold' }}>{pure.toLocaleString()}원 <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>(순수)</span></div>
                                   <div style={{ color: '#6366f1', fontSize: '0.85rem' }}>{insurance.toLocaleString()}원 <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>(보험)</span></div>
-                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>비중: {ratio}%</div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>비중: {ratio}% <span style={{ fontSize: '0.65rem' }}>(합산기준)</span></div>
                                 </div>
                               </td>
                             );
@@ -833,13 +836,19 @@ const SalesAnalysis = () => {
                       ))}
                       
                       {/* 총매출 행 */}
-                      <tr className="font-bold" style={{ borderTop: '2px solid var(--border-color)' }}>
+                      <tr className="font-bold" style={{ borderTop: '2px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
                         <td className="row-header"><span className="marker-yellow"></span> 총매출</td>
-                        {(currentHalfData || []).map(d => (
-                          <td key={`${d?.month}-total`}>
-                            {Number(d?.total ?? 0).toLocaleString()}원
-                          </td>
-                        ))}
+                        {(currentHalfData || []).map(d => {
+                          const monthEntry = doctorChartData.find(e => e.month === d.month);
+                          const totalVal = monthEntry ? monthEntry.total : Number(d?.total || 0);
+                          return (
+                            <td key={`${d?.month}-total`}>
+                              <div style={{ display: 'flex', justifyContent: 'flex-end', fontWeight: '800' }}>
+                                {totalVal.toLocaleString()}원
+                              </div>
+                            </td>
+                          );
+                        })}
                       </tr>
                     </tbody>
                   </table>
