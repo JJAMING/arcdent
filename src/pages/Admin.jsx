@@ -442,19 +442,29 @@ const Admin = () => {
                             let headerRowIdx = -1;
                             
                             // Find headers
-                            for (let i = 0; i < Math.min(25, rawData.length); i++) {
+                            for (let i = 0; i < Math.min(30, rawData.length); i++) {
                                 const row = rawData[i] || [];
                                 row.forEach((cell, idx) => {
                                     if (cell != null) {
                                         const strCell = String(cell).trim().replace(/\s+/g, '');
                                         // 담당의/의사 식별
                                         if (strCell.includes('차트번호')) colIndices.chartNo = idx;
-                                        else if (strCell === '성명' || strCell === '이름' || strCell === '환자명' || strCell === '환자이름') colIndices.name = idx;
-                                        else if (strCell.includes('담당의') || strCell.includes('의사') || strCell.includes('의사이름') || strCell.includes('의사명')) colIndices.doctor = idx;
+                                        else if (strCell === '성명' || strCell === '이름' || strCell === '환자명' || strCell === '환자이름' || strCell === '의사이름' || strCell === '의사명') {
+                                            if (strCell.includes('의사')) colIndices.doctor = idx;
+                                            else colIndices.name = idx;
+                                        }
+                                        else if (strCell.includes('담당의') || strCell.includes('의사') || strCell === '의사명' || strCell === '의사이름') colIndices.doctor = idx;
+                                        
                                         // 순수 수납액 식별 (카드/현금 등)
-                                        else if (strCell.includes('총수납액') || strCell.includes('수납합계') || strCell.includes('수납액') || strCell.includes('실수납액') || strCell.includes('수납금액') || strCell === '수납' || strCell === '납부액') colIndices.amount = idx;
+                                        else if (strCell.includes('총수납액') || strCell.includes('수납합계') || strCell.includes('수납액') || strCell.includes('실수납액') || strCell.includes('수납금액') || strCell === '수납' || strCell === '납부액' || strCell.includes('본인부담')) {
+                                            if (colIndices.amount === -1) colIndices.amount = idx;
+                                        }
+                                        
                                         // 보험 청구액 식별 (공단부담금)
-                                        else if (strCell.includes('공단부담') || strCell.includes('보험청구') || strCell.includes('의료보험') || strCell.includes('청구액')) colIndices.insurance = idx;
+                                        else if (strCell.includes('공단부담') || strCell.includes('보험청구') || strCell.includes('의료보험') || strCell.includes('청구액') || strCell.includes('보험액') || strCell.includes('공단')) {
+                                            if (colIndices.insurance === -1) colIndices.insurance = idx;
+                                        }
+                                        
                                         else if (strCell.includes('내원경로') || strCell.includes('유입')) colIndices.path = idx;
                                     }
                                 });
@@ -463,6 +473,11 @@ const Admin = () => {
                                     headerRowIdx = i;
                                     break;
                                 }
+                            }
+                            
+                            // 디버깅용 알림 (운영 상에서도 헤더 매칭 확인에 유용)
+                            if (headerRowIdx !== -1) {
+                                console.log(`[Header Match] Doctor:${colIndices.doctor}, Pure:${colIndices.amount}, Insurance:${colIndices.insurance}`);
                             }
 
                             if (headerRowIdx !== -1) {
