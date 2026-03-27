@@ -513,7 +513,8 @@ const Admin = () => {
                                     d.doctorData = doctorAgg;
                                     updatedCount++;
                                     const drList = Object.keys(doctorAgg).join(', ');
-                                    alert(`[의사별 매출 연동 성공] ${monthFromFile} 데이터가 업데이트되었습니다.\n(연동된 의사: ${drList || '없음'})`);
+                                    const colInfo = `[컬럼 매칭 정보]\n의사: ${colIndices.doctor+1}번, 순수액: ${colIndices.amount+1}번, 보험액: ${colIndices.insurance+1}번`;
+                                    alert(`[의사별 매출 연동 성공] ${monthFromFile} 데이터가 업데이트되었습니다.\n${colInfo}\n(연동된 의사: ${drList || '없음'})`);
                                     resolve();
                                 } else {
                                     reject(`월 데이터를 찾을 수 없습니다 (${monthFromFile})`);
