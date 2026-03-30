@@ -10,34 +10,6 @@ const Admin = () => {
     const fileInputRef = useRef(null);
 
     useEffect(() => {
-        // [임시 데이터 보강 삭제] 2025년 2월 동의환자 중복 데이터 완전 박멸 (사용자 요청)
-        try {
-            const T_YEAR = "2025";
-            const T_MONTH = "2월";
-
-            // 1. 동의환자 계획 데이터 정리 (타입 무관 강제 필터링)
-            const plans = JSON.parse(localStorage.getItem('treatment_plan_data') || '[]');
-            const filteredPlans = plans.filter(p => {
-                const yMatch = String(p.year || "").includes("2025");
-                const mMatch = String(p.month || "").includes("2월");
-                return !(yMatch && mMatch);
-            });
-            localStorage.setItem('treatment_plan_data', JSON.stringify(filteredPlans));
-
-            // 2. 수납 실적 데이터 정리
-            const performance = JSON.parse(localStorage.getItem('treatment_performance_data') || '[]');
-            const filteredPerf = performance.filter(p => {
-                const yMatch = String(p.year || "").includes("2025");
-                const mMatch = String(p.month || "").includes("2월");
-                return !(yMatch && mMatch);
-            });
-            localStorage.setItem('treatment_performance_data', JSON.stringify(filteredPerf));
-
-            console.log(`%c[Force Cleanup] 2025년 2월 데이터가 강제 정리되었습니다.`, 'color: #ff0000; font-weight: bold;');
-        } catch (e) {
-            console.error('Cleanup error:', e);
-        }
-
         setUsers(getAllUsers());
     }, []);
 
@@ -61,49 +33,34 @@ const Admin = () => {
             { month: '12월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 }
         ];
 
-        let salesDataMap = {};
-        if (savedDataStr) {
-            try {
-                const parsed = JSON.parse(savedDataStr);
-                if (Array.isArray(parsed)) salesDataMap["2025"] = parsed;
-                else salesDataMap = parsed;
-            } catch (e) { salesDataMap = {}; }
-        }
-
+        let salesDataMap = savedDataStr ? JSON.parse(savedDataStr) : { "2025": JSON.parse(JSON.stringify(defaultData)) };
         const savedPerfStr = localStorage.getItem('treatment_performance_data');
-        let treatmentPerfMap = {};
-        if (savedPerfStr) {
-            try {
-                const parsed = JSON.parse(savedPerfStr);
-                if (Array.isArray(parsed)) treatmentPerfMap["2025"] = parsed;
-                else treatmentPerfMap = parsed;
-            } catch (e) { treatmentPerfMap = {}; }
-        }
+        let treatmentPerfMap = savedPerfStr ? JSON.parse(savedPerfStr) : {};
 
         let updatedCount = 0;
 
         for (const file of files) {
-            const fileName = file.name;
-            const reader = new FileReader();
-
             const processFile = () => new Promise((resolve, reject) => {
-                reader.onload = (evt) => {
+                const reader = new FileReader();
+                reader.onload = async (event) => {
                     try {
-                        const bstr = evt.target.result;
-                        const wb = XLSX.read(bstr, { type: 'binary' });
+                        const data = XLSX.read(event.target.result, { type: 'binary' });
+                        const fileName = file.name;
                         let rawData = [];
-                        let colIndices = { chartNo: -1, name: -1, doctor: -1, amount: -1, insurance: -1, path: -1 };
+                        let colIndices = {};
                         let headerRowIdx = -1;
-                        let targetSheetName = wb.SheetNames[0];
 
-                        for (const sName of wb.SheetNames) {
-                            const ws = wb.Sheets[sName];
-                            const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
-                            const tempColIndices = { chartNo: -1, name: -1, doctor: -1, amount: -1, insurance: -1, path: -1 };
+                        // 시트 탐색
+                        for (const sName of data.SheetNames) {
+                            const ws = data.Sheets[sName];
+                            const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                            if (rows.length === 0) continue;
+
                             let tempHeaderRowIdx = -1;
+                            let tempColIndices = { doctor: -1, amount: -1, insurance: -1, name: -1, chartNo: -1, path: -1 };
 
-                            for (let i = 0; i < Math.min(40, data.length); i++) {
-                                const row = data[i] || [];
+                            for (let i = 0; i < Math.min(20, rows.length); i++) {
+                                const row = rows[i] || [];
                                 row.forEach((cell, idx) => {
                                     if (cell != null) {
                                         const strCell = String(cell).trim().replace(/\s+/g, '');
@@ -121,17 +78,15 @@ const Admin = () => {
                                 }
                             }
                             if (tempHeaderRowIdx !== -1) {
-                                rawData = data;
+                                rawData = rows;
                                 colIndices = tempColIndices;
                                 headerRowIdx = tempHeaderRowIdx;
-                                targetSheetName = sName;
                                 break;
                             }
                         }
 
                         if (rawData.length === 0) {
-                            targetSheetName = wb.SheetNames[0];
-                            const ws = wb.Sheets[targetSheetName];
+                            const ws = data.Sheets[data.SheetNames[0]];
                             rawData = XLSX.utils.sheet_to_json(ws, { header: 1 });
                         }
 
@@ -146,20 +101,20 @@ const Admin = () => {
                         };
 
                         const extractMonth = (str) => {
-                            let match = str.match(/(\d{1,2})월/);
-                            if (!match) match = str.match(/[\.\-\/](\d{1,2})(?!\d)/);
-                            if (!match) match = str.match(/^(\d{1,2})[\.\-\/]/);
-                            return match ? parseInt(match[1]) + '월' : null;
+                            let m = str.match(/(\d{1,2})월/);
+                            if (!m) m = str.match(/[\.\-\/](\d{1,2})(?!\d)/);
+                            if (!m) m = str.match(/^(\d{1,2})[\.\-\/]/);
+                            return m ? parseInt(m[1]) + '월' : null;
                         };
 
                         const extractYear = (str) => {
-                            let match = str.match(/(20\d{2})년/) || str.match(/(\d{2})년/);
-                            if (!match) {
-                                const yMatch = str.match(/(20\d{2})[\.\-\/]/) || str.match(/(\d{2})[\.\-\/]/) || str.match(/^(\d{2})[\.\-\/]/);
-                                if (yMatch) match = yMatch;
+                            let m = str.match(/(20\d{2})년/) || str.match(/(\d{2})년/);
+                            if (!m) {
+                                const ym = str.match(/(20\d{2})[\.\-\/]/) || str.match(/(\d{2})[\.\-\/]/) || str.match(/^(\d{2})[\.\-\/]/);
+                                if (ym) m = ym;
                             }
-                            if (match) {
-                                const y = match[1];
+                            if (m) {
+                                const y = m[1];
                                 return y.length === 2 ? "20" + y : y;
                             }
                             return "2025";
@@ -173,12 +128,13 @@ const Admin = () => {
                         }
                         const currentYearData = salesDataMap[yearFromFile];
 
-                        if (fileName.includes("치료비용계획") || fileName.includes("치료비용") || fileName.includes("동의") || fileName.includes("치료비")) {
+                        // 동의환자/치료비용계획 파일 처리
+                        if (fileName.includes("치료비용") || fileName.includes("동의") || fileName.includes("치료비")) {
                             const ci = {
                                 patientName: -1, chartNo: -1, createdAt: -1, status: -1, payStatus: -1,
                                 contractAmount: -1, paidAmount: -1, lastVisit: -1, nextAppt: -1
                             };
-                            let headerRowIdx = -1;
+                            let headerIdx = -1;
 
                             for (let i = 0; i < Math.min(20, rawData.length); i++) {
                                 const row = rawData[i] || [];
@@ -192,155 +148,112 @@ const Admin = () => {
                                     else if (s.includes('진행상태')) { ci.status = idx; found++; }
                                     else if (s.includes('수납상태')) { ci.payStatus = idx; found++; }
                                     else if (s.includes('계약금액') || s.includes('계획금액')) { ci.contractAmount = idx; found++; }
-                                    else if (s.includes('현재수납') || s.includes('수납금액') || s.includes('납부금액') || s.includes('받은금액')) { ci.paidAmount = idx; found++; }
-                                    else if (s.includes('최종내원')) { ci.lastVisit = idx; found++; }
-                                    else if (s.includes('다음예약')) { ci.nextAppt = idx; found++; }
+                                    else if (s.includes('현재수납') || s.includes('수납금액')) { ci.paidAmount = idx; found++; }
                                 });
-                                if (found >= 1) { headerRowIdx = i; break; }
+                                if (found >= 2) { headerIdx = i; break; }
                             }
 
-                            if (headerRowIdx !== -1) {
+                            if (headerIdx !== -1) {
                                 const plans = [];
-                                for (let i = headerRowIdx + 1; i < rawData.length; i++) {
+                                for (let i = headerIdx + 1; i < rawData.length; i++) {
                                     const row = rawData[i] || [];
-                                    const name = ci.patientName !== -1 ? String(row[ci.patientName] || '').trim() : (row[0] ? String(row[0]).trim() : '');
-                                    if (!name || name === '합계' || name === '총합계') continue;
-                                    const contract = ci.contractAmount !== -1 ? parseNum(row[ci.contractAmount]) : 0;
-                                    const paid = ci.paidAmount !== -1 ? parseNum(row[ci.paidAmount]) : 0;
-                                    
+                                    const name = ci.patientName !== -1 ? String(row[ci.patientName] || '').trim() : '';
+                                    if (!name || name === '합계') continue;
                                     plans.push({
                                         chartNo: ci.chartNo !== -1 ? String(row[ci.chartNo] || '').trim() : '',
                                         patientName: name,
-                                        createdAt: ci.createdAt !== -1 ? String(row[ci.createdAt] || '').trim() : `${yearFromFile}-${monthFromFile}`,
-                                        status: ci.status !== -1 ? String(row[ci.status] || '').trim() : '',
-                                        payStatus: ci.payStatus !== -1 ? String(row[ci.payStatus] || '').trim() : '',
-                                        contractAmount: contract,
-                                        paidAmount: paid,
-                                        lastVisit: ci.lastVisit !== -1 ? String(row[ci.lastVisit] || '').trim() : '',
-                                        nextAppt: ci.nextAppt !== -1 ? String(row[ci.nextAppt] || '').trim() : '',
                                         year: yearFromFile,
-                                        month: monthFromFile
+                                        month: monthFromFile,
+                                        contractAmount: ci.contractAmount !== -1 ? parseNum(row[ci.contractAmount]) : 0,
+                                        paidAmount: ci.paidAmount !== -1 ? parseNum(row[ci.paidAmount]) : 0,
+                                        status: ci.status !== -1 ? String(row[ci.status] || '').trim() : '',
+                                        createdAt: ci.createdAt !== -1 ? String(row[ci.createdAt] || '').trim() : `${yearFromFile}-${monthFromFile}`
                                     });
                                 }
+
+                                let allPlans = JSON.parse(localStorage.getItem('treatment_plan_data') || '[]');
                                 
-                                const savedPlans = localStorage.getItem('treatment_plan_data');
-                                let allPlans = savedPlans ? JSON.parse(savedPlans) : [];
-                                
-                                // [월 단위 전면 교체 로직] 업로드된 파일의 연도/월에 해당하는 기존 데이터를 먼저 모두 삭제합니다.
-                                allPlans = allPlans.filter(p => !(p.year === yearFromFile && p.month === monthFromFile));
-                                
-                                // 신규 데이터를 한꺼번에 추가합니다.
+                                // [월간 전면 교체 로직]
+                                allPlans = allPlans.filter(p => !(String(p.year) === String(yearFromFile) && String(p.month) === String(monthFromFile)));
                                 allPlans = [...allPlans, ...plans];
                                 
                                 localStorage.setItem('treatment_plan_data', JSON.stringify(allPlans));
                                 updatedCount++;
                                 resolve();
-                            } else {
-                                reject(`파일 내 헤더를 찾을 수 없습니다. (${fileName})`);
-                            }
+                            } else { reject(`파일 내 헤더를 찾을 수 없습니다. (${fileName})`); }
                         }
+                        // 월간장부 처리
                         else if (fileName.includes("월간장부")) {
                             const month = extractMonth(fileName);
-                            if (!month) {
-                                reject(`파일명에 월 정보가 없습니다 (${fileName})`);
-                                return;
-                            }
-                            
                             let cashVal = 0, cardVal = 0, otherVal = 0;
-                            let cashCol = -1, cardCol = -1, otherCol = -1, tonghapRowIdx = -1;
+                            let cashCol = -1, cardCol = -1, otherCol = -1, tonghapIdx = -1;
 
                             for (let r = 0; r < Math.min(100, rawData.length); r++) {
                                 const row = rawData[r] || [];
-                                for (let c = 0; c < row.length; c++) {
-                                    if (row[c] == null) continue;
-                                    const txt = String(row[c]).trim().replace(/\s+/g, '');
-                                    if (txt.includes('현금수입')) cashCol = c;
-                                    else if (txt.includes('카드수입')) cardCol = c;
-                                    else if (txt.includes('기타(온라인)수입')) otherCol = c;
-                                }
-                                if (cashCol !== -1 && cardCol !== -1 && otherCol !== -1) break;
-                            }
-
-                            for (let r = 0; r < rawData.length; r++) {
-                                const row = rawData[r] || [];
-                                const found = row.some(cell => {
-                                    if (cell == null) return false;
-                                    const s = String(cell).trim().replace(/\s+/g, '');
-                                    return s.includes(month) && (s.includes('통합') || s.includes('합계') || s.includes('계'));
+                                row.forEach((cell, idx) => {
+                                    if (!cell) return;
+                                    const t = String(cell).replace(/\s+/g, '');
+                                    if (t.includes('현금수입')) cashCol = idx;
+                                    else if (t.includes('카드수입')) cardCol = idx;
+                                    else if (t.includes('기타(온라인)')) otherCol = idx;
                                 });
-                                if (found) { tonghapRowIdx = r; break; }
                             }
-
-                            if (tonghapRowIdx !== -1) {
-                                if (cashCol !== -1) cashVal = parseNum(rawData[tonghapRowIdx][cashCol]);
-                                if (cardCol !== -1) cardVal = parseNum(rawData[tonghapRowIdx][cardCol]);
-                                if (otherCol !== -1) otherVal = parseNum(rawData[tonghapRowIdx][otherCol]);
+                            for (let r = 0; r < rawData.length; r++) {
+                                if ((rawData[r] || []).some(c => String(c).includes(month) && (String(c).includes('합계') || String(c).includes('통합')))) {
+                                    tonghapIdx = r; break;
+                                }
+                            }
+                            if (tonghapIdx !== -1) {
+                                if (cashCol !== -1) cashVal = parseNum(rawData[tonghapIdx][cashCol]);
+                                if (cardCol !== -1) cardVal = parseNum(rawData[tonghapIdx][cardCol]);
+                                if (otherCol !== -1) otherVal = parseNum(rawData[tonghapIdx][otherCol]);
                             }
 
                             const d = currentYearData.find(item => item.month === month);
                             if (d) {
-                                d.cash = cashVal;
-                                d.card = cardVal;
-                                d.other = otherVal;
+                                d.cash = cashVal; d.card = cardVal; d.other = otherVal;
                                 d.netSales = cashVal + cardVal + otherVal;
                                 d.total = d.netSales + (Number(d.insurance) || 0);
-                                updatedCount++;
-                                resolve();
-                            } else {
-                                reject(`대시보드에서 ${yearFromFile} ${month} 데이터를 찾을 수 없습니다.`);
-                            }
+                                updatedCount++; resolve();
+                            } else { reject(`${month} 데이터를 찾을 수 없습니다.`); }
                         }
                         else resolve();
-                    } catch (error) { reject(`분석 중 오류 발생 (${fileName})`); }
+                    } catch (err) { reject(`분석 오류: ${err.message}`); }
                 };
                 reader.readAsBinaryString(file);
             });
-
-            try { await processFile(); } catch (err) { alert(err); }
+            try { await processFile(); } catch (err) { console.error(err); }
         }
 
         if (updatedCount > 0) {
             localStorage.setItem('parsed_sales_data', JSON.stringify(salesDataMap));
-            localStorage.setItem('treatment_performance_data', JSON.stringify(treatmentPerfMap));
-            alert(`${updatedCount}개의 파일 데이터가 파싱되어 연도별 분석에 적용되었습니다.`);
+            alert(`${updatedCount}개 파일 처리 완료. (월 단위 데이터로 업데이트되었습니다.)`);
             window.location.reload();
         }
     };
 
-    const triggerFileInput = () => {
-        fileInputRef.current?.click();
-    };
+    const triggerFileInput = () => fileInputRef.current?.click();
 
     const handleForceCleanup = () => {
-        if (!window.confirm("정말로 2025년 2월의 모든 데이터를 초기화하시겠습니까? 중복된 데이터를 싹 지우고 다시 업로드할 수 있습니다.")) return;
-        
+        if (!window.confirm("2025년 2월 데이터를 강제 초기화하시겠습니까? 중복 데이터가 모두 지워집니다.")) return;
         try {
             const T_YEAR = "2025";
-            const T_MONTH = "2월";
+            const isTargetMonth = (m) => {
+                const s = String(m || "").trim();
+                return s === "2" || s === "02" || s === "2월" || s === "02월";
+            };
 
-            // 1. 동의환자 계획 데이터 정리
             const plans = JSON.parse(localStorage.getItem('treatment_plan_data') || '[]');
-            const filteredPlans = plans.filter(p => {
-                const yMatch = String(p.year || "").includes(T_YEAR);
-                const mMatch = String(p.month || "").includes(T_MONTH);
-                return !(yMatch && mMatch);
-            });
-            localStorage.setItem('treatment_plan_data', JSON.stringify(filteredPlans));
+            const filtered = plans.filter(p => !(String(p.year).includes(T_YEAR) && isTargetMonth(p.month)));
+            localStorage.setItem('treatment_plan_data', JSON.stringify(filtered));
 
-            // 2. 수납 실적 데이터 정리
-            const performance = JSON.parse(localStorage.getItem('treatment_performance_data') || '[]');
-            const filteredPerf = performance.filter(p => {
-                const yMatch = String(p.year || "").includes(T_YEAR);
-                const mMatch = String(p.month || "").includes(T_MONTH);
-                return !(yMatch && mMatch);
-            });
+            const perf = JSON.parse(localStorage.getItem('treatment_performance_data') || '[]');
+            const filteredPerf = perf.filter(p => !(String(p.year).includes(T_YEAR) && isTargetMonth(p.month)));
             localStorage.setItem('treatment_performance_data', JSON.stringify(filteredPerf));
 
-            alert("2025년 2월 데이터가 강제 초기화되었습니다. 이제 엑셀을 다시 업로드해 보세요.");
+            alert("2025년 2월 데이터가 강제 삭제되었습니다. 다시 업로드해 주세요.");
             window.location.reload();
-        } catch (e) {
-            alert("초기화 중 오류가 발생했습니다: " + e.message);
-        }
+        } catch (e) { alert("오류: " + e.message); }
     };
 
     return (
@@ -368,21 +281,15 @@ const Admin = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {users.length > 0 ? (
-                                    users.map(user => (
-                                        <tr key={user.id}>
-                                            <td>{user.name}</td>
-                                            <td>{user.clinicName}</td>
-                                            <td>{user.position}</td>
-                                            <td>{user.email}</td>
-                                            <td>{new Date(user.createdAt).toLocaleDateString()}</td>
-                                        </tr>
-                                    ))
-                                ) : (
-                                    <tr>
-                                        <td colSpan="5" className="empty-state">가입된 사용자가 없습니다.</td>
+                                {users.length > 0 ? users.map(user => (
+                                    <tr key={user.id}>
+                                        <td>{user.name}</td>
+                                        <td>{user.clinicName}</td>
+                                        <td>{user.position}</td>
+                                        <td>{user.email}</td>
+                                        <td>{new Date(user.createdAt).toLocaleDateString()}</td>
                                     </tr>
-                                )}
+                                )) : <tr><td colSpan="5">사용자가 없습니다.</td></tr>}
                             </tbody>
                         </table>
                     </div>
@@ -393,41 +300,18 @@ const Admin = () => {
                         <Upload size={24} className="admin-card-icon" />
                         <h2>엑셀 파일 업로드</h2>
                     </div>
-                    
                     <div className="upload-area" onClick={triggerFileInput}>
                         <FileSpreadsheet size={48} className="upload-icon" />
                         <h3>파일을 여기로 드래그하거나 클릭하여 업로드하세요</h3>
-                        <p>.xlsx, .xls, .csv 파일 지원</p>
-                        <input 
-                            type="file" 
-                            multiple
-                            ref={fileInputRef} 
-                            onChange={handleFileUpload}
-                            accept=".xlsx, .xls, .csv"
-                            style={{ display: 'none' }}
-                        />
+                        <p>.xlsx, .xls, .csv 지원</p>
+                        <input type="file" multiple ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx, .xls, .csv" style={{ display: 'none' }} />
                     </div>
-
                     <div style={{ marginTop: '1.5rem', padding: '1rem', background: '#fff5f5', borderRadius: '8px', border: '1px solid #feb2b2' }}>
-                        <h4 style={{ color: '#c53030', fontSize: '0.9rem', marginBottom: '0.5rem' }}>데이터 긴급 관리</h4>
-                        <button 
-                            onClick={handleForceCleanup}
-                            style={{
-                                width: '100%',
-                                padding: '0.75rem',
-                                background: '#f56565',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '6px',
-                                fontWeight: 'bold',
-                                cursor: 'pointer'
-                            }}
-                        >
+                        <h4 style={{ color: '#c53030', marginBottom: '0.5rem' }}>데이터 긴급 관리</h4>
+                        <button onClick={handleForceCleanup} style={{ width: '100%', padding: '0.75rem', background: '#f56565', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
                             2025년 2월 데이터 강제 초기화
                         </button>
-                        <p style={{ fontSize: '0.75rem', color: '#742a2a', marginTop: '0.4rem' }}>
-                            ※ 중복이 발생했을 때만 클릭하세요. 25년 2월 동의환자 데이터만 선택 삭제됩니다.
-                        </p>
+                        <p style={{ fontSize: '0.75rem', color: '#742a2a', marginTop: '0.4rem' }}>※ 중복 발생 시 클릭하세요. 25년 2월 데이터만 삭제됩니다.</p>
                     </div>
                 </div>
             </div>
