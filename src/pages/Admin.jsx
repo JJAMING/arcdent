@@ -173,12 +173,19 @@ const Admin = () => {
                         };
 
                         const extractMonth = (str) => {
-                            const match = str.match(/(\d{1,2})월/);
+                            let match = str.match(/(\d{1,2})월/);
+                            if (!match) match = str.match(/[\.\-\/](\d{1,2})(?!\d)/); // (e.g. .02, -2)
+                            if (!match) match = str.match(/^(\d{1,2})[\.\-\/]/); // (e.g. 02.)
                             return match ? parseInt(match[1]) + '월' : null;
                         };
 
                         const extractYear = (str) => {
-                            const match = str.match(/(20\d{2})년/) || str.match(/(\d{2})년/);
+                            let match = str.match(/(20\d{2})년/) || str.match(/(\d{2})년/);
+                            if (!match) {
+                                // .25, -2025 등 패턴 대응
+                                const yMatch = str.match(/(20\d{2})[\.\-\/]/) || str.match(/(\d{2})[\.\-\/]/) || str.match(/^(\d{2})[\.\-\/]/);
+                                if (yMatch) match = yMatch;
+                            }
                             if (match) {
                                 const y = match[1];
                                 return y.length === 2 ? "20" + y : y;
@@ -188,6 +195,7 @@ const Admin = () => {
 
                         const monthFromFile = extractMonth(fileName);
                         const yearFromFile = extractYear(fileName);
+                        console.log(`[Excel Parse Debug] File: ${fileName} -> Extracted: ${yearFromFile} ${monthFromFile}`);
 
                         // 해당 연도 데이터 준비
                         if (!salesDataMap[yearFromFile]) {
@@ -196,7 +204,7 @@ const Admin = () => {
                         const currentYearData = salesDataMap[yearFromFile];
 
                         // --- CASE 4 (우선): 치료비용계획 (동의환자 수납 상세) ---
-                        if (fileName.includes("치료비용계획") || fileName.includes("치료비용")) {
+                        if (fileName.includes("치료비용계획") || fileName.includes("치료비용") || fileName.includes("동의") || fileName.includes("치료비")) {
                             const ci = {
                                 patientName: -1, chartNo: -1, createdAt: -1, status: -1, payStatus: -1,
                                 contractAmount: -1, paidAmount: -1, lastVisit: -1, nextAppt: -1
@@ -251,12 +259,17 @@ const Admin = () => {
                                 let allPlans = savedPlans ? JSON.parse(savedPlans) : [];
                                 
                                 plans.forEach(newP => {
-                                    const index = allPlans.findIndex(oldP => 
-                                        oldP.year === newP.year && 
-                                        oldP.month === newP.month && 
-                                        oldP.chartNo === newP.chartNo && 
-                                        oldP.patientName === newP.patientName
-                                    );
+                                    const index = allPlans.findIndex(oldP => {
+                                        const oldName = String(oldP.patientName || '').replace(/\s+/g, '');
+                                        const newName = String(newP.patientName || '').replace(/\s+/g, '');
+                                        const oldChart = String(oldP.chartNo || '').trim();
+                                        const newChart = String(newP.chartNo || '').trim();
+                                        
+                                        return oldP.year === newP.year && 
+                                               oldP.month === newP.month && 
+                                               oldChart === newChart && 
+                                               oldName === newName;
+                                    });
                                     if (index !== -1) {
                                         allPlans[index] = newP; // 기존 항목 업데이트
                                     } else {
