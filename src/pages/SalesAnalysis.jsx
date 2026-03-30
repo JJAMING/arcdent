@@ -722,12 +722,12 @@ const SalesAnalysis = () => {
         const rightTop = sortedTop.slice(10, 20);
 
         // --- 정교화된 통계 계산 ---
-        // 1. 순매출액: 총 매출현황의 해당 월(또는 전체) 순매출 데이터 사용
+        // 1. 순매출액: 총 매출현황의 해당 월(또는 전체) 순매출 데이터 사용 (doctorChartData 연동)
         let topNetSales = 0;
         if (selectedTopMonth === '전체') {
-            topNetSales = currentHalfData.reduce((sum, d) => sum + (Number(d?.netSales) ?? 0), 0);
+            topNetSales = doctorChartData.reduce((sum, d) => sum + (Number(d?.netSales) ?? 0), 0);
         } else {
-            const mData = salesData.find(d => d.month === selectedTopMonth);
+            const mData = doctorChartData.find(d => d.month === selectedTopMonth);
             topNetSales = mData ? (Number(mData?.netSales) ?? 0) : 0;
         }
 
