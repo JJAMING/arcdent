@@ -249,7 +249,7 @@ const Admin = () => {
                                 reject(`연간장부 파일 구조 분석 실패: '카드', '현금', '기타(온라인)', '공단부담(청구액)' 헤더를 확인해주세요. (${fileName})`);
                             }
                         }
-                        else if (fileName.includes("내원경로") || fileName.includes("신환")) {
+                        else if (fileName.includes("내원경로") || fileName.includes("신환") || fileName.includes("신규환자")) {
                             if (!monthFromFile) {
                                 reject(`파일명에 월 정보가 없습니다 (${fileName})`);
                                 return;
@@ -258,33 +258,33 @@ const Admin = () => {
                             let extractedNewPatients = 0;
                             let extractedNewPatientSales = 0;
 
-                            // [매트릭스 파싱] 헤더 열과 합계 행의 교차점 찾기 (전수 조사 방식)
+                            // [매트릭스 파싱] 헤더 열과 합계 행의 교차점 찾기
                             let newPatientCol = -1;
                             let salesCol = -1;
                             let totalRowIdx = -1;
 
-                            // 1. 헤더 탐색 (최상단 20행 내에서 '신환수'와 '총진료비' 열 인덱스 확인)
-                            for (let r = 0; r < Math.min(25, rawData.length); r++) {
+                            // 1. 헤더 탐색 (가로 항목명 식별)
+                            for (let r = 0; r < Math.min(50, rawData.length); r++) {
                                 const row = rawData[r] || [];
                                 for (let c = 0; c < row.length; c++) {
                                     const txt = String(row[c] || '').trim().replace(/\s+/g, '');
                                     
-                                    // '신환수' 열 찾기 (내원객수 배제)
-                                    if ((txt.includes('신환') || txt.includes('신규')) && (txt.includes('수') || txt.includes('인원')) && !txt.includes('내원')) {
+                                    // '신환수' 열 찾기
+                                    if (txt === '신환수' || ((txt.includes('신환') || txt.includes('신규')) && (txt.includes('수') || txt.includes('인원')) && !txt.includes('내원'))) {
                                         if (!txt.includes('비') && !txt.includes('매출') && !txt.includes('액')) {
                                             newPatientCol = c;
                                         }
                                     }
                                     
-                                    // '총 진료비' 열 찾기 (사용자 지정 가로열)
-                                    if ((txt.includes('진료비') || txt.includes('매출') || txt.includes('금액') || (txt.includes('신환') && txt.includes('합'))) && (txt.includes('합계') || txt.includes('총액') || txt.includes('액') || txt.includes('계') || txt.includes('총'))) {
+                                    // '총 진료비' 열 찾기
+                                    if (txt === '총진료비' || ((txt.includes('진료비') || txt.includes('매출') || txt.includes('금액')) && (txt.includes('총') || txt.includes('합계') || txt.includes('계')))) {
                                         salesCol = c;
                                     }
                                 }
                                 if (newPatientCol !== -1 && salesCol !== -1) break;
                             }
 
-                            // 2. 합계 행 탐색 (하단에서 역순으로, 행 전체에서 '합계' 키워드 검색)
+                            // 2. 합계 행 탐색 (세로 합계 라벨 식별)
                             for (let r = rawData.length - 1; r >= 0; r--) {
                                 const row = rawData[r] || [];
                                 const hasTotal = row.some(cell => {
@@ -305,23 +305,15 @@ const Admin = () => {
 
                             // [Fallback] 매트릭스 탐색 실패 시 주변 서치
                             if (extractedNewPatients === 0 || extractedNewPatientSales === 0) {
-                                for (let r = 0; r < rawData.length; r++) {
+                                for (let r = 0; r < Math.min(200, rawData.length); r++) {
                                     const row = rawData[r] || [];
                                     for (let c = 0; c < row.length; c++) {
                                         const cellText = String(row[c] || '').trim().replace(/\s+/g, '');
-                                        // 신환 수 폴백
-                                        if (extractedNewPatients === 0 && (cellText.includes('신환수') || (cellText.includes('신규') && cellText.includes('수'))) && !cellText.includes('내원') && (cellText.includes('합계') || cellText.includes('계'))) {
-                                            for (let k = 1; k <= 3; k++) {
-                                                const v = parseNum(row[c + k]);
-                                                if (v > 0 && v < 2000) { extractedNewPatients = v; break; }
-                                            }
+                                        if (extractedNewPatients === 0 && (cellText === '신환수' || (cellText.includes('신환') && cellText.includes('합계')))) {
+                                            extractedNewPatients = parseNum(row[c+1]);
                                         }
-                                        // 신환 매출 폴백
-                                        if (extractedNewPatientSales === 0 && (cellText.includes('진료비') || cellText.includes('매출') || cellText.includes('금액')) && (cellText.includes('합계') || cellText.includes('총'))) {
-                                            for (let k = 1; k <= 3; k++) {
-                                                const v = parseNum(row[c + k]);
-                                                if (v > 1000) { extractedNewPatientSales = v; break; }
-                                            }
+                                        if (extractedNewPatientSales === 0 && (cellText === '총진료비' || (cellText.includes('진료비') && cellText.includes('합계')))) {
+                                            extractedNewPatientSales = parseNum(row[c+1]);
                                         }
                                     }
                                 }
@@ -332,12 +324,11 @@ const Admin = () => {
                                 if (extractedNewPatients > 0) d.newPatient = extractedNewPatients;
                                 if (extractedNewPatientSales > 0) d.newPatientSales = extractedNewPatientSales;
                                 
-                                localStorage.setItem('parsed_sales_data', JSON.stringify(currentData));
-                                alert(`[데이터 연동 완료] ${monthFromFile} 신환 수: ${extractedNewPatients || '미발견'}명 / 신환 매출: ${(extractedNewPatientSales || 0).toLocaleString()}원`);
+                                alert(`[신환수익비교 연동 완료] ${monthFromFile}\n신환 수: ${extractedNewPatients.toLocaleString()}명\n신환 매출(총 진료비): ${extractedNewPatientSales.toLocaleString()}원`);
                                 updatedCount++;
                                 resolve();
                             } else {
-                                reject(`파일 내 데이터(${extractedNewPatients}명, ${extractedNewPatientSales}원)는 찾았으나, ${monthFromFile} 데이터를 대시보드에 업데이트할 수 없습니다.`);
+                                reject(`대시보드에서 ${monthFromFile} 데이터를 찾을 수 없습니다.`);
                             }
                         }
                         else if (fileName.includes("임플란트수술통계")) {
