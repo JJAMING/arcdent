@@ -391,8 +391,8 @@ const SalesAnalysis = () => {
                     <Bar dataKey="netSales" name="순매출" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40}>
                       <LabelList dataKey="netSales" content={<CustomizedLabel fill="#3b82f6" />} />
                     </Bar>
-                    <Bar dataKey="insurance" name="보험청구" fill="#93c5fd" radius={[4, 4, 0, 0]} barSize={40}>
-                      <LabelList dataKey="insurance" content={<CustomizedLabel fill="#60a5fa" />} />
+                    <Bar dataKey="insurance" name="보험청구" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40}>
+                      <LabelList dataKey="insurance" content={<CustomizedLabel fill="#10b981" />} />
                     </Bar>
                     <Line type="monotone" dataKey="total" name="총합계" stroke="#f59e0b" strokeWidth={3} dot={{ r: 5, fill: '#f59e0b' }}>
                       <LabelList dataKey="total" content={<CustomizedLineLabel stroke="#f59e0b" />} />
