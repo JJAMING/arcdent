@@ -32,7 +32,21 @@ const Admin = () => {
             { month: '11월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 },
             { month: '12월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 }
         ];
-        let currentData = savedDataStr ? JSON.parse(savedDataStr) : defaultData;
+
+        // [연도별 지원] 데이터 맵 로드 및 마이그레이션
+        let salesDataMap = {};
+        if (savedDataStr) {
+            try {
+                const parsed = JSON.parse(savedDataStr);
+                if (Array.isArray(parsed)) {
+                    // 기존 배열 형식 처리 (2025년으로 마이그레이션)
+                    salesDataMap["2025"] = parsed;
+                } else {
+                    salesDataMap = parsed;
+                }
+            } catch (e) { salesDataMap = {}; }
+        }
+
         let updatedCount = 0;
         let newUploadedFiles = [];
 
@@ -122,7 +136,23 @@ const Admin = () => {
                             return match ? parseInt(match[1]) + '월' : null;
                         };
 
+                        const extractYear = (str) => {
+                            const match = str.match(/(20\d{2})년/) || str.match(/(\d{2})년/);
+                            if (match) {
+                                const y = match[1];
+                                return y.length === 2 ? "20" + y : y;
+                            }
+                            return "2025"; // 기본값
+                        };
+
                         const monthFromFile = extractMonth(fileName);
+                        const yearFromFile = extractYear(fileName);
+
+                        // 해당 연도 데이터 준비
+                        if (!salesDataMap[yearFromFile]) {
+                            salesDataMap[yearFromFile] = JSON.parse(JSON.stringify(defaultData));
+                        }
+                        const currentYearData = salesDataMap[yearFromFile];
 
                         // --- CASE 4 (우선): 치료비용계획 (동의환자 수납 상세) ---
                         if (fileName.includes("치료비용계획") || fileName.includes("치료비용")) {
@@ -158,41 +188,34 @@ const Admin = () => {
                                     if (!name || name === '합계' || name === '총합계' || name === '환자명' || name === '성명') continue;
                                     const contract = ci.contractAmount !== -1 ? parseNum(row[ci.contractAmount]) : 0;
                                     const paid = ci.paidAmount !== -1 ? parseNum(row[ci.paidAmount]) : 0;
-                                    if (!name) continue;
+                                    
                                     plans.push({
                                         patientName: name,
-                                        createdAt: ci.createdAt !== -1 ? String(row[ci.createdAt] || '').trim() : '',
+                                        createdAt: ci.createdAt !== -1 ? String(row[ci.createdAt] || '').trim() : `${yearFromFile}-${monthFromFile}`,
                                         status: ci.status !== -1 ? String(row[ci.status] || '').trim() : '',
                                         payStatus: ci.payStatus !== -1 ? String(row[ci.payStatus] || '').trim() : '',
                                         contractAmount: contract,
                                         paidAmount: paid,
                                         lastVisit: ci.lastVisit !== -1 ? String(row[ci.lastVisit] || '').trim() : '',
                                         nextAppt: ci.nextAppt !== -1 ? String(row[ci.nextAppt] || '').trim() : '',
+                                        year: yearFromFile,
+                                        month: monthFromFile
                                     });
                                 }
-                                if (plans.length > 0) {
-                                    localStorage.setItem('treatment_plan_data', JSON.stringify(plans));
-                                    updatedCount++;
-                                    resolve();
-                                } else {
-                                    localStorage.setItem('treatment_plan_data', JSON.stringify([]));
-                                    updatedCount++;
-                                    resolve();
-                                }
-                            } else {
-                                const plans = rawData.slice(1).map(row => ({
-                                    patientName: String(row[0] || '').trim(),
-                                    createdAt: String(row[1] || '').trim(),
-                                    status: String(row[2] || '').trim(),
-                                    payStatus: String(row[3] || '').trim(),
-                                    contractAmount: parseNum(row[4]),
-                                    paidAmount: parseNum(row[5]),
-                                    lastVisit: String(row[6] || '').trim(),
-                                    nextAppt: String(row[7] || '').trim(),
-                                })).filter(r => r.patientName && r.patientName !== '합계');
-                                localStorage.setItem('treatment_plan_data', JSON.stringify(plans));
+                                
+                                // [누적 저장 로직] 기존 데이터 병합
+                                const savedPlans = localStorage.getItem('treatment_plan_data');
+                                let allPlans = savedPlans ? JSON.parse(savedPlans) : [];
+                                // 현재 업로드하는 연도/월과 겹치는 기존 데이터 제거 (업데이트)
+                                allPlans = allPlans.filter(p => !(p.year === yearFromFile && p.month === monthFromFile));
+                                // 새 데이터 추가
+                                const mergedPlans = [...allPlans, ...plans];
+                                
+                                localStorage.setItem('treatment_plan_data', JSON.stringify(mergedPlans));
                                 updatedCount++;
                                 resolve();
+                            } else {
+                                reject(`파일 내 헤더를 찾을 수 없습니다. (${fileName})`);
                             }
                         }
                         else if (fileName.includes("연간장부") || fileName.includes("매출통합")) {
@@ -319,16 +342,16 @@ const Admin = () => {
                                 }
                             }
 
-                            const d = currentData.find(item => item.month === monthFromFile);
+                            const d = currentYearData.find(item => item.month === monthFromFile);
                             if (d) {
                                 if (extractedNewPatients > 0) d.newPatient = extractedNewPatients;
                                 if (extractedNewPatientSales > 0) d.newPatientSales = extractedNewPatientSales;
                                 
-                                alert(`[신환수익비교 연동 완료] ${monthFromFile}\n신환 수: ${extractedNewPatients.toLocaleString()}명\n신환 매출(총 진료비): ${extractedNewPatientSales.toLocaleString()}원`);
+                                alert(`[신환수익비교 연동 완료] ${yearFromFile} ${monthFromFile}\n신환 수: ${extractedNewPatients.toLocaleString()}명\n신환 매출(총 진료비): ${extractedNewPatientSales.toLocaleString()}원`);
                                 updatedCount++;
                                 resolve();
                             } else {
-                                reject(`대시보드에서 ${monthFromFile} 데이터를 찾을 수 없습니다.`);
+                                reject(`대시보드에서 ${yearFromFile} ${monthFromFile} 데이터를 찾을 수 없습니다.`);
                             }
                         }
                         else if (fileName.includes("임플란트수술통계")) {
@@ -630,7 +653,7 @@ const Admin = () => {
                                 }
                             }
 
-                            const d = currentData.find(item => item.month === month);
+                            const d = currentYearData.find(item => item.month === month);
                             if (d) {
                                 d.cash = cashVal;
                                 d.card = cardVal;
@@ -638,11 +661,11 @@ const Admin = () => {
                                 d.netSales = cashVal + cardVal + otherVal;
                                 d.total = d.netSales + (Number(d.insurance) || 0);
                                 
-                                alert(`[월간장부 자동 연동] ${month} 결과\n행: "${month} 통합/합계"\n현금: ${cashVal.toLocaleString()}\n카드: ${cardVal.toLocaleString()}\n기타: ${otherVal.toLocaleString()}`);
+                                alert(`[월간장부 자동 연동] ${yearFromFile} ${month} 결과\n행: "${month} 통합/합계"\n현금: ${cashVal.toLocaleString()}\n카드: ${cardVal.toLocaleString()}\n기타: ${otherVal.toLocaleString()}`);
                                 updatedCount++;
                                 resolve();
                             } else {
-                                reject(`대시보드에서 ${month} 데이터를 찾을 수 없습니다.`);
+                                reject(`대시보드에서 ${yearFromFile} ${month} 데이터를 찾을 수 없습니다.`);
                             }
                         }
                         else {
@@ -663,8 +686,8 @@ const Admin = () => {
         }
 
         if (updatedCount > 0) {
-            localStorage.setItem('parsed_sales_data', JSON.stringify(currentData));
-            alert(`${updatedCount}개의 파일 데이터가 파싱되어 매출 분석에 적용되었습니다.`);
+            localStorage.setItem('parsed_sales_data', JSON.stringify(salesDataMap));
+            alert(`${updatedCount}개의 파일 데이터가 파싱되어 연도별 매출 분석에 적용되었습니다.`);
             window.location.reload();
         }
     };

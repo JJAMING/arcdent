@@ -54,8 +54,12 @@ class TabErrorBoundary extends React.Component {
 }
 
 const SalesAnalysis = () => {
-  const [half, setHalf] = useState('first');
+  const [half, setHalf] = useState('all'); // 기본: 전체
   const [subTab, setSubTab] = useState('total'); // 기본탭: 총 매출 현황
+  const [selectedYear, setSelectedYear] = useState('2025');
+  const [availableYears, setAvailableYears] = useState(['2025']);
+  
+  const [salesDataMap, setSalesDataMap] = useState({ "2025": MOCK_DATA });
   const [salesData, setSalesData] = useState(MOCK_DATA);
   const [agreedPatients, setAgreedPatients] = useState([]);
   const [comment, setComment] = useState('상반기 매출이 전년 대비 15% 성장하였습니다. 특히 4월과 6월 임플란트 패키지 프로모션으로 인한 순매출 증대가 두드러집니다. 하반기에는 리콜 환자 관리를 통한 재내원율 향상이 주요 과제입니다.');
@@ -65,12 +69,26 @@ const SalesAnalysis = () => {
   const [selectedDoctorMonth, setSelectedDoctorMonth] = useState('전체');
 
   useEffect(() => {
-    // 1. 매출 데이터 로드
+    // 1. 매출 데이터 로드 (연도별 맵 지원)
     const savedSales = localStorage.getItem('parsed_sales_data');
     if (savedSales) {
       try {
         const parsed = JSON.parse(savedSales);
-        if (Array.isArray(parsed) && parsed.length === 12) setSalesData(parsed);
+        let finalMap = {};
+        if (Array.isArray(parsed)) {
+            finalMap = { "2025": parsed };
+        } else {
+            finalMap = parsed;
+        }
+        
+        const years = Object.keys(finalMap).sort((a, b) => b - a);
+        setAvailableYears(years.length > 0 ? years : ['2025']);
+        setSalesDataMap(finalMap);
+        
+        // 현재 선택된 연도의 데이터로 초기화
+        const initialYear = years.includes('2025') ? '2025' : (years[0] || '2025');
+        setSelectedYear(initialYear);
+        if (finalMap[initialYear]) setSalesData(finalMap[initialYear]);
       } catch (e) { console.error(e); }
     }
 
@@ -96,10 +114,18 @@ const SalesAnalysis = () => {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
+  // 연도 변경 핸들러
+  const handleYearChange = (year) => {
+    setSelectedYear(year);
+    if (salesDataMap[year]) {
+      setSalesData(salesDataMap[year]);
+    }
+  };
+
   const currentHalfData = 
-    half === 'all' ? salesData :
-    half === 'first' ? salesData.slice(0, 6) : 
-    salesData.slice(6, 12);
+    half === 'all' ? (Array.isArray(salesData) ? salesData : []) :
+    half === 'first' ? (Array.isArray(salesData) ? salesData.slice(0, 6) : []) : 
+    (Array.isArray(salesData) ? salesData.slice(6, 12) : []);
 
   
   // --- 공통 통계 계산 ---
@@ -174,8 +200,12 @@ const SalesAnalysis = () => {
 
       // 동의환자 데이터(치료종결, 진행중) 카운트하여 동의 건수에 연동
       entry.agreed = (agreedPatients || []).filter(p => {
+        // 연도 필터링
+        const pYear = p.year || (p.createdAt ? p.createdAt.split('-')[0] : '');
+        if (pYear && pYear !== selectedYear) return false;
+
         if (!p.createdAt) return false;
-        // Parse month from various formats: 2024-03-27, 2024.03.27, 3월 27일 등
+        // Parse month from various formats
         const mMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/[\.\-\/](\d{1,2})[\.\-\/]/) || p.createdAt.match(/^(\d{1,2})[\.\-\/]/);
         let mStr = null;
         if (mMatch) {
@@ -183,7 +213,7 @@ const SalesAnalysis = () => {
             if (mNum >= 1 && mNum <= 12) mStr = mNum + '월';
         }
         
-        const status = (p.status || '').replace(/\s+/g, ''); // 공백 제거 후 비교
+        const status = (p.status || '').replace(/\s+/g, '');
         const statusMatch = status.includes('치료종결') || status.includes('진행중');
         
         return mStr === entry.month && statusMatch;
@@ -213,6 +243,10 @@ const SalesAnalysis = () => {
   ];
 
   agreedPatients.forEach(p => {
+    // 연도 필터링
+    const pYear = p.year || (p.createdAt ? p.createdAt.split('-')[0] : '');
+    if (pYear && pYear !== selectedYear) return;
+
     const monthMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/-(\d+)-/);
     if (monthMatch) {
       const mNum = parseInt(monthMatch[1]);
@@ -1091,10 +1125,25 @@ const SalesAnalysis = () => {
             <h1>매출 분석 대시보드</h1>
             <p>치과의 주요 경영 지표와 매출 통계를 한눈에 확인합니다.</p>
           </div>
-          <div className="period-tabs">
-            <button className={half === 'all' ? 'active' : ''} onClick={() => setHalf('all')}>전체</button>
-            <button className={half === 'first' ? 'active' : ''} onClick={() => setHalf('first')}>상반기</button>
-            <button className={half === 'second' ? 'active' : ''} onClick={() => setHalf('second')}>하반기</button>
+          <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+            {availableYears.length > 1 && (
+              <div className="period-tabs year-tabs">
+                {availableYears.map(year => (
+                  <button 
+                    key={year} 
+                    className={selectedYear === year ? 'active' : ''} 
+                    onClick={() => handleYearChange(year)}
+                  >
+                    {year}년
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="period-tabs">
+              <button className={half === 'all' ? 'active' : ''} onClick={() => setHalf('all')}>전체보기</button>
+              <button className={half === 'first' ? 'active' : ''} onClick={() => setHalf('first')}>상반기</button>
+              <button className={half === 'second' ? 'active' : ''} onClick={() => setHalf('second')}>하반기</button>
+            </div>
           </div>
 
         </div>
