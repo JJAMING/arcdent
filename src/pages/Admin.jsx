@@ -10,6 +10,26 @@ const Admin = () => {
     const fileInputRef = useRef(null);
 
     useEffect(() => {
+        // [Manual Cleanup] 2025년 2월 동의환자 수납액 및 실적 데이터만 삭제 (사용자 요청)
+        try {
+            const TARGET_YEAR = 2025;
+            const TARGET_MONTH = '2월';
+
+            // 1. 동의환자 계획 데이터 정리
+            const plans = JSON.parse(localStorage.getItem('treatment_plan_data') || '[]');
+            const filteredPlans = plans.filter(p => !(p.year === TARGET_YEAR && p.month === TARGET_MONTH));
+            localStorage.setItem('treatment_plan_data', JSON.stringify(filteredPlans));
+
+            // 2. 수납 실적 데이터 정리
+            const performance = JSON.parse(localStorage.getItem('treatment_performance_data') || '[]');
+            const filteredPerf = performance.filter(p => !(p.year === TARGET_YEAR && p.month === TARGET_MONTH));
+            localStorage.setItem('treatment_performance_data', JSON.stringify(filteredPerf));
+
+            console.log(`%c[Data Cleanup] ${TARGET_YEAR}년 ${TARGET_MONTH} 동의환자 데이터 삭제 완료`, 'color: #ef4444; font-weight: bold;');
+        } catch (e) {
+            console.error('Cleanup error:', e);
+        }
+
         setUsers(getAllUsers());
     }, []);
 
