@@ -9,8 +9,42 @@ const Admin = () => {
     const [users, setUsers] = useState([]);
     const fileInputRef = useRef(null);
 
+
     useEffect(() => {
         setUsers(getAllUsers());
+
+        // [중복 데이터 클리닝 로직 추가] - 기존 중복 데이터 정리
+        const savedPlans = localStorage.getItem('treatment_plan_data');
+        if (savedPlans) {
+            try {
+                const plans = JSON.parse(savedPlans);
+                if (Array.isArray(plans)) {
+                    const uniqueMap = new Map();
+                    let hasDuplicates = false;
+                    plans.forEach(p => {
+                        // 고유 키: 연도 + 월 + 차트번호 + 성함
+                        const key = `${p.year || '2025'}_${p.month || ''}_${p.chartNo || ''}_${p.patientName || ''}`;
+                        if (!uniqueMap.has(key)) {
+                            uniqueMap.set(key, p);
+                        } else {
+                            hasDuplicates = true;
+                            // 더 최신 데이터나 정보가 많은 쪽을 선택 (계약금액이 있는 쪽 등)
+                            const existing = uniqueMap.get(key);
+                            if ((Number(p.contractAmount) || 0) >= (Number(existing.contractAmount) || 0)) {
+                                uniqueMap.set(key, p);
+                            }
+                        }
+                    });
+                    if (hasDuplicates) {
+                        const deduplicated = Array.from(uniqueMap.values());
+                        localStorage.setItem('treatment_plan_data', JSON.stringify(deduplicated));
+                        console.log(`[Data Cleanup] Removed duplicates from agreed patient records.`);
+                    }
+                }
+            } catch (e) {
+                console.error("Cleanup error:", e);
+            }
+        }
     }, []);
 
     const handleFileUpload = async (e) => {
@@ -164,7 +198,7 @@ const Admin = () => {
                         // --- CASE 4 (우선): 치료비용계획 (동의환자 수납 상세) ---
                         if (fileName.includes("치료비용계획") || fileName.includes("치료비용")) {
                             const ci = {
-                                patientName: -1, createdAt: -1, status: -1, payStatus: -1,
+                                patientName: -1, chartNo: -1, createdAt: -1, status: -1, payStatus: -1,
                                 contractAmount: -1, paidAmount: -1, lastVisit: -1, nextAppt: -1
                             };
                             let headerRowIdx = -1;
@@ -176,6 +210,7 @@ const Admin = () => {
                                     if (cell == null) return;
                                     const s = String(cell).trim().replace(/\s+/g, '');
                                     if (s.includes('환자') || s === '성명' || s === '이름' || s === '환자명') { ci.patientName = idx; found++; }
+                                    else if (s.includes('차트') || s.includes('번호') || s.includes('ID') || s === '차트번호') { ci.chartNo = idx; found++; }
                                     else if (s.includes('작성일') || s.includes('상담일') || s.includes('날짜')) { ci.createdAt = idx; found++; }
                                     else if (s.includes('진행상태') || (s.includes('진행') && s.includes('상태'))) { ci.status = idx; found++; }
                                     else if (s.includes('수납상태') || (s.includes('수납') && s.includes('상태')) || s.includes('결제상태')) { ci.payStatus = idx; found++; }
@@ -197,6 +232,7 @@ const Admin = () => {
                                     const paid = ci.paidAmount !== -1 ? parseNum(row[ci.paidAmount]) : 0;
                                     
                                     plans.push({
+                                        chartNo: ci.chartNo !== -1 ? String(row[ci.chartNo] || '').trim() : '',
                                         patientName: name,
                                         createdAt: ci.createdAt !== -1 ? String(row[ci.createdAt] || '').trim() : `${yearFromFile}-${monthFromFile}`,
                                         status: ci.status !== -1 ? String(row[ci.status] || '').trim() : '',
@@ -210,15 +246,25 @@ const Admin = () => {
                                     });
                                 }
                                 
-                                // [누적 저장 로직] 기존 데이터 병합
+                                // [Upsert 로직 적용] 개별 환자 단위로 중복 체크 및 업데이트
                                 const savedPlans = localStorage.getItem('treatment_plan_data');
                                 let allPlans = savedPlans ? JSON.parse(savedPlans) : [];
-                                // 현재 업로드하는 연도/월과 겹치는 기존 데이터 제거 (업데이트)
-                                allPlans = allPlans.filter(p => !(p.year === yearFromFile && p.month === monthFromFile));
-                                // 새 데이터 추가
-                                const mergedPlans = [...allPlans, ...plans];
                                 
-                                localStorage.setItem('treatment_plan_data', JSON.stringify(mergedPlans));
+                                plans.forEach(newP => {
+                                    const index = allPlans.findIndex(oldP => 
+                                        oldP.year === newP.year && 
+                                        oldP.month === newP.month && 
+                                        oldP.chartNo === newP.chartNo && 
+                                        oldP.patientName === newP.patientName
+                                    );
+                                    if (index !== -1) {
+                                        allPlans[index] = newP; // 기존 항목 업데이트
+                                    } else {
+                                        allPlans.push(newP); // 새 항목 추가
+                                    }
+                                });
+                                
+                                localStorage.setItem('treatment_plan_data', JSON.stringify(allPlans));
                                 updatedCount++;
                                 resolve();
                             } else {
