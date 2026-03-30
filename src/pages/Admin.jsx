@@ -544,25 +544,47 @@ const Admin = () => {
                             }
                         }
                         else if (fileName.includes("수납내역") || fileName.includes("환자별") || fileName.includes("의사별진료비수납액")) {
-                            if (headerRowIdx !== -1) {
+                            const drColMap = { doctor: -1, amount: -1, insurance: -1, name: -1, chartNo: -1, path: -1 };
+                            let drHeaderRowIdx = -1;
+
+                            // 1. 헤더 탐색 로직 (의사별 매출/수납내역 전용)
+                            for (let r = 0; r < Math.min(30, rawData.length); r++) {
+                                const row = rawData[r] || [];
+                                row.forEach((cell, c) => {
+                                    if (!cell) return;
+                                    const txt = String(cell).trim().replace(/\s+/g, '');
+                                    if (txt.includes('의사') || txt.includes('담당의') || txt === '의사명') drColMap.doctor = c;
+                                    else if (txt.includes('총수납') || txt === '수납액' || txt === '합계' || txt === '실수납액') drColMap.amount = c;
+                                    else if (txt.includes('공단부담') || txt.includes('보험') || txt.includes('보험금')) drColMap.insurance = c;
+                                    else if (txt.includes('차트') || txt.includes('번호')) drColMap.chartNo = c;
+                                    else if (txt === '성명' || txt === '이름' || txt === '환자명') drColMap.name = c;
+                                    else if (txt.includes('내원경로')) drColMap.path = c;
+                                });
+                                if (drColMap.doctor !== -1 && (drColMap.amount !== -1 || drColMap.insurance !== -1)) {
+                                    drHeaderRowIdx = r;
+                                    break;
+                                }
+                            }
+
+                            if (drHeaderRowIdx !== -1) {
                                 const patients = [];
                                 const doctorAgg = {};
-                                for (let i = headerRowIdx + 1; i < rawData.length; i++) {
+                                for (let i = drHeaderRowIdx + 1; i < rawData.length; i++) {
                                     const row = rawData[i] || [];
-                                    const amount = colIndices.amount !== -1 ? parseNum(row[colIndices.amount]) : 0;
-                                    const insurance = colIndices.insurance !== -1 ? parseNum(row[colIndices.insurance]) : 0;
-                                    const docName = String(row[colIndices.doctor] || '공동').trim() || '공동';
-                                    const chartNo = colIndices.chartNo !== -1 ? String(row[colIndices.chartNo] || '').trim() : null;
+                                    const amount = drColMap.amount !== -1 ? parseNum(row[drColMap.amount]) : 0;
+                                    const insurance = drColMap.insurance !== -1 ? parseNum(row[drColMap.insurance]) : 0;
+                                    const docName = String(row[drColMap.doctor] || '공동').trim() || '공동';
+                                    const chartNo = drColMap.chartNo !== -1 ? String(row[drColMap.chartNo] || '').trim() : null;
                                     
-                                    if (docName && (amount !== 0 || insurance !== 0) && docName !== '합계' && docName !== '총합계' && docName !== '의사명') {
+                                    if (docName && (amount !== 0 || insurance !== 0) && docName !== '합계' && docName !== '총합계' && docName !== '의사명' && docName !== '담당의') {
                                         if (chartNo && chartNo !== '합계' && chartNo !== '번호') {
                                             patients.push({
                                                 chartNo: chartNo,
-                                                name: colIndices.name !== -1 ? String(row[colIndices.name] || '미기재') : '미기재',
+                                                name: drColMap.name !== -1 ? String(row[drColMap.name] || '미기재') : '미기재',
                                                 doctor: docName,
                                                 pure: amount,
                                                 insurance: insurance,
-                                                path: colIndices.path !== -1 ? String(row[colIndices.path] || '직접내원') : '직접내원'
+                                                path: drColMap.path !== -1 ? String(row[drColMap.path] || '직접내원') : '직접내원'
                                             });
                                         }
                                         if (!doctorAgg[docName]) doctorAgg[docName] = { pure: 0, insurance: 0 };
@@ -571,7 +593,7 @@ const Admin = () => {
                                     }
                                 }
 
-                                const d = currentData.find(item => item.month === monthFromFile);
+                                const d = currentYearData.find(item => item.month === monthFromFile);
                                 if (d) {
                                     if (patients.length > 0) {
                                         patients.sort((a, b) => (b.pure + b.insurance) - (a.pure + a.insurance));
@@ -580,14 +602,14 @@ const Admin = () => {
                                     d.doctorData = doctorAgg;
                                     updatedCount++;
                                     const drList = Object.keys(doctorAgg).join(', ');
-                                    const colInfo = `[컬럼 매칭 정보]\n의사: ${colIndices.doctor+1}번, 순수액: ${colIndices.amount===-1 ? '없음' : (colIndices.amount+1)+'번'}, 보험액: ${colIndices.insurance===-1 ? '없음' : (colIndices.insurance+1)+'번'}`;
-                                    alert(`[의사별 매출 연동 성공] ${targetSheetName} 시트에서 ${monthFromFile} 데이터를 업데이트했습니다.\n${colInfo}\n(연동된 의사: ${drList})`);
+                                    const colInfo = `[컬럼 매칭 정보]\n진료의사: ${drColMap.doctor+1}번\n총 수납액(순수): ${drColMap.amount===-1 ? '없음' : (drColMap.amount+1)+'번'}\n공단부담금(보험): ${drColMap.insurance===-1 ? '없음' : (drColMap.insurance+1)+'번'}`;
+                                    alert(`[의사별 매출 연동 성공] ${yearFromFile} ${monthFromFile} 데이터를 업데이트했습니다.\n${colInfo}\n(매칭된 의사: ${drList})`);
                                     resolve();
                                 } else {
                                     reject(`월 데이터를 찾을 수 없습니다 (${monthFromFile})`);
                                 }
                             } else {
-                                reject(`파일 구조 분석 실패 (${fileName}): 의사명 및 금액 컬럼을 찾을 수 없습니다.`);
+                                reject(`파일 구조 분석 실패 (${fileName}): 의사명 및 금액(수납액/보험) 컬럼을 찾을 수 없습니다.`);
                             }
                         }
                         else if (fileName.includes("월간장부")) {
