@@ -13,7 +13,7 @@ const Admin = () => {
     useEffect(() => {
         setUsers(getAllUsers());
 
-        // [중복 데이터 클리닝 로직 추가] - 기존 중복 데이터 정리
+        // [중복 데이터 클리닝 로직 강화] - 기존 중복 데이터 정밀하게 정리
         const savedPlans = localStorage.getItem('treatment_plan_data');
         if (savedPlans) {
             try {
@@ -22,15 +22,24 @@ const Admin = () => {
                     const uniqueMap = new Map();
                     let hasDuplicates = false;
                     plans.forEach(p => {
-                        // 고유 키: 연도 + 월 + 차트번호 + 성함
-                        const key = `${p.year || '2025'}_${p.month || ''}_${p.chartNo || ''}_${p.patientName || ''}`;
+                        // 고유 키 생성 시 정규화(공백 제거 등) 수행
+                        const normName = String(p.patientName || '').replace(/\s+/g, '');
+                        const normChart = String(p.chartNo || '').trim();
+                        const normYear = String(p.year || '2025').trim();
+                        const normMonth = String(p.month || '').trim();
+                        
+                        const key = `${normYear}_${normMonth}_${normChart}_${normName}`;
+                        
                         if (!uniqueMap.has(key)) {
                             uniqueMap.set(key, p);
                         } else {
                             hasDuplicates = true;
-                            // 더 최신 데이터나 정보가 많은 쪽을 선택 (계약금액이 있는 쪽 등)
+                            // 정보량이 더 많은 쪽을 보존 (수납액이나 계약금액이 있는 쪽)
                             const existing = uniqueMap.get(key);
-                            if ((Number(p.contractAmount) || 0) >= (Number(existing.contractAmount) || 0)) {
+                            const existingVal = (Number(existing.contractAmount) || 0) + (Number(existing.paidAmount) || 0);
+                            const newVal = (Number(p.contractAmount) || 0) + (Number(p.paidAmount) || 0);
+                            
+                            if (newVal >= existingVal) {
                                 uniqueMap.set(key, p);
                             }
                         }
@@ -38,7 +47,7 @@ const Admin = () => {
                     if (hasDuplicates) {
                         const deduplicated = Array.from(uniqueMap.values());
                         localStorage.setItem('treatment_plan_data', JSON.stringify(deduplicated));
-                        console.log(`[Data Cleanup] Removed duplicates from agreed patient records.`);
+                        console.log(`[Data Cleanup] ${plans.length} -> ${deduplicated.length} records.`);
                     }
                 }
             } catch (e) {
@@ -783,6 +792,58 @@ const Admin = () => {
         fileInputRef.current?.click();
     };
 
+    const clearAllData = () => {
+        if (window.confirm("모든 분석 데이터를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) {
+            localStorage.removeItem('parsed_sales_data');
+            localStorage.removeItem('treatment_performance_data');
+            localStorage.removeItem('treatment_plan_data');
+            localStorage.removeItem('top_patients_raw_data');
+            alert("모든 데이터가 초기화되었습니다.");
+            window.location.reload();
+        }
+    };
+
+    const runManualCleanup = () => {
+        const savedPlans = localStorage.getItem('treatment_plan_data');
+        if (!savedPlans) {
+            alert("정리할 데이터가 없습니다.");
+            return;
+        }
+
+        try {
+            const plans = JSON.parse(savedPlans);
+            const uniqueMap = new Map();
+            let count = 0;
+            plans.forEach(p => {
+                const normName = String(p.patientName || '').replace(/\s+/g, '');
+                const normChart = String(p.chartNo || '').trim();
+                const normYear = String(p.year || '2025').trim();
+                const normMonth = String(p.month || '').trim();
+                const key = `${normYear}_${normMonth}_${normChart}_${normName}`;
+                
+                if (!uniqueMap.has(key)) {
+                    uniqueMap.set(key, p);
+                } else {
+                    count++;
+                    const existing = uniqueMap.get(key);
+                    const existingVal = (Number(existing.contractAmount) || 0) + (Number(existing.paidAmount) || 0);
+                    const newVal = (Number(p.contractAmount) || 0) + (Number(p.paidAmount) || 0);
+                    if (newVal >= existingVal) uniqueMap.set(key, p);
+                }
+            });
+
+            if (count > 0) {
+                localStorage.setItem('treatment_plan_data', JSON.stringify(Array.from(uniqueMap.values())));
+                alert(`${count}개의 중복 항목을 정리했습니다.`);
+                window.location.reload();
+            } else {
+                alert("중복된 데이터가 없습니다.");
+            }
+        } catch (e) {
+            alert("정리 중 오류가 발생했습니다.");
+        }
+    };
+
     return (
         <div className="admin-container">
             <div className="page-header">
@@ -849,8 +910,37 @@ const Admin = () => {
                             style={{ display: 'none' }}
                         />
                     </div>
-
-
+                    
+                    <div className="upload-actions" style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
+                        <button className="action-btn cleanup-btn" onClick={runManualCleanup} style={{ 
+                            padding: '10px 20px', 
+                            backgroundColor: '#10b981', 
+                            color: 'white', 
+                            border: 'none', 
+                            borderRadius: '6px', 
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                        }}>
+                            <Trash2 size={18} />
+                            데이터 중복 정리
+                        </button>
+                        <button className="delete-all-btn" onClick={clearAllData} style={{ 
+                            padding: '10px 20px', 
+                            backgroundColor: '#ef4444', 
+                            color: 'white', 
+                            border: 'none', 
+                            borderRadius: '6px', 
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                        }}>
+                            <Trash2 size={18} />
+                            전체 데이터 초기화
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
