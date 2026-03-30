@@ -118,6 +118,7 @@ const SalesAnalysis = () => {
   // 연도 변경 핸들러
   const handleYearChange = (year) => {
     setSelectedYear(year);
+    setAgreedPage(1); // 페이지 초기화
     if (salesDataMap[year]) {
       setSalesData(salesDataMap[year]);
     }
@@ -367,6 +368,8 @@ const SalesAnalysis = () => {
 
   const [selectedMonth, setSelectedMonth] = useState('전체');
   const [selectedAgreedMonth, setSelectedAgreedMonth] = useState('전체');
+  const [agreedPage, setAgreedPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
 
   // --- 탭별 렌더링 로직 (7개 탭) ---
   const renderTabContent = () => {
@@ -617,23 +620,63 @@ const SalesAnalysis = () => {
         const fTotalPaid = filteredAgreed.reduce((sum, p) => sum + (Number(p.paidAmount) || 0), 0);
         const fRate = fTotalAgreed > 0 ? ((fTotalPaid / fTotalAgreed) * 100).toFixed(1) : 0;
 
+        // 페이지네이션 가공
+        const totalPages = Math.ceil(filteredAgreed.length / ITEMS_PER_PAGE) || 1;
+        const currentPageData = filteredAgreed.slice((agreedPage - 1) * ITEMS_PER_PAGE, agreedPage * ITEMS_PER_PAGE);
+        const leftAgreed = currentPageData.slice(0, 10);
+        const rightAgreed = currentPageData.slice(10, 20);
+
+        const renderAgreedTable = (patients, startIdx) => (
+          <div className="sales-data-table-container" style={{ marginTop: 0 }}>
+            <table className="sales-data-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '40px' }}>#</th>
+                  <th>환자명</th>
+                  <th>계약액</th>
+                  <th>수납액</th>
+                  <th>잔액</th>
+                </tr>
+              </thead>
+              <tbody>
+                {patients.length > 0 ? patients.map((p, idx) => {
+                  const contract = Number(p.contractAmount) || 0;
+                  const paid = Number(p.paidAmount) || 0;
+                  return (
+                    <tr key={idx}>
+                      <td className="font-bold" style={{ color: 'var(--text-secondary)' }}>{startIdx + idx + 1}</td>
+                      <td className="font-bold" style={{ textAlign: 'left', color: 'var(--text-primary)' }}>{p.patientName}</td>
+                      <td style={{ textAlign: 'right' }}>{contract.toLocaleString()}원</td>
+                      <td style={{ textAlign: 'right', color: '#3b82f6' }}>{paid.toLocaleString()}원</td>
+                      <td style={{ textAlign: 'right', color: '#ef4444', fontWeight: 'bold' }}>{(contract - paid).toLocaleString()}원</td>
+                    </tr>
+                  );
+                }) : (
+                  <tr><td colSpan="5" className="empty-state">데이터 없음</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        );
+
         return (
-          <div className="tab-pane active">
+          <div className="tab-pane active animated-fade-in">
             <div className="dashboard-stack">
-              {/* 월별 필터 버튼 */}
               <div className="month-filter-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
                 {['전체', ...currentAgreedMonths].map(m => (
                   <button 
                     key={m} 
                     className={`month-filter-btn ${selectedAgreedMonth === m ? 'active' : ''}`}
-                    onClick={() => setSelectedAgreedMonth(m)}
+                    onClick={() => {
+                        setSelectedAgreedMonth(m);
+                        setAgreedPage(1);
+                    }}
                   >
                     {m}
                   </button>
                 ))}
               </div>
 
-              {/* 통계 요약 카드 (색상 마커 포함) */}
               <div className="stats-header-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginTop: '1rem' }}>
                 <div className="stat-card" style={{ borderLeft: '4px solid #10b981' }}>
                   <span className="label">총 계약금액</span>
@@ -649,42 +692,59 @@ const SalesAnalysis = () => {
                 </div>
               </div>
 
-              <DashboardCard title={`${selectedAgreedMonth} 치료비용계획 환자별 상세 내역`}>
-                <div className="sales-data-table-container">
-                  <table className="sales-data-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>환자정보</th>
-                        <th>작성일</th>
-                        <th>진행상태</th>
-                        <th>수납상태</th>
-                        <th>계약금액</th>
-                        <th>현재수납액</th>
-                        <th>잔액</th>
-                        <th>최종내원</th>
-                        <th>다음 예약</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredAgreed.length > 0 ? filteredAgreed.map((p, idx) => (
-                        <tr key={idx}>
-                          <td>{idx + 1}</td>
-                          <td className="font-bold" style={{ textAlign: 'left', color: 'var(--text-primary)' }}>{p.patientName}</td>
-                          <td>{p.createdAt}</td>
-                          <td>{p.status}</td>
-                          <td><span className={`status-pill ${p.payStatus && p.payStatus.includes('완료') ? 'complete' : ''}`}>{p.payStatus}</span></td>
-                          <td style={{ textAlign: 'right' }}>{(Number(p.contractAmount) || 0).toLocaleString()}원</td>
-                          <td style={{ textAlign: 'right' }}>{(Number(p.paidAmount) || 0).toLocaleString()}원</td>
-                          <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#ef4444' }}>{(Number(p.contractAmount - p.paidAmount) || 0).toLocaleString()}원</td>
-                          <td>{p.lastVisit}</td>
-                          <td>{p.nextAppt}</td>
-                        </tr>
-                      )) : (
-                        <tr><td colSpan="10" className="empty-state">해당 기간의 데이터가 없습니다. (치료비용계획 엑셀을 업로드해주세요)</td></tr>
-                      )}
-                    </tbody>
-                  </table>
+              <DashboardCard title={`${selectedAgreedMonth} 동의환자 상세 내역 (총 ${filteredAgreed.length}건)`}>
+                <div className="top-patients-grid">
+                  <div className="top-patients-column">
+                    <h4><span className="rank-badge">{(agreedPage - 1) * 20 + 1} ~ {(agreedPage - 1) * 20 + 10}</span></h4>
+                    {renderAgreedTable(leftAgreed, (agreedPage - 1) * 20)}
+                  </div>
+                  <div className="top-patients-column">
+                    <h4><span className="rank-badge">{(agreedPage - 1) * 20 + 11} ~ {(agreedPage - 1) * 20 + 20}</span></h4>
+                    {renderAgreedTable(rightAgreed, (agreedPage - 1) * 20 + 10)}
+                  </div>
+                </div>
+
+                {/* 페이지네이션 UI */}
+                <div className="pagination-container">
+                    <button 
+                        className="pagination-btn" 
+                        disabled={agreedPage === 1}
+                        onClick={() => setAgreedPage(1)}
+                    >처음</button>
+                    <button 
+                        className="pagination-btn" 
+                        disabled={agreedPage === 1}
+                        onClick={() => setAgreedPage(prev => Math.max(1, prev - 1))}
+                    >이전</button>
+                    
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        let pageNum;
+                        if (totalPages <= 5) pageNum = i + 1;
+                        else if (agreedPage <= 3) pageNum = i + 1;
+                        else if (agreedPage >= totalPages - 2) pageNum = totalPages - 4 + i;
+                        else pageNum = agreedPage - 2 + i;
+
+                        return (
+                            <button 
+                                key={pageNum}
+                                className={`pagination-number ${agreedPage === pageNum ? 'active' : ''}`}
+                                onClick={() => setAgreedPage(pageNum)}
+                            >
+                                {pageNum}
+                            </button>
+                        );
+                    })}
+
+                    <button 
+                        className="pagination-btn" 
+                        disabled={agreedPage === totalPages}
+                        onClick={() => setAgreedPage(prev => Math.min(totalPages, prev + 1))}
+                    >다음</button>
+                    <button 
+                        className="pagination-btn" 
+                        disabled={agreedPage === totalPages}
+                        onClick={() => setAgreedPage(totalPages)}
+                    >끝</button>
                 </div>
               </DashboardCard>
             </div>
