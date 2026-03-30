@@ -129,9 +129,26 @@ const SalesAnalysis = () => {
     (Array.isArray(salesData) ? salesData.slice(6, 12) : []);
 
   
+  // --- 현재 선택된 연도에 따른 필터링 데이터 ---
+  const filteredAgreedPatients = React.useMemo(() => {
+    return (agreedPatients || []).filter(p => {
+      const pYear = p.year || (p.createdAt ? p.createdAt.split('-')[0] : '');
+      return String(pYear) === String(selectedYear);
+    });
+  }, [agreedPatients, selectedYear]);
+
+  const filteredTopPatientsRaw = React.useMemo(() => {
+    return (topPatientsRaw || []).filter(p => {
+      const pYear = p.year || (p.createdAt ? p.createdAt.split('-')[0] : '');
+      // topPatientsRaw에 year 정보가 없는 경우 파일명 기반 날짜 추출이나 기본값 처리 필요할 수 있음
+      // Admin.jsx에서 방금 year 필드를 추가했으므로, 신규 데이터는 정확히 필터링됨
+      return !pYear || String(pYear) === String(selectedYear);
+    });
+  }, [topPatientsRaw, selectedYear]);
+
   // --- 공통 통계 계산 ---
-  const totalAgreed = agreedPatients.reduce((sum, p) => sum + (Number(p.contractAmount) || 0), 0);
-  const totalPaid = agreedPatients.reduce((sum, p) => sum + (Number(p.paidAmount) || 0), 0);
+  const totalAgreed = filteredAgreedPatients.reduce((sum, p) => sum + (Number(p.contractAmount) || 0), 0);
+  const totalPaid = filteredAgreedPatients.reduce((sum, p) => sum + (Number(p.paidAmount) || 0), 0);
   const collectionRate = totalAgreed > 0 ? ((totalPaid / totalAgreed) * 100).toFixed(1) : 0;
 
   // --- 의사별 데이터 집계 (Stacked Bar + Line 용) ---
@@ -200,11 +217,7 @@ const SalesAnalysis = () => {
       }
 
       // 동의환자 데이터(치료종결, 진행중) 카운트하여 동의 건수에 연동
-      entry.agreed = (agreedPatients || []).filter(p => {
-        // 연도 필터링
-        const pYear = p.year || (p.createdAt ? p.createdAt.split('-')[0] : '');
-        if (pYear && pYear !== selectedYear) return false;
-
+      entry.agreed = filteredAgreedPatients.filter(p => {
         if (!p.createdAt) return false;
         // Parse month from various formats
         const mMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/[\.\-\/](\d{1,2})[\.\-\/]/) || p.createdAt.match(/^(\d{1,2})[\.\-\/]/);
@@ -243,11 +256,7 @@ const SalesAnalysis = () => {
     { month: '11월', contract: 0, paid: 0 }, { month: '12월', contract: 0, paid: 0 }
   ];
 
-  agreedPatients.forEach(p => {
-    // 연도 필터링
-    const pYear = p.year || (p.createdAt ? p.createdAt.split('-')[0] : '');
-    if (pYear && pYear !== selectedYear) return;
-
+  filteredAgreedPatients.forEach(p => {
     const monthMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/-(\d+)-/);
     if (monthMatch) {
       const mNum = parseInt(monthMatch[1]);
@@ -287,7 +296,7 @@ const SalesAnalysis = () => {
       };
 
       // 진료비 상위 비중 계산 (동일 환자 합산 후 상위 20명 기준)
-      const monthlyTopData = topPatientsRaw.filter(p => p.month === d.month || (p.month && p.month.includes(d.month.replace('월', ''))));
+      const monthlyTopData = filteredTopPatientsRaw.filter(p => p.month === d.month || (p.month && p.month.includes(d.month.replace('월', ''))));
       const monthlyAggregated = {};
       monthlyTopData.forEach(p => {
         const key = `${p.patientName}_${p.chartNo || ''}`;
@@ -302,7 +311,7 @@ const SalesAnalysis = () => {
       metrics.topFeeRatio = d.netSales > 0 ? ((top20Sum / d.netSales) * 100).toFixed(1) : 0;
 
       // 동의환자 수납율 계산
-      const monthlyAgreed = agreedPatients.filter(p => {
+      const monthlyAgreed = filteredAgreedPatients.filter(p => {
         const mMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/-(\d+)-/);
         return mMatch && parseInt(mMatch[1]) + '월' === d.month;
       });
@@ -312,7 +321,7 @@ const SalesAnalysis = () => {
 
       return metrics;
     });
-  }, [doctorChartData, topPatientsRaw, agreedPatients]);
+  }, [doctorChartData, filteredTopPatientsRaw, filteredAgreedPatients]);
 
   // --- 진료비 상위 환자 (최근 월 기준) ---
   const topPatients = (currentHalfData[currentHalfData.length - 1]?.topPatients || []).slice(0, 20);

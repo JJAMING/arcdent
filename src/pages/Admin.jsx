@@ -510,7 +510,8 @@ const Admin = () => {
                                         revenue: parseNum(row[colMap.revenue]),
                                         paid: parseNum(row[colMap.paid]),
                                         path: String(row[colMap.path] || '').trim(),
-                                        month: rowMonth
+                                        month: rowMonth,
+                                        year: yearFromFile
                                     };
                                     
                                     if (p.patientName && (p.revenue > 0 || p.paid > 0)) {
@@ -524,9 +525,10 @@ const Admin = () => {
                                     if (saved) currentTopData = JSON.parse(saved);
                                 } catch (e) {}
                                 
-                                // 데이터 병합 및 중복 제거 (월/이름/차트번호 기준)
+                                // 데이터 병합 및 중복 제거 (연도/월/이름/차트번호 기준)
                                 ExtractedTopPatients.forEach(newP => {
                                     const idx = currentTopData.findIndex(oldP => 
+                                        oldP.year === newP.year && 
                                         oldP.month === newP.month && 
                                         oldP.patientName === newP.patientName && 
                                         oldP.chartNo === newP.chartNo
