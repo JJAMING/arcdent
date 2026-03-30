@@ -579,19 +579,57 @@ const Admin = () => {
                             let cardVal = 0;
                             let otherVal = 0;
 
-                            // 시트 전체 순회하며 라벨 찾기 (라벨 바로 오른쪽 셀에 금액이 있다고 가정)
+                            // 매트릭스 파싱을 위한 인덱스 초기화
+                            let cashCol = -1;
+                            let cardCol = -1;
+                            let otherCol = -1;
+                            let tonghapRowIdx = -1;
+
+                            // 1. 헤더 컬럼 탐색 (가로 항목명 식별)
                             for (let r = 0; r < Math.min(100, rawData.length); r++) {
                                 const row = rawData[r] || [];
                                 for (let c = 0; c < row.length; c++) {
                                     if (row[c] == null) continue;
                                     const txt = String(row[c]).trim().replace(/\s+/g, '');
-                                    
-                                    if (txt.includes('현금수입')) {
-                                        cashVal = parseNum(row[c+1]);
-                                    } else if (txt.includes('카드수입')) {
-                                        cardVal = parseNum(row[c+1]);
-                                    } else if (txt.includes('기타(온라인)수입')) {
-                                        otherVal = parseNum(row[c+1]);
+                                    if (txt.includes('현금수입')) cashCol = c;
+                                    else if (txt.includes('카드수입')) cardCol = c;
+                                    else if (txt.includes('기타(온라인)수입')) otherCol = c;
+                                }
+                                if (cashCol !== -1 && cardCol !== -1 && otherCol !== -1) break;
+                            }
+
+                            // 2. 통합 행 탐색 (세로 월별 통합 라벨 식별 - 예: "1월 통합")
+                            for (let r = 0; r < rawData.length; r++) {
+                                const row = rawData[r] || [];
+                                const hasTonghap = row.some(cell => {
+                                    if (cell == null) return false;
+                                    const s = String(cell).trim().replace(/\s+/g, '');
+                                    return s.includes(month) && s.includes('통합');
+                                });
+                                if (hasTonghap) {
+                                    tonghapRowIdx = r;
+                                    break;
+                                }
+                            }
+
+                            // 3. 교차점 데이터 추출
+                            if (tonghapRowIdx !== -1) {
+                                if (cashCol !== -1) cashVal = parseNum(rawData[tonghapRowIdx][cashCol]);
+                                if (cardCol !== -1) cardVal = parseNum(rawData[tonghapRowIdx][cardCol]);
+                                if (otherCol !== -1) otherVal = parseNum(rawData[tonghapRowIdx][otherCol]);
+                            }
+
+                            // [Fallback] 매트릭스 탐색 실패 시 기존 라벨 옆 서치 방식 수행
+                            if (tonghapRowIdx === -1 || (cashVal === 0 && cardVal === 0 && otherVal === 0)) {
+                                console.log('[월간장부] 매트릭스 탐색 실패 또는 데이터 0점, 폴백 라벨 서치 수행');
+                                for (let r = 0; r < Math.min(100, rawData.length); r++) {
+                                    const row = rawData[r] || [];
+                                    for (let c = 0; c < row.length; c++) {
+                                        if (row[c] == null) continue;
+                                        const txt = String(row[c]).trim().replace(/\s+/g, '');
+                                        if (txt.includes('현금수입') && cashVal === 0) cashVal = parseNum(row[c+1]);
+                                        else if (txt.includes('카드수입') && cardVal === 0) cardVal = parseNum(row[c+1]);
+                                        else if (txt.includes('기타(온라인)수입') && otherVal === 0) otherVal = parseNum(row[c+1]);
                                     }
                                 }
                             }
@@ -606,7 +644,7 @@ const Admin = () => {
                                 // 총매출 자동 계산 (순매출 + 기존 보험청구액)
                                 d.total = d.netSales + (Number(d.insurance) || 0);
                                 
-                                alert(`[월간장부 연동 완료] ${month} 현금수입: ${cashVal.toLocaleString()}원 / 카드수입: ${cardVal.toLocaleString()}원 / 기타(온라인)수입: ${otherVal.toLocaleString()}원`);
+                                alert(`[월간장부 연동 완료] ${month} 데이터 분석 성공\n특정행: "${month} 통합"\n현금: ${cashVal.toLocaleString()}원\n카드: ${cardVal.toLocaleString()}원\n기타: ${otherVal.toLocaleString()}원`);
                                 updatedCount++;
                                 resolve();
                             } else {
