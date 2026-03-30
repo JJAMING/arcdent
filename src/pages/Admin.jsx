@@ -50,7 +50,7 @@ const Admin = () => {
                         let headerRowIdx = -1;
                         let targetSheetName = wb.SheetNames[0];
 
-                        // 모든 시트를 순회하며 헤더를 찾음
+                        // 모든 시트를 순회하며 헤더를 찾음 (임상 데이터 우선)
                         for (const sName of wb.SheetNames) {
                             const ws = wb.Sheets[sName];
                             const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
@@ -69,13 +69,11 @@ const Admin = () => {
                                         }
                                         else if (strCell.includes('담당의') || strCell.includes('의사') || strCell === '의사명' || strCell === '의사이름') tempColIndices.doctor = idx;
                                         
-                                        // 공단부담금 (보다 명확한 매칭 우선)
                                         if (strCell === '공단부담금' || strCell === '공단부담' || strCell === '보험청구액' || strCell === '보험청구') tempColIndices.insurance = idx;
                                         else if (strCell.includes('공단부담') || strCell.includes('보험청구') || strCell.includes('의료보험') || (strCell.includes('공단') && strCell.includes('금'))) {
                                             if (tempColIndices.insurance === -1) tempColIndices.insurance = idx;
                                         }
 
-                                        // 수납액
                                         if (strCell === '총수납액' || strCell === '수납합계' || strCell === '실수납액' || strCell === '수납금액') tempColIndices.amount = idx;
                                         else if (strCell.includes('총수납') || strCell.includes('수납액') || strCell === '수납' || strCell === '납부액' || strCell.includes('본인부담')) {
                                             if (tempColIndices.amount === -1 && tempColIndices.insurance !== idx) tempColIndices.amount = idx;
@@ -84,7 +82,6 @@ const Admin = () => {
                                         if (strCell.includes('내원경로') || strCell.includes('유입')) tempColIndices.path = idx;
                                     }
                                 });
-                                // 의사 + (보험 혹은 수납) 둘 중 하나만 있어도 OK
                                 if (tempColIndices.doctor !== -1 && (tempColIndices.amount !== -1 || tempColIndices.insurance !== -1)) {
                                     tempHeaderRowIdx = i;
                                     break;
@@ -98,6 +95,14 @@ const Admin = () => {
                                 targetSheetName = sName;
                                 break;
                             }
+                        }
+
+                        // [Fallback] 임상 헤더를 못 찾은 경우 (월간장부 등 집계표 대응)
+                        if (rawData.length === 0) {
+                            targetSheetName = wb.SheetNames[0];
+                            const ws = wb.Sheets[targetSheetName];
+                            rawData = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                            console.log(`[Excel Debug] No clinical headers found. Using first sheet: ${targetSheetName}`);
                         }
 
                         console.log(`[Excel Debug] FileName: ${fileName}, Sheet: ${targetSheetName}`, {headerRowIdx, colIndices});
@@ -579,13 +584,13 @@ const Admin = () => {
                             let cardVal = 0;
                             let otherVal = 0;
 
-                            // 매트릭스 파싱을 위한 인덱스 초기화
+                            // 가로 항목(컬럼) 및 세로 통합행(로우) 인덱스 찾기
                             let cashCol = -1;
                             let cardCol = -1;
                             let otherCol = -1;
                             let tonghapRowIdx = -1;
 
-                            // 1. 헤더 컬럼 탐색 (가로 항목명 식별)
+                            // 1. 항목명(가로) 인덱스 식별
                             for (let r = 0; r < Math.min(100, rawData.length); r++) {
                                 const row = rawData[r] || [];
                                 for (let c = 0; c < row.length; c++) {
@@ -598,15 +603,16 @@ const Admin = () => {
                                 if (cashCol !== -1 && cardCol !== -1 && otherCol !== -1) break;
                             }
 
-                            // 2. 통합 행 탐색 (세로 월별 통합 라벨 식별 - 예: "1월 통합")
+                            // 2. 통합행(세로) 인덱스 식별 (예: "1월 통합")
                             for (let r = 0; r < rawData.length; r++) {
                                 const row = rawData[r] || [];
-                                const hasTonghap = row.some(cell => {
+                                const found = row.some(cell => {
                                     if (cell == null) return false;
                                     const s = String(cell).trim().replace(/\s+/g, '');
-                                    return s.includes(month) && s.includes('통합');
+                                    // 해당 월과 '통합' 또는 '합계' 키워드 매칭
+                                    return s.includes(month) && (s.includes('통합') || s.includes('합계') || s.includes('계'));
                                 });
-                                if (hasTonghap) {
+                                if (found) {
                                     tonghapRowIdx = r;
                                     break;
                                 }
@@ -619,9 +625,8 @@ const Admin = () => {
                                 if (otherCol !== -1) otherVal = parseNum(rawData[tonghapRowIdx][otherCol]);
                             }
 
-                            // [Fallback] 매트릭스 탐색 실패 시 기존 라벨 옆 서치 방식 수행
+                            // [Fallback] 매트릭스 탐색 실패 시 주변 서치
                             if (tonghapRowIdx === -1 || (cashVal === 0 && cardVal === 0 && otherVal === 0)) {
-                                console.log('[월간장부] 매트릭스 탐색 실패 또는 데이터 0점, 폴백 라벨 서치 수행');
                                 for (let r = 0; r < Math.min(100, rawData.length); r++) {
                                     const row = rawData[r] || [];
                                     for (let c = 0; c < row.length; c++) {
@@ -639,12 +644,10 @@ const Admin = () => {
                                 d.cash = cashVal;
                                 d.card = cardVal;
                                 d.other = otherVal;
-                                // 순매출 자동 계산 (보험 제외)
                                 d.netSales = cashVal + cardVal + otherVal;
-                                // 총매출 자동 계산 (순매출 + 기존 보험청구액)
                                 d.total = d.netSales + (Number(d.insurance) || 0);
                                 
-                                alert(`[월간장부 연동 완료] ${month} 데이터 분석 성공\n특정행: "${month} 통합"\n현금: ${cashVal.toLocaleString()}원\n카드: ${cardVal.toLocaleString()}원\n기타: ${otherVal.toLocaleString()}원`);
+                                alert(`[월간장부 자동 연동] ${month} 결과\n행: "${month} 통합/합계"\n현금: ${cashVal.toLocaleString()}\n카드: ${cardVal.toLocaleString()}\n기타: ${otherVal.toLocaleString()}`);
                                 updatedCount++;
                                 resolve();
                             } else {
