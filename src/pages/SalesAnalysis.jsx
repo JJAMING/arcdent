@@ -336,8 +336,8 @@ const SalesAnalysis = () => {
     if (!value || value === 0) return null;
     return (
       <g>
-        <rect x={x - 45} y={y - 32} width={90} height={20} rx={4} fill={stroke} />
-        <text x={x} y={y - 21} fill="#fff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '11px', fontWeight: 'bold' }}>
+        <rect x={x - 45} y={y - 52} width={90} height={20} rx={4} fill={stroke} />
+        <text x={x} y={y - 41} fill="#fff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '11px', fontWeight: 'bold' }}>
           {value.toLocaleString()}원
         </text>
       </g>
@@ -362,7 +362,7 @@ const SalesAnalysis = () => {
                     <YAxis 
                       stroke="var(--text-secondary)" 
                       width={80}
-                      domain={[0, (dataMax) => dataMax * 1.15]}
+                      domain={[0, (dataMax) => dataMax * 1.3]}
                       tickFormatter={(v) => `${Math.floor(v/10000).toLocaleString()}만`} 
                     />
                     <Tooltip formatter={(v) => `${v.toLocaleString()}원`} contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }} />
