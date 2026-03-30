@@ -12,18 +12,18 @@ import './TreatmentAnalysis.css';
 
 // --- MOCK DATA (12 Months Treatment Performance) ---
 const MOCK_TREATMENT_DATA = [
-    { month: '1월', surg1: 42, implantTotal: 45, osstem: 25, dentium: 15, straumann: 5, crestal: 10, lateral: 5, gbr: 12, insImp: 15, insDent: 8 },
-    { month: '2월', surg1: 38, implantTotal: 40, osstem: 20, dentium: 12, straumann: 8, crestal: 8, lateral: 4, gbr: 10, insImp: 12, insDent: 10 },
-    { month: '3월', surg1: 45, implantTotal: 50, osstem: 30, dentium: 15, straumann: 5, crestal: 12, lateral: 6, gbr: 15, insImp: 18, insDent: 12 },
-    { month: '4월', surg1: 52, implantTotal: 58, osstem: 35, dentium: 18, straumann: 5, crestal: 15, lateral: 8, gbr: 18, insImp: 22, insDent: 15 },
-    { month: '5월', surg1: 48, implantTotal: 52, osstem: 30, dentium: 15, straumann: 7, crestal: 14, lateral: 7, gbr: 16, insImp: 20, insDent: 14 },
-    { month: '6월', surg1: 55, implantTotal: 62, osstem: 40, dentium: 15, straumann: 7, crestal: 18, lateral: 10, gbr: 22, insImp: 25, insDent: 18 },
-    { month: '7월', surg1: 50, implantTotal: 55, osstem: 32, dentium: 15, straumann: 8, crestal: 16, lateral: 8, gbr: 18, insImp: 24, insDent: 16 },
-    { month: '8월', surg1: 46, implantTotal: 50, osstem: 28, dentium: 15, straumann: 7, crestal: 15, lateral: 7, gbr: 15, insImp: 21, insDent: 15 },
-    { month: '9월', surg1: 58, implantTotal: 65, osstem: 40, dentium: 20, straumann: 5, crestal: 20, lateral: 10, gbr: 25, insImp: 28, insDent: 20 },
-    { month: '10월', surg1: 62, implantTotal: 70, osstem: 45, dentium: 20, straumann: 5, crestal: 22, lateral: 12, gbr: 28, insImp: 30, insDent: 22 },
-    { month: '11월', surg1: 54, implantTotal: 60, osstem: 35, dentium: 20, straumann: 5, crestal: 19, lateral: 9, gbr: 20, insImp: 26, insDent: 19 },
-    { month: '12월', surg1: 68, implantTotal: 75, osstem: 50, dentium: 20, straumann: 5, crestal: 25, lateral: 15, gbr: 32, insImp: 35, insDent: 25 },
+    { month: '1월', surg1: 42, implantTotal: 45, osstem: 25, dentium: 10, dio: 5, straumann: 5, crestal: 10, lateral: 5, gbr: 12, insImp: 15, insDent: 8 },
+    { month: '2월', surg1: 38, implantTotal: 40, osstem: 20, dentium: 8, dio: 4, straumann: 8, crestal: 8, lateral: 4, gbr: 10, insImp: 12, insDent: 10 },
+    { month: '3월', surg1: 45, implantTotal: 50, osstem: 30, dentium: 10, dio: 5, straumann: 5, crestal: 12, lateral: 6, gbr: 15, insImp: 18, insDent: 12 },
+    { month: '4월', surg1: 52, implantTotal: 58, osstem: 35, dentium: 12, dio: 6, straumann: 5, crestal: 15, lateral: 8, gbr: 18, insImp: 22, insDent: 15 },
+    { month: '5월', surg1: 48, implantTotal: 52, osstem: 30, dentium: 10, dio: 5, straumann: 7, crestal: 14, lateral: 7, gbr: 16, insImp: 20, insDent: 14 },
+    { month: '6월', surg1: 55, implantTotal: 62, osstem: 40, dentium: 10, dio: 5, straumann: 7, crestal: 18, lateral: 10, gbr: 22, insImp: 25, insDent: 18 },
+    { month: '7월', surg1: 50, implantTotal: 55, osstem: 32, dentium: 10, dio: 5, straumann: 8, crestal: 16, lateral: 8, gbr: 18, insImp: 24, insDent: 16 },
+    { month: '8월', surg1: 46, implantTotal: 50, osstem: 28, dentium: 10, dio: 5, straumann: 7, crestal: 15, lateral: 7, gbr: 15, insImp: 21, insDent: 15 },
+    { month: '9월', surg1: 58, implantTotal: 65, osstem: 40, dentium: 15, dio: 5, straumann: 5, crestal: 20, lateral: 10, gbr: 25, insImp: 28, insDent: 20 },
+    { month: '10월', surg1: 62, implantTotal: 70, osstem: 45, dentium: 15, dio: 5, straumann: 5, crestal: 22, lateral: 12, gbr: 28, insImp: 30, insDent: 22 },
+    { month: '11월', surg1: 54, implantTotal: 60, osstem: 35, dentium: 15, dio: 5, straumann: 5, crestal: 19, lateral: 9, gbr: 20, insImp: 26, insDent: 19 },
+    { month: '12월', surg1: 68, implantTotal: 75, osstem: 50, dentium: 15, dio: 5, straumann: 5, crestal: 25, lateral: 15, gbr: 32, insImp: 35, insDent: 25 },
 ];
 
 const TreatmentAnalysis = () => {
@@ -88,6 +88,7 @@ const TreatmentAnalysis = () => {
                                                 {/* 종류별 */}
                                                 <Bar dataKey="osstem" name="오스템" fill="#3b82f6" stackId="type" />
                                                 <Bar dataKey="dentium" name="덴티움" fill="#10b981" stackId="type" />
+                                                <Bar dataKey="dio" name="디오" fill="#6366f1" stackId="type" />
                                                 <Bar dataKey="straumann" name="스트라우만" fill="#f59e0b" stackId="type" />
                                                 {/* 수술법별 */}
                                                 <Bar dataKey="crestal" name="Crestal" fill="#ef4444" stackId="method" />
@@ -124,6 +125,11 @@ const TreatmentAnalysis = () => {
                                                 <td className="row-header"><span className="marker green"></span> 덴티움</td>
                                                 {currentHalfData.map(d => <td key={d.month}>{d.dentium}개</td>)}
                                                 <td>{currentHalfData.reduce((s,d)=>s+d.dentium, 0)}개</td>
+                                            </tr>
+                                            <tr>
+                                                <td className="row-header"><span className="marker purple" style={{ background: '#6366f1' }}></span> 디오</td>
+                                                {currentHalfData.map(d => <td key={d.month}>{(d.dio || 0)}개</td>)}
+                                                <td>{currentHalfData.reduce((s,d)=>s+(d.dio || 0), 0)}개</td>
                                             </tr>
                                             <tr>
                                                 <td className="row-header"><span className="marker orange"></span> 스트라우만</td>

@@ -335,68 +335,104 @@ const Admin = () => {
                                 reject(`파일 내 데이터(${extractedNewPatients}명, ${extractedNewPatientSales}원)는 찾았으나, ${monthFromFile} 데이터를 대시보드에 업데이트할 수 없습니다.`);
                             }
                         }
-                        else if (fileName.includes("치료비용계획")) {
-                            const ExtractedAgreedPatients = [];
-                            const colMap = {
-                                patientName: -1,
-                                createdAt: -1,
-                                status: -1,
-                                payStatus: -1,
-                                contractAmount: -1,
-                                paidAmount: -1,
-                                lastVisit: -1,
-                                nextAppt: -1
+                        else if (fileName.includes("임플란트수술통계")) {
+                            if (!monthFromFile) {
+                                reject(`파일명에 월 정보가 없습니다 (${fileName})`);
+                                return;
+                            }
+
+                            let stats = {
+                                month: monthFromFile,
+                                implantTotal: 0,
+                                osstem: 0, dentium: 0, dio: 0, straumann: 0,
+                                crestal: 0, lateral: 0, gbr: 0
                             };
 
-                            // 1. 헤더 행 찾기
-                            let headerRowIdx = -1;
-                            for (let r = 0; r < Math.min(25, rawData.length); r++) {
-                                const row = rawData[r] || [];
-                                row.forEach((cell, c) => {
-                                    if (!cell) return;
-                                    const txt = String(cell).trim().replace(/\s+/g, '');
-                                    if (txt.includes('환자정보') || txt.includes('환자명')) colMap.patientName = c;
-                                    else if (txt.includes('작성일')) colMap.createdAt = c;
-                                    else if (txt.includes('진행상태')) colMap.status = c;
-                                    else if (txt.includes('수납상태')) colMap.payStatus = c;
-                                    else if (txt.includes('계약금액')) colMap.contractAmount = c;
-                                    else if (txt.includes('현재수납액')) colMap.paidAmount = c;
-                                    else if (txt.includes('최종내원')) colMap.lastVisit = c;
-                                    else if (txt.includes('다음예약')) colMap.nextAppt = c;
-                                });
-                                if (colMap.patientName !== -1 && colMap.contractAmount !== -1) {
-                                    headerRowIdx = r;
-                                    break;
+                            let foundValidSheet = false;
+
+                            for (const sName of wb.SheetNames) {
+                                const ws = wb.Sheets[sName];
+                                const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                                
+                                let headers = { count: -1, crestal: -1, lateral: -1, gbr: -1, brand: -1 };
+                                let imHeaderRowIdx = -1;
+
+                                for (let r = 0; r < Math.min(30, sheetData.length); r++) {
+                                    const row = sheetData[r] || [];
+                                    let foundCount = 0;
+                                    row.forEach((cell, c) => {
+                                        if (!cell) return;
+                                        const txt = String(cell).trim().replace(/\s+/g, '');
+                                        const lowTxt = txt.toLowerCase();
+                                        
+                                        if (txt.includes('사용개수') || txt.includes('사용갯수') || txt.includes('수량')) {
+                                            headers.count = c; foundCount++;
+                                        } else if (lowTxt.includes('crestal')) {
+                                            headers.crestal = c; foundCount++;
+                                        } else if (lowTxt.includes('lateral')) {
+                                            headers.lateral = c; foundCount++;
+                                        } else if (lowTxt.includes('gbr')) {
+                                            headers.gbr = c; foundCount++;
+                                        } else if (txt.includes('재료') || txt.includes('품명') || txt.includes('제조') || txt.includes('구분') || txt.includes('모델') || txt.includes('종류')) {
+                                            if (headers.brand === -1) { headers.brand = c; foundCount++; }
+                                        }
+                                    });
+                                    if (foundCount >= 1) { imHeaderRowIdx = r; break; }
+                                }
+
+                                if (imHeaderRowIdx !== -1 && (headers.count !== -1 || headers.brand !== -1)) {
+                                    for (let r = imHeaderRowIdx + 1; r < sheetData.length; r++) {
+                                        const row = sheetData[r];
+                                        if (!row) continue;
+                                        const count = headers.count !== -1 ? parseNum(row[headers.count]) : 0;
+                                        const rowCount = count > 0 ? count : (headers.brand !== -1 && row[headers.brand] ? 1 : 0);
+                                        if (rowCount > 0) stats.implantTotal += rowCount;
+                                        if (headers.crestal !== -1) stats.crestal += parseNum(row[headers.crestal]);
+                                        if (headers.lateral !== -1) stats.lateral += parseNum(row[headers.lateral]);
+                                        if (headers.gbr !== -1) stats.gbr += parseNum(row[headers.gbr]);
+                                        if (headers.brand !== -1 && row[headers.brand]) {
+                                            const brandTxt = String(row[headers.brand] || '').toUpperCase();
+                                            if (brandTxt.includes('OSSTEM') || brandTxt.includes('오스템')) stats.osstem += rowCount;
+                                            else if (brandTxt.includes('DENTIUM') || brandTxt.includes('덴티움')) stats.dentium += rowCount;
+                                            else if (brandTxt.includes('디오') || brandTxt.includes('DIO')) stats.dio += rowCount;
+                                            else if (brandTxt.includes('STRAUMANN') || brandTxt.includes('스트라우만')) stats.straumann += rowCount;
+                                        }
+                                    }
+                                    foundValidSheet = true;
+                                    break; 
                                 }
                             }
 
-                            if (headerRowIdx !== -1) {
-                                for (let r = headerRowIdx + 1; r < rawData.length; r++) {
-                                    const row = rawData[r];
-                                    if (!row || (!row[colMap.patientName] && !row[colMap.contractAmount])) continue;
-                                    
-                                    const p = {
-                                        patientName: String(row[colMap.patientName] || '').trim(),
-                                        createdAt: String(row[colMap.createdAt] || '').trim(),
-                                        status: String(row[colMap.status] || '').trim(),
-                                        payStatus: String(row[colMap.payStatus] || '').trim(),
-                                        contractAmount: parseNum(row[colMap.contractAmount]),
-                                        paidAmount: parseNum(row[colMap.paidAmount]),
-                                        lastVisit: String(row[colMap.lastVisit] || '').trim(),
-                                        nextAppt: String(row[colMap.nextAppt] || '').trim()
-                                    };
-                                    
-                                    if (p.patientName || p.contractAmount > 0) {
-                                        ExtractedAgreedPatients.push(p);
-                                    }
-                                }
-                                
-                                localStorage.setItem('treatment_plan_data', JSON.stringify(ExtractedAgreedPatients));
-                                alert(`[치료비용계획 연동 완료] 총 ${ExtractedAgreedPatients.length}명의 상담/계약 내역을 가져왔습니다.`);
+                            if (!foundValidSheet) {
+                                reject(`'임플란트수술통계' 파일 구조 분석 실패: 어떤 시트(탭)에서도 '사용개수' 또는 '재료명' 헤더를 찾을 수 없습니다. (${fileName})`);
+                                return;
+                            }
+
+                            const savedPerfData = localStorage.getItem('treatment_performance_data');
+                            const defaultPerfData = [
+                                { month: '1월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                { month: '2월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                { month: '3월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                { month: '4월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                { month: '5월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                { month: '6월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                { month: '7월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                { month: '8월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                { month: '9월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                { month: '10월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                { month: '11월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                { month: '12월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 }
+                            ];
+                            let currentPerfData = savedPerfData ? JSON.parse(savedPerfData) : defaultPerfData;
+                            const monthIdx = currentPerfData.findIndex(d => d.month === monthFromFile);
+                            if (monthIdx !== -1) {
+                                currentPerfData[monthIdx] = { ...currentPerfData[monthIdx], ...stats };
+                                localStorage.setItem('treatment_performance_data', JSON.stringify(currentPerfData));
+                                alert(`[임플란트 수술통계 연동 완료] ${monthFromFile} 데이터가 진료분석에 적용되었습니다.`);
                                 updatedCount++;
                                 resolve();
                             } else {
-                                reject(`'치료비용계획' 파일 구조 분석 실패: '환자정보', '계약금액' 등의 헤더를 찾을 수 없습니다.`);
+                                reject(`${monthFromFile} 데이터를 찾을 수 없습니다.`);
                             }
                         }
                         else if (fileName.includes("환자별 수납내역") || fileName.includes("환자별수납내역")) {
@@ -532,8 +568,53 @@ const Admin = () => {
                                 reject(`파일 구조 분석 실패 (${fileName}): 의사명 및 금액 컬럼을 찾을 수 없습니다.`);
                             }
                         }
+                        else if (fileName.includes("월간장부")) {
+                            const month = extractMonth(fileName);
+                            if (!month) {
+                                reject(`파일명에 월 정보가 없습니다 (${fileName})`);
+                                return;
+                            }
+                            
+                            let cashVal = 0;
+                            let cardVal = 0;
+                            let otherVal = 0;
+
+                            // 시트 전체 순회하며 라벨 찾기 (라벨 바로 오른쪽 셀에 금액이 있다고 가정)
+                            for (let r = 0; r < Math.min(100, rawData.length); r++) {
+                                const row = rawData[r] || [];
+                                for (let c = 0; c < row.length; c++) {
+                                    if (row[c] == null) continue;
+                                    const txt = String(row[c]).trim().replace(/\s+/g, '');
+                                    
+                                    if (txt.includes('현금수입')) {
+                                        cashVal = parseNum(row[c+1]);
+                                    } else if (txt.includes('카드수입')) {
+                                        cardVal = parseNum(row[c+1]);
+                                    } else if (txt.includes('기타(온라인)수입')) {
+                                        otherVal = parseNum(row[c+1]);
+                                    }
+                                }
+                            }
+
+                            const d = currentData.find(item => item.month === month);
+                            if (d) {
+                                d.cash = cashVal;
+                                d.card = cardVal;
+                                d.other = otherVal;
+                                // 순매출 자동 계산 (보험 제외)
+                                d.netSales = cashVal + cardVal + otherVal;
+                                // 총매출 자동 계산 (순매출 + 기존 보험청구액)
+                                d.total = d.netSales + (Number(d.insurance) || 0);
+                                
+                                alert(`[월간장부 연동 완료] ${month} 현금수입: ${cashVal.toLocaleString()}원 / 카드수입: ${cardVal.toLocaleString()}원 / 기타(온라인)수입: ${otherVal.toLocaleString()}원`);
+                                updatedCount++;
+                                resolve();
+                            } else {
+                                reject(`대시보드에서 ${month} 데이터를 찾을 수 없습니다.`);
+                            }
+                        }
                         else {
-                            reject(`알 수 없는 파일 형식입니다 (${fileName}). 파일명에 '치료비용계획', '연간장부', '내원경로', '수납내역' 등의 키워드를 포함해주세요.`);
+                            reject(`알 수 없는 파일 형식입니다 (${fileName}). 파일명에 '월간장부', '치료비용계획', '연간장부', '내원경로', '수납내역' 등의 키워드를 포함해주세요.`);
                         }
                     } catch (error) {
                         reject(`분석 중 오류 발생 (${fileName})`);
