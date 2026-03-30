@@ -129,20 +129,32 @@ const SalesAnalysis = () => {
     (Array.isArray(salesData) ? salesData.slice(6, 12) : []);
 
   
-  // --- 현재 선택된 연도에 따른 필터링 데이터 ---
+  // --- 연도 정규화 및 필터링 유틸리티 ---
+  const normalizeYear = (val) => {
+    if (!val) return '';
+    const s = String(val).trim();
+    if (s.length === 2) return '20' + s;
+    return s;
+  };
+
+  // --- 현재 선택된 연도에 따른 필터링 데이터 (Strict Filtering) ---
   const filteredAgreedPatients = React.useMemo(() => {
+    const targetY = normalizeYear(selectedYear);
     return (agreedPatients || []).filter(p => {
-      const pYear = p.year || (p.createdAt ? p.createdAt.split('-')[0] : '');
-      return String(pYear) === String(selectedYear);
+      const pYear = normalizeYear(p.year || (p.createdAt ? p.createdAt.split('-')[0] : ''));
+      // 연도 정보가 아예 없는 레거시 데이터는 기본적으로 2025년으로 간주하거나, 2026년에서는 숨김 처리
+      const finalPYear = pYear || '2025'; 
+      return finalPYear === targetY;
     });
   }, [agreedPatients, selectedYear]);
 
   const filteredTopPatientsRaw = React.useMemo(() => {
+    const targetY = normalizeYear(selectedYear);
     return (topPatientsRaw || []).filter(p => {
-      const pYear = p.year || (p.createdAt ? p.createdAt.split('-')[0] : '');
-      // topPatientsRaw에 year 정보가 없는 경우 파일명 기반 날짜 추출이나 기본값 처리 필요할 수 있음
-      // Admin.jsx에서 방금 year 필드를 추가했으므로, 신규 데이터는 정확히 필터링됨
-      return !pYear || String(pYear) === String(selectedYear);
+      const pYear = normalizeYear(p.year || (p.createdAt ? p.createdAt.split('-')[0] : ''));
+      // year 정보가 없는 레거시 데이터는 2025년으로 간주하여 2026년 노출 방지
+      const finalPYear = pYear || '2025';
+      return finalPYear === targetY;
     });
   }, [topPatientsRaw, selectedYear]);
 
@@ -591,13 +603,13 @@ const SalesAnalysis = () => {
       case 'agreed': // 4. 동의환자 수납액
         const currentAgreedMonths = currentHalfData.map(d => d.month);
         const filteredAgreed = selectedAgreedMonth === '전체' 
-          ? agreedPatients.filter(p => {
-              const mMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/-(\d+)-/);
+          ? filteredAgreedPatients.filter(p => {
+              const mMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/[\.\-\/](\d{1,2})[\.\-\/]/) || p.createdAt.match(/^(\d{1,2})[\.\-\/]/);
               const mStr = mMatch ? parseInt(mMatch[1]) + '월' : null;
               return mStr && currentAgreedMonths.includes(mStr);
             })
-          : agreedPatients.filter(p => {
-              const mMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/-(\d+)-/);
+          : filteredAgreedPatients.filter(p => {
+              const mMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/[\.\-\/](\d{1,2})[\.\-\/]/) || p.createdAt.match(/^(\d{1,2})[\.\-\/]/);
               return mMatch && parseInt(mMatch[1]) + '월' === selectedAgreedMonth;
             });
 
@@ -682,8 +694,8 @@ const SalesAnalysis = () => {
       case 'topFee': // 5. 진료비 상위
         const currentMonths = currentHalfData.map(d => d.month);
         const filteredTop = selectedTopMonth === '전체' 
-          ? topPatientsRaw.filter(p => currentMonths.includes(p.month)) 
-          : topPatientsRaw.filter(p => {
+          ? filteredTopPatientsRaw.filter(p => currentMonths.includes(p.month)) 
+          : filteredTopPatientsRaw.filter(p => {
               const m = (p.month || '');
               return m === selectedTopMonth || m.includes(selectedTopMonth.replace('월', ''));
             });
