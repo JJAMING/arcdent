@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   BarChart3, PieChart as PieIcon, UserPlus, UserCheck, 
   Award, Activity, FileText, TrendingUp, DollarSign, 
-  Users, ChevronRight, Calculator, Calendar
+  Users, ChevronRight, Calculator, Calendar, ChevronDown
 } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
 import './SalesAnalysis.css';
@@ -58,6 +58,7 @@ const SalesAnalysis = () => {
   const [subTab, setSubTab] = useState('total'); // 기본탭: 총 매출 현황
   const [selectedYear, setSelectedYear] = useState('2025');
   const [availableYears, setAvailableYears] = useState(['2025']);
+  const [isYearOpen, setIsYearOpen] = useState(false);
   
   const [salesDataMap, setSalesDataMap] = useState({ "2025": MOCK_DATA });
   const [salesData, setSalesData] = useState(MOCK_DATA);
@@ -1126,19 +1127,34 @@ const SalesAnalysis = () => {
             <p>치과의 주요 경영 지표와 매출 통계를 한눈에 확인합니다.</p>
           </div>
           <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
-            {availableYears.length > 1 && (
-              <div className="period-tabs year-tabs">
-                {availableYears.map(year => (
-                  <button 
-                    key={year} 
-                    className={selectedYear === year ? 'active' : ''} 
-                    onClick={() => handleYearChange(year)}
-                  >
-                    {year}년
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="year-selector-container">
+              <button 
+                className="year-select-btn" 
+                onClick={() => setIsYearOpen(!isYearOpen)}
+              >
+                <Calendar size={16} />
+                {selectedYear}년
+                <ChevronDown size={14} style={{ transform: isYearOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+              </button>
+              
+              {isYearOpen && (
+                <div className="year-dropdown">
+                  {availableYears.map(year => (
+                    <button 
+                      key={year}
+                      className={`year-item ${selectedYear === year ? 'active' : ''}`}
+                      onClick={() => {
+                        handleYearChange(year);
+                        setIsYearOpen(false);
+                      }}
+                    >
+                      {year}년
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="period-tabs">
               <button className={half === 'all' ? 'active' : ''} onClick={() => setHalf('all')}>전체보기</button>
               <button className={half === 'first' ? 'active' : ''} onClick={() => setHalf('first')}>상반기</button>

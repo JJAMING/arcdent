@@ -38,13 +38,20 @@ const Admin = () => {
         if (savedDataStr) {
             try {
                 const parsed = JSON.parse(savedDataStr);
-                if (Array.isArray(parsed)) {
-                    // 기존 배열 형식 처리 (2025년으로 마이그레이션)
-                    salesDataMap["2025"] = parsed;
-                } else {
-                    salesDataMap = parsed;
-                }
+                if (Array.isArray(parsed)) salesDataMap["2025"] = parsed;
+                else salesDataMap = parsed;
             } catch (e) { salesDataMap = {}; }
+        }
+
+        // [진료분석] 데이터 맵 로드
+        const savedPerfStr = localStorage.getItem('treatment_performance_data');
+        let treatmentPerfMap = {};
+        if (savedPerfStr) {
+            try {
+                const parsed = JSON.parse(savedPerfStr);
+                if (Array.isArray(parsed)) treatmentPerfMap["2025"] = parsed;
+                else treatmentPerfMap = parsed;
+            } catch (e) { treatmentPerfMap = {}; }
         }
 
         let updatedCount = 0;
@@ -422,36 +429,32 @@ const Admin = () => {
                                 }
                             }
 
-                            if (!foundValidSheet) {
-                                reject(`'임플란트수술통계' 파일 구조 분석 실패: 어떤 시트(탭)에서도 '사용개수' 또는 '재료명' 헤더를 찾을 수 없습니다. (${fileName})`);
-                                return;
+                            if (!treatmentPerfMap[yearFromFile]) {
+                                treatmentPerfMap[yearFromFile] = [
+                                    { month: '1월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                    { month: '2월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                    { month: '3월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                    { month: '4월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                    { month: '5월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                    { month: '6월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                    { month: '7월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                    { month: '8월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                    { month: '9월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                    { month: '10월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                    { month: '11월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
+                                    { month: '12월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 }
+                                ];
                             }
-
-                            const savedPerfData = localStorage.getItem('treatment_performance_data');
-                            const defaultPerfData = [
-                                { month: '1월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
-                                { month: '2월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
-                                { month: '3월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
-                                { month: '4월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
-                                { month: '5월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
-                                { month: '6월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
-                                { month: '7월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
-                                { month: '8월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
-                                { month: '9월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
-                                { month: '10월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
-                                { month: '11월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 },
-                                { month: '12월', surg1: 0, implantTotal: 0, osstem: 0, dentium: 0, dio: 0, straumann: 0, crestal: 0, lateral: 0, gbr: 0, insImp: 0, insDent: 0 }
-                            ];
-                            let currentPerfData = savedPerfData ? JSON.parse(savedPerfData) : defaultPerfData;
-                            const monthIdx = currentPerfData.findIndex(d => d.month === monthFromFile);
+                            const currentYearPerfData = treatmentPerfMap[yearFromFile];
+                            
+                            const monthIdx = currentYearPerfData.findIndex(d => d.month === monthFromFile);
                             if (monthIdx !== -1) {
-                                currentPerfData[monthIdx] = { ...currentPerfData[monthIdx], ...stats };
-                                localStorage.setItem('treatment_performance_data', JSON.stringify(currentPerfData));
-                                alert(`[임플란트 수술통계 연동 완료] ${monthFromFile} 데이터가 진료분석에 적용되었습니다.`);
+                                currentYearPerfData[monthIdx] = { ...currentYearPerfData[monthIdx], ...stats };
+                                alert(`[임플란트 수술통계 연동 완료] ${yearFromFile} ${monthFromFile} 데이터가 진료분석에 적용되었습니다.`);
                                 updatedCount++;
                                 resolve();
                             } else {
-                                reject(`${monthFromFile} 데이터를 찾을 수 없습니다.`);
+                                reject(`대시보드에서 ${yearFromFile} ${monthFromFile} 데이터를 찾을 수 없습니다.`);
                             }
                         }
                         else if (fileName.includes("환자별 수납내역") || fileName.includes("환자별수납내역")) {
@@ -687,7 +690,8 @@ const Admin = () => {
 
         if (updatedCount > 0) {
             localStorage.setItem('parsed_sales_data', JSON.stringify(salesDataMap));
-            alert(`${updatedCount}개의 파일 데이터가 파싱되어 연도별 매출 분석에 적용되었습니다.`);
+            localStorage.setItem('treatment_performance_data', JSON.stringify(treatmentPerfMap));
+            alert(`${updatedCount}개의 파일 데이터가 파싱되어 연도별 분석에 적용되었습니다.`);
             window.location.reload();
         }
     };

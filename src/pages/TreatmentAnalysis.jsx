@@ -5,10 +5,11 @@ import {
 } from 'recharts';
 import { 
     Activity, ShieldCheck, TrendingUp, Calendar, FileText, 
-    ChevronRight, Award, PlusCircle
+    ChevronRight, Award, PlusCircle, ChevronDown
 } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
 import './TreatmentAnalysis.css';
+import './SalesAnalysis.css'; // 연도 선택 드롭다운 스타일 재사용
 
 // --- MOCK DATA (12 Months Treatment Performance) ---
 const MOCK_TREATMENT_DATA = [
@@ -27,8 +28,13 @@ const MOCK_TREATMENT_DATA = [
 ];
 
 const TreatmentAnalysis = () => {
-    const [half, setHalf] = useState('first');
+    const [half, setHalf] = useState('all');
     const [subTab, setSubTab] = useState('implant');
+    const [selectedYear, setSelectedYear] = useState('2025');
+    const [availableYears, setAvailableYears] = useState(['2025']);
+    const [isYearOpen, setIsYearOpen] = useState(false);
+    
+    const [perfDataMap, setPerfDataMap] = useState({ "2025": MOCK_TREATMENT_DATA });
     const [perfData, setPerfData] = useState(MOCK_TREATMENT_DATA);
 
     useEffect(() => {
@@ -36,10 +42,30 @@ const TreatmentAnalysis = () => {
         if (saved) {
             try {
                 const parsed = JSON.parse(saved);
-                if (Array.isArray(parsed) && parsed.length === 12) setPerfData(parsed);
+                let finalMap = {};
+                if (Array.isArray(parsed)) {
+                    finalMap = { "2025": parsed };
+                } else {
+                    finalMap = parsed;
+                }
+                
+                const years = Object.keys(finalMap).sort((a, b) => b - a);
+                setAvailableYears(years.length > 0 ? years : ['2025']);
+                setPerfDataMap(finalMap);
+                
+                const initialYear = years.includes('2025') ? '2025' : (years[0] || '2025');
+                setSelectedYear(initialYear);
+                if (finalMap[initialYear]) setPerfData(finalMap[initialYear]);
             } catch (e) { console.error("Data load error:", e); }
         }
     }, []);
+
+    const handleYearChange = (year) => {
+        setSelectedYear(year);
+        if (perfDataMap[year]) {
+            setPerfData(perfDataMap[year]);
+        }
+    };
 
     const currentHalfData = useMemo(() => {
         if (half === 'all') return perfData;
@@ -218,15 +244,46 @@ const TreatmentAnalysis = () => {
 
     return (
         <div className="treatment-analysis-page">
-            <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '1.5rem' }}>
+            <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
                 <div>
                     <h1>진료분석</h1>
                     <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>수술 건수 및 보험 진료 현황을 분석합니다.</p>
                 </div>
-                <div className="period-tabs">
-                    <button className={half === 'first' ? 'active' : ''} onClick={() => setHalf('first')}>상반기</button>
-                    <button className={half === 'second' ? 'active' : ''} onClick={() => setHalf('second')}>하반기</button>
-                    <button className={half === 'all' ? 'active' : ''} onClick={() => setHalf('all')}>전체</button>
+                
+                <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+                    <div className="year-selector-container">
+                        <button 
+                            className="year-select-btn" 
+                            onClick={() => setIsYearOpen(!isYearOpen)}
+                        >
+                            <Calendar size={16} />
+                            {selectedYear}년
+                            <ChevronDown size={14} style={{ transform: isYearOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                        </button>
+                        
+                        {isYearOpen && (
+                            <div className="year-dropdown">
+                                {availableYears.map(year => (
+                                    <button 
+                                        key={year}
+                                        className={`year-item ${selectedYear === year ? 'active' : ''}`}
+                                        onClick={() => {
+                                            handleYearChange(year);
+                                            setIsYearOpen(false);
+                                        }}
+                                    >
+                                        {year}년
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="period-tabs">
+                        <button className={half === 'all' ? 'active' : ''} onClick={() => setHalf('all')}>전체보기</button>
+                        <button className={half === 'first' ? 'active' : ''} onClick={() => setHalf('first')}>상반기</button>
+                        <button className={half === 'second' ? 'active' : ''} onClick={() => setHalf('second')}>하반기</button>
+                    </div>
                 </div>
             </header>
 

@@ -3,7 +3,9 @@ import {
     PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
     BarChart, Bar, XAxis, YAxis, CartesianGrid
 } from 'recharts';
+import { Calendar, ChevronDown } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import './SalesAnalysis.css'; // 연도 선택 드롭다운 스타일 재사용
 
 const agreementData = [
     { name: '동의', value: 85, fill: '#10b981' },
@@ -31,11 +33,28 @@ const stats = [
 
 const ConsultationAnalysis = () => {
     const [comment, setComment] = useState('');
+    const [selectedYear, setSelectedYear] = useState('2025');
+    const [availableYears, setAvailableYears] = useState(['2025']);
+    const [isYearOpen, setIsYearOpen] = useState(false);
+    const [half, setHalf] = useState('all');
 
     useEffect(() => {
-        const saved = localStorage.getItem('arcdent_consultation_comment');
-        if (saved) setComment(saved);
+        const savedComment = localStorage.getItem('arcdent_consultation_comment');
+        if (savedComment) setComment(savedComment);
+
+        const savedSales = localStorage.getItem('parsed_sales_data');
+        if (savedSales) {
+            try {
+                const parsed = JSON.parse(savedSales);
+                const years = Object.keys(parsed).sort((a, b) => b - a);
+                setAvailableYears(years.length > 0 ? years : ['2025']);
+            } catch (e) { console.error(e); }
+        }
     }, []);
+
+    const handleYearChange = (year) => {
+        setSelectedYear(year);
+    };
 
     const handleSave = () => {
         localStorage.setItem('arcdent_consultation_comment', comment);
@@ -44,9 +63,47 @@ const ConsultationAnalysis = () => {
 
     return (
         <div className="analysis-page">
-            <header className="page-header">
-                <h1>상담분석</h1>
-                <p>동의율과 담당자 성과를 분석합니다.</p>
+            <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                <div>
+                    <h1>상담분석</h1>
+                    <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>동의율과 담당자 성과를 분석합니다.</p>
+                </div>
+
+                <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+                    <div className="year-selector-container">
+                        <button 
+                            className="year-select-btn" 
+                            onClick={() => setIsYearOpen(!isYearOpen)}
+                        >
+                            <Calendar size={16} />
+                            {selectedYear}년
+                            <ChevronDown size={14} style={{ transform: isYearOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                        </button>
+                        
+                        {isYearOpen && (
+                            <div className="year-dropdown">
+                                {availableYears.map(year => (
+                                    <button 
+                                        key={year}
+                                        className={`year-item ${selectedYear === year ? 'active' : ''}`}
+                                        onClick={() => {
+                                            handleYearChange(year);
+                                            setIsYearOpen(false);
+                                        }}
+                                    >
+                                        {year}년
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="period-tabs">
+                        <button className={half === 'all' ? 'active' : ''} onClick={() => setHalf('all')}>전체보기</button>
+                        <button className={half === 'first' ? 'active' : ''} onClick={() => setHalf('first')}>상반기</button>
+                        <button className={half === 'second' ? 'active' : ''} onClick={() => setHalf('second')}>하반기</button>
+                    </div>
+                </div>
             </header>
 
             <div className="stats-row" style={{ gap: '0.75rem', marginBottom: '1rem' }}>
