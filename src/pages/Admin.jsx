@@ -311,6 +311,38 @@ const Admin = () => {
         fileInputRef.current?.click();
     };
 
+    const handleForceCleanup = () => {
+        if (!window.confirm("정말로 2025년 2월의 모든 데이터를 초기화하시겠습니까? 중복된 데이터를 싹 지우고 다시 업로드할 수 있습니다.")) return;
+        
+        try {
+            const T_YEAR = "2025";
+            const T_MONTH = "2월";
+
+            // 1. 동의환자 계획 데이터 정리
+            const plans = JSON.parse(localStorage.getItem('treatment_plan_data') || '[]');
+            const filteredPlans = plans.filter(p => {
+                const yMatch = String(p.year || "").includes(T_YEAR);
+                const mMatch = String(p.month || "").includes(T_MONTH);
+                return !(yMatch && mMatch);
+            });
+            localStorage.setItem('treatment_plan_data', JSON.stringify(filteredPlans));
+
+            // 2. 수납 실적 데이터 정리
+            const performance = JSON.parse(localStorage.getItem('treatment_performance_data') || '[]');
+            const filteredPerf = performance.filter(p => {
+                const yMatch = String(p.year || "").includes(T_YEAR);
+                const mMatch = String(p.month || "").includes(T_MONTH);
+                return !(yMatch && mMatch);
+            });
+            localStorage.setItem('treatment_performance_data', JSON.stringify(filteredPerf));
+
+            alert("2025년 2월 데이터가 강제 초기화되었습니다. 이제 엑셀을 다시 업로드해 보세요.");
+            window.location.reload();
+        } catch (e) {
+            alert("초기화 중 오류가 발생했습니다: " + e.message);
+        }
+    };
+
     return (
         <div className="admin-container">
             <div className="page-header">
@@ -374,6 +406,28 @@ const Admin = () => {
                             accept=".xlsx, .xls, .csv"
                             style={{ display: 'none' }}
                         />
+                    </div>
+
+                    <div style={{ marginTop: '1.5rem', padding: '1rem', background: '#fff5f5', borderRadius: '8px', border: '1px solid #feb2b2' }}>
+                        <h4 style={{ color: '#c53030', fontSize: '0.9rem', marginBottom: '0.5rem' }}>데이터 긴급 관리</h4>
+                        <button 
+                            onClick={handleForceCleanup}
+                            style={{
+                                width: '100%',
+                                padding: '0.75rem',
+                                background: '#f56565',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontWeight: 'bold',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            2025년 2월 데이터 강제 초기화
+                        </button>
+                        <p style={{ fontSize: '0.75rem', color: '#742a2a', marginTop: '0.4rem' }}>
+                            ※ 중복이 발생했을 때만 클릭하세요. 25년 2월 동의환자 데이터만 선택 삭제됩니다.
+                        </p>
                     </div>
                 </div>
             </div>
