@@ -10,22 +10,30 @@ const Admin = () => {
     const fileInputRef = useRef(null);
 
     useEffect(() => {
-        // [Manual Cleanup] 2025년 2월 동의환자 수납액 및 실적 데이터만 삭제 (사용자 요청)
+        // [임시 데이터 보강 삭제] 2025년 2월 동의환자 중복 데이터 완전 박멸 (사용자 요청)
         try {
-            const TARGET_YEAR = 2025;
-            const TARGET_MONTH = '2월';
+            const T_YEAR = "2025";
+            const T_MONTH = "2월";
 
-            // 1. 동의환자 계획 데이터 정리
+            // 1. 동의환자 계획 데이터 정리 (타입 무관 강제 필터링)
             const plans = JSON.parse(localStorage.getItem('treatment_plan_data') || '[]');
-            const filteredPlans = plans.filter(p => !(p.year === TARGET_YEAR && p.month === TARGET_MONTH));
+            const filteredPlans = plans.filter(p => {
+                const yMatch = String(p.year || "").includes("2025");
+                const mMatch = String(p.month || "").includes("2월");
+                return !(yMatch && mMatch);
+            });
             localStorage.setItem('treatment_plan_data', JSON.stringify(filteredPlans));
 
             // 2. 수납 실적 데이터 정리
             const performance = JSON.parse(localStorage.getItem('treatment_performance_data') || '[]');
-            const filteredPerf = performance.filter(p => !(p.year === TARGET_YEAR && p.month === TARGET_MONTH));
+            const filteredPerf = performance.filter(p => {
+                const yMatch = String(p.year || "").includes("2025");
+                const mMatch = String(p.month || "").includes("2월");
+                return !(yMatch && mMatch);
+            });
             localStorage.setItem('treatment_performance_data', JSON.stringify(filteredPerf));
 
-            console.log(`%c[Data Cleanup] ${TARGET_YEAR}년 ${TARGET_MONTH} 동의환자 데이터 삭제 완료`, 'color: #ef4444; font-weight: bold;');
+            console.log(`%c[Force Cleanup] 2025년 2월 데이터가 강제 정리되었습니다.`, 'color: #ff0000; font-weight: bold;');
         } catch (e) {
             console.error('Cleanup error:', e);
         }
@@ -218,17 +226,11 @@ const Admin = () => {
                                 const savedPlans = localStorage.getItem('treatment_plan_data');
                                 let allPlans = savedPlans ? JSON.parse(savedPlans) : [];
                                 
-                                plans.forEach(newP => {
-                                    const index = allPlans.findIndex(oldP => {
-                                        const oldName = String(oldP.patientName || '').replace(/\s+/g, '');
-                                        const newName = String(newP.patientName || '').replace(/\s+/g, '');
-                                        const oldChart = String(oldP.chartNo || '').trim();
-                                        const newChart = String(newP.chartNo || '').trim();
-                                        return oldP.year === newP.year && oldP.month === newP.month && oldChart === newChart && oldName === newName;
-                                    });
-                                    if (index !== -1) allPlans[index] = newP;
-                                    else allPlans.push(newP);
-                                });
+                                // [월 단위 전면 교체 로직] 업로드된 파일의 연도/월에 해당하는 기존 데이터를 먼저 모두 삭제합니다.
+                                allPlans = allPlans.filter(p => !(p.year === yearFromFile && p.month === monthFromFile));
+                                
+                                // 신규 데이터를 한꺼번에 추가합니다.
+                                allPlans = [...allPlans, ...plans];
                                 
                                 localStorage.setItem('treatment_plan_data', JSON.stringify(allPlans));
                                 updatedCount++;
