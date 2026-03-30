@@ -234,28 +234,6 @@ const Admin = () => {
 
     const triggerFileInput = () => fileInputRef.current?.click();
 
-    const handleForceCleanup = () => {
-        if (!window.confirm("2025년 2월 데이터를 강제 초기화하시겠습니까? 중복 데이터가 모두 지워집니다.")) return;
-        try {
-            const T_YEAR = "2025";
-            const isTargetMonth = (m) => {
-                const s = String(m || "").trim();
-                return s === "2" || s === "02" || s === "2월" || s === "02월";
-            };
-
-            const plans = JSON.parse(localStorage.getItem('treatment_plan_data') || '[]');
-            const filtered = plans.filter(p => !(String(p.year).includes(T_YEAR) && isTargetMonth(p.month)));
-            localStorage.setItem('treatment_plan_data', JSON.stringify(filtered));
-
-            const perf = JSON.parse(localStorage.getItem('treatment_performance_data') || '[]');
-            const filteredPerf = perf.filter(p => !(String(p.year).includes(T_YEAR) && isTargetMonth(p.month)));
-            localStorage.setItem('treatment_performance_data', JSON.stringify(filteredPerf));
-
-            alert("2025년 2월 데이터가 강제 삭제되었습니다. 다시 업로드해 주세요.");
-            window.location.reload();
-        } catch (e) { alert("오류: " + e.message); }
-    };
-
     return (
         <div className="admin-container">
             <div className="page-header">
@@ -305,13 +283,6 @@ const Admin = () => {
                         <h3>파일을 여기로 드래그하거나 클릭하여 업로드하세요</h3>
                         <p>.xlsx, .xls, .csv 지원</p>
                         <input type="file" multiple ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx, .xls, .csv" style={{ display: 'none' }} />
-                    </div>
-                    <div style={{ marginTop: '1.5rem', padding: '1rem', background: '#fff5f5', borderRadius: '8px', border: '1px solid #feb2b2' }}>
-                        <h4 style={{ color: '#c53030', marginBottom: '0.5rem' }}>데이터 긴급 관리</h4>
-                        <button onClick={handleForceCleanup} style={{ width: '100%', padding: '0.75rem', background: '#f56565', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
-                            2025년 2월 데이터 강제 초기화
-                        </button>
-                        <p style={{ fontSize: '0.75rem', color: '#742a2a', marginTop: '0.4rem' }}>※ 중복 발생 시 클릭하세요. 25년 2월 데이터만 삭제됩니다.</p>
                     </div>
                 </div>
             </div>
