@@ -1,30 +1,31 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-    ComposedChart, Line, Area, AreaChart, Cell, LabelList
+    LabelList
 } from 'recharts';
 import { 
     Activity, ShieldCheck, TrendingUp, Calendar, FileText, 
-    ChevronRight, Award, PlusCircle, ChevronDown
+    ChevronRight, Award, PlusCircle, ChevronDown,
+    Stethoscope, Smile                          // 임플 탭 아이콘: Stethoscope / 틀니: Smile
 } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
 import './TreatmentAnalysis.css';
-import './SalesAnalysis.css'; // 연도 선택 드롭다운 스타일 재사용
+import './SalesAnalysis.css';
 
 // --- MOCK DATA (12 Months Treatment Performance) ---
 const MOCK_TREATMENT_DATA = [
-    { month: '1월', surg1: 42, implantTotal: 45, osstem: 25, dentium: 10, dio: 5, straumann: 5, crestal: 10, lateral: 5, gbr: 12, insImp: 15, insDent: 8 },
-    { month: '2월', surg1: 38, implantTotal: 40, osstem: 20, dentium: 8, dio: 4, straumann: 8, crestal: 8, lateral: 4, gbr: 10, insImp: 12, insDent: 10 },
-    { month: '3월', surg1: 45, implantTotal: 50, osstem: 30, dentium: 10, dio: 5, straumann: 5, crestal: 12, lateral: 6, gbr: 15, insImp: 18, insDent: 12 },
-    { month: '4월', surg1: 52, implantTotal: 58, osstem: 35, dentium: 12, dio: 6, straumann: 5, crestal: 15, lateral: 8, gbr: 18, insImp: 22, insDent: 15 },
-    { month: '5월', surg1: 48, implantTotal: 52, osstem: 30, dentium: 10, dio: 5, straumann: 7, crestal: 14, lateral: 7, gbr: 16, insImp: 20, insDent: 14 },
-    { month: '6월', surg1: 55, implantTotal: 62, osstem: 40, dentium: 10, dio: 5, straumann: 7, crestal: 18, lateral: 10, gbr: 22, insImp: 25, insDent: 18 },
-    { month: '7월', surg1: 50, implantTotal: 55, osstem: 32, dentium: 10, dio: 5, straumann: 8, crestal: 16, lateral: 8, gbr: 18, insImp: 24, insDent: 16 },
-    { month: '8월', surg1: 46, implantTotal: 50, osstem: 28, dentium: 10, dio: 5, straumann: 7, crestal: 15, lateral: 7, gbr: 15, insImp: 21, insDent: 15 },
-    { month: '9월', surg1: 58, implantTotal: 65, osstem: 40, dentium: 15, dio: 5, straumann: 5, crestal: 20, lateral: 10, gbr: 25, insImp: 28, insDent: 20 },
-    { month: '10월', surg1: 62, implantTotal: 70, osstem: 45, dentium: 15, dio: 5, straumann: 5, crestal: 22, lateral: 12, gbr: 28, insImp: 30, insDent: 22 },
-    { month: '11월', surg1: 54, implantTotal: 60, osstem: 35, dentium: 15, dio: 5, straumann: 5, crestal: 19, lateral: 9, gbr: 20, insImp: 26, insDent: 19 },
-    { month: '12월', surg1: 68, implantTotal: 75, osstem: 50, dentium: 15, dio: 5, straumann: 5, crestal: 25, lateral: 15, gbr: 32, insImp: 35, insDent: 25 },
+    { month: '1월',  surg1: 42, implantTotal: 45, osstem: 25, dentium: 10, dio: 5, straumann: 5,  crestal: 10, lateral: 5,  gbr: 12, insImp: 15, insImpStep1: 5,  insImpStep2: 6,  insImpStep3: 4,  insDent: 8,  insDentStep1: 3, insDentStep5: 3, insDentStep6: 2 },
+    { month: '2월',  surg1: 38, implantTotal: 40, osstem: 20, dentium: 8,  dio: 4, straumann: 8,  crestal: 8,  lateral: 4,  gbr: 10, insImp: 12, insImpStep1: 4,  insImpStep2: 5,  insImpStep3: 3,  insDent: 10, insDentStep1: 4, insDentStep5: 4, insDentStep6: 2 },
+    { month: '3월',  surg1: 45, implantTotal: 50, osstem: 30, dentium: 10, dio: 5, straumann: 5,  crestal: 12, lateral: 6,  gbr: 15, insImp: 18, insImpStep1: 6,  insImpStep2: 7,  insImpStep3: 5,  insDent: 12, insDentStep1: 5, insDentStep5: 4, insDentStep6: 3 },
+    { month: '4월',  surg1: 52, implantTotal: 58, osstem: 35, dentium: 12, dio: 6, straumann: 5,  crestal: 15, lateral: 8,  gbr: 18, insImp: 22, insImpStep1: 8,  insImpStep2: 8,  insImpStep3: 6,  insDent: 15, insDentStep1: 6, insDentStep5: 5, insDentStep6: 4 },
+    { month: '5월',  surg1: 48, implantTotal: 52, osstem: 30, dentium: 10, dio: 5, straumann: 7,  crestal: 14, lateral: 7,  gbr: 16, insImp: 20, insImpStep1: 7,  insImpStep2: 7,  insImpStep3: 6,  insDent: 14, insDentStep1: 5, insDentStep5: 5, insDentStep6: 4 },
+    { month: '6월',  surg1: 55, implantTotal: 62, osstem: 40, dentium: 10, dio: 5, straumann: 7,  crestal: 18, lateral: 10, gbr: 22, insImp: 25, insImpStep1: 9,  insImpStep2: 9,  insImpStep3: 7,  insDent: 18, insDentStep1: 7, insDentStep5: 6, insDentStep6: 5 },
+    { month: '7월',  surg1: 50, implantTotal: 55, osstem: 32, dentium: 10, dio: 5, straumann: 8,  crestal: 16, lateral: 8,  gbr: 18, insImp: 24, insImpStep1: 8,  insImpStep2: 9,  insImpStep3: 7,  insDent: 16, insDentStep1: 6, insDentStep5: 5, insDentStep6: 5 },
+    { month: '8월',  surg1: 46, implantTotal: 50, osstem: 28, dentium: 10, dio: 5, straumann: 7,  crestal: 15, lateral: 7,  gbr: 15, insImp: 21, insImpStep1: 7,  insImpStep2: 8,  insImpStep3: 6,  insDent: 15, insDentStep1: 6, insDentStep5: 5, insDentStep6: 4 },
+    { month: '9월',  surg1: 58, implantTotal: 65, osstem: 40, dentium: 15, dio: 5, straumann: 5,  crestal: 20, lateral: 10, gbr: 25, insImp: 28, insImpStep1: 10, insImpStep2: 10, insImpStep3: 8,  insDent: 20, insDentStep1: 8, insDentStep5: 7, insDentStep6: 5 },
+    { month: '10월', surg1: 62, implantTotal: 70, osstem: 45, dentium: 15, dio: 5, straumann: 5,  crestal: 22, lateral: 12, gbr: 28, insImp: 30, insImpStep1: 11, insImpStep2: 11, insImpStep3: 8,  insDent: 22, insDentStep1: 9, insDentStep5: 7, insDentStep6: 6 },
+    { month: '11월', surg1: 54, implantTotal: 60, osstem: 35, dentium: 15, dio: 5, straumann: 5,  crestal: 19, lateral: 9,  gbr: 20, insImp: 26, insImpStep1: 9,  insImpStep2: 10, insImpStep3: 7,  insDent: 19, insDentStep1: 8, insDentStep5: 6, insDentStep6: 5 },
+    { month: '12월', surg1: 68, implantTotal: 75, osstem: 50, dentium: 15, dio: 5, straumann: 5,  crestal: 25, lateral: 15, gbr: 32, insImp: 35, insImpStep1: 13, insImpStep2: 12, insImpStep3: 10, insDent: 25, insDentStep1: 10, insDentStep5: 9, insDentStep6: 6 },
 ];
 
 const TreatmentAnalysis = () => {
@@ -36,6 +37,7 @@ const TreatmentAnalysis = () => {
     
     const [perfDataMap, setPerfDataMap] = useState({ "2025": MOCK_TREATMENT_DATA });
     const [perfData, setPerfData] = useState(MOCK_TREATMENT_DATA);
+
 
     useEffect(() => {
         const saved = localStorage.getItem('treatment_performance_data');
@@ -67,6 +69,7 @@ const TreatmentAnalysis = () => {
         }
     };
 
+
     const currentHalfData = useMemo(() => {
         if (half === 'all') return perfData;
         return half === 'first' ? perfData.slice(0, 6) : perfData.slice(6, 12);
@@ -74,58 +77,79 @@ const TreatmentAnalysis = () => {
 
     const renderTabContent = () => {
         switch (subTab) {
-            case 'implant':
+            case 'implant': {
+                // 종류 및 수술법 항목 정의
+                const allSeries = [
+                    { key: 'osstem',    name: '오스템',     color: '#4472c4' },
+                    { key: 'dentium',   name: '덴티움',     color: '#ed7d31' },
+                    { key: 'dio',       name: '디오',       color: '#a9d18e' },
+                    { key: 'straumann', name: '스트라우만', color: '#9dc3e6' },
+                    { key: 'crestal',   name: 'Crestal',    color: '#70ad47' },
+                    { key: 'lateral',   name: 'Lateral',    color: '#7030a0' },
+                    { key: 'gbr',       name: 'GBR',        color: '#17becf' },
+                ];
+
                 return (
                     <div className="tab-pane">
                         <div className="dashboard-stack">
-                            {/* 상단 2분할 차트 */}
-                            <div className="dashboard-grid">
-                                <DashboardCard 
-                                    title="임플란트 사용개수 합계" 
+                            {/* 상단 2분할 차트 영역: 좌=1, 우=2 비율 */}
+                            <div className="dashboard-grid" style={{ gridTemplateColumns: '1fr 2fr' }}>
+                                {/* 좌측: 월별 총 식립개수 */}
+                                <DashboardCard
+                                    title="월별 임플란트 식립개수"
                                     subtitle={`${half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체'} 사용량 추이`}
                                 >
                                     <div style={{ height: 350, width: '100%' }}>
                                         <ResponsiveContainer>
-                                            <BarChart data={currentHalfData} margin={{ top: 20, right: 10, left: 10, bottom: 0 }}>
+                                            <BarChart data={currentHalfData} margin={{ top: 24, right: 16, left: 0, bottom: 0 }}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                                                 <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                                                <YAxis tick={{ fontSize: 12 }} />
-                                                <Tooltip contentStyle={{ borderRadius: '12px' }} />
-                                                <Bar dataKey="implantTotal" name="총 사용개수" fill="#3b82f6" radius={[4, 4, 0, 0]}>
-                                                    <LabelList dataKey="implantTotal" position="top" style={{ fontSize: 11, fontWeight: 700 }} />
+                                                <YAxis tick={{ fontSize: 12 }} width={36} />
+                                                <Tooltip
+                                                    contentStyle={{ borderRadius: '12px' }}
+                                                    formatter={(v) => [`${v}개`, '총 식립개수']}
+                                                />
+                                                <Bar dataKey="implantTotal" name="총 식립개수" fill="#70ad47" radius={[4, 4, 0, 0]} maxBarSize={55}>
+                                                    <LabelList dataKey="implantTotal" position="top" style={{ fontSize: 12, fontWeight: 700, fill: '#555' }} />
                                                 </Bar>
                                             </BarChart>
                                         </ResponsiveContainer>
                                     </div>
                                 </DashboardCard>
 
-                                <DashboardCard 
-                                    title="종류 및 수술법별 사용량" 
-                                    subtitle="임플란트 종류 / Crestal, Lateral, GBR"
+                                {/* 우측: 종류 및 수술법 통합 그룹형 바차트 */}
+                                <DashboardCard
+                                    title="종류 및 수술법별 사용량"
+                                    subtitle="오스템·덴티움·디오·스트라우만 / Crestal·Lateral·GBR"
                                 >
-                                    <div style={{ height: 350, width: '100%' }}>
+                                    <div style={{ height: 420, width: '100%' }}>
                                         <ResponsiveContainer>
-                                            <BarChart data={currentHalfData} margin={{ top: 20, right: 10, left: 10, bottom: 0 }}>
+                                            <BarChart
+                                                data={currentHalfData}
+                                                margin={{ top: 28, right: 20, left: 0, bottom: 0 }}
+                                                barCategoryGap="10%"
+                                                barGap={1}
+                                            >
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                                                 <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                                                <YAxis tick={{ fontSize: 12 }} />
-                                                <Tooltip contentStyle={{ borderRadius: '12px' }} />
-                                                <Legend verticalAlign="top" height={36} />
-                                                {/* 종류별 */}
-                                                <Bar dataKey="osstem" name="오스템" fill="#3b82f6" stackId="type" />
-                                                <Bar dataKey="dentium" name="덴티움" fill="#10b981" stackId="type" />
-                                                <Bar dataKey="dio" name="디오" fill="#6366f1" stackId="type" />
-                                                <Bar dataKey="straumann" name="스트라우만" fill="#f59e0b" stackId="type" />
-                                                {/* 수술법별 */}
-                                                <Bar dataKey="crestal" name="Crestal" fill="#ef4444" stackId="method" />
-                                                <Bar dataKey="lateral" name="Lateral" fill="#8b5cf6" stackId="method" />
-                                                <Bar dataKey="gbr" name="GBR" fill="#ec4899" stackId="method" />
+                                                <YAxis tick={{ fontSize: 12 }} width={36} />
+                                                <Tooltip
+                                                    contentStyle={{ borderRadius: '12px', fontSize: '12px' }}
+                                                    formatter={(v, name) => [`${v}개`, name]}
+                                                />
+                                                <Legend verticalAlign="top" height={36} iconType="square" wrapperStyle={{ fontSize: '11px' }} />
+                                                {allSeries.map(({ key, name, color }) => (
+                                                    <Bar key={key} dataKey={key} name={name} fill={color} maxBarSize={40}>
+                                                        <LabelList dataKey={key} position="top" style={{ fontSize: 10, fontWeight: 700, fill: color }} />
+                                                    </Bar>
+                                                ))}
                                             </BarChart>
                                         </ResponsiveContainer>
                                     </div>
                                 </DashboardCard>
                             </div>
 
+                            {/* 하단 상세 데이터 테이블 */}
                             <DashboardCard title="임플란트 종류 및 수술법 상세 데이터">
                                 <div className="treatment-data-table-container">
                                     <table className="treatment-data-table">
@@ -140,44 +164,21 @@ const TreatmentAnalysis = () => {
                                             <tr className="highlight-row">
                                                 <td className="row-header"><PlusCircle size={14} /> 총 사용개수</td>
                                                 {currentHalfData.map(d => <td key={d.month} className="font-bold">{d.implantTotal}개</td>)}
-                                                <td className="font-bold" style={{ fontSize: '1.1rem' }}>{currentHalfData.reduce((s,d)=>s+d.implantTotal, 0)}개</td>
+                                                <td className="font-bold" style={{ fontSize: '1.1rem' }}>{currentHalfData.reduce((s, d) => s + d.implantTotal, 0)}개</td>
                                             </tr>
-                                            <tr>
-                                                <td className="row-header"><span className="marker blue"></span> 오스템</td>
-                                                {currentHalfData.map(d => <td key={d.month}>{d.osstem}개</td>)}
-                                                <td>{currentHalfData.reduce((s,d)=>s+d.osstem, 0)}개</td>
-                                            </tr>
-                                            <tr>
-                                                <td className="row-header"><span className="marker green"></span> 덴티움</td>
-                                                {currentHalfData.map(d => <td key={d.month}>{d.dentium}개</td>)}
-                                                <td>{currentHalfData.reduce((s,d)=>s+d.dentium, 0)}개</td>
-                                            </tr>
-                                            <tr>
-                                                <td className="row-header"><span className="marker purple" style={{ background: '#6366f1' }}></span> 디오</td>
-                                                {currentHalfData.map(d => <td key={d.month}>{(d.dio || 0)}개</td>)}
-                                                <td>{currentHalfData.reduce((s,d)=>s+(d.dio || 0), 0)}개</td>
-                                            </tr>
-                                            <tr>
-                                                <td className="row-header"><span className="marker orange"></span> 스트라우만</td>
-                                                {currentHalfData.map(d => <td key={d.month}>{d.straumann}개</td>)}
-                                                <td>{currentHalfData.reduce((s,d)=>s+d.straumann, 0)}개</td>
-                                            </tr>
-                                            <tr><td colSpan={currentHalfData.length + 2} style={{ height: 1, padding: 0, background: 'var(--border-color)' }}></td></tr>
-                                            <tr>
-                                                <td className="row-header"><FileText size={14} /> Crestal</td>
-                                                {currentHalfData.map(d => <td key={d.month}>{d.crestal}개</td>)}
-                                                <td>{currentHalfData.reduce((s,d)=>s+d.crestal, 0)}개</td>
-                                            </tr>
-                                            <tr>
-                                                <td className="row-header"><FileText size={14} /> Lateral</td>
-                                                {currentHalfData.map(d => <td key={d.month}>{d.lateral}개</td>)}
-                                                <td>{currentHalfData.reduce((s,d)=>s+d.lateral, 0)}개</td>
-                                            </tr>
-                                            <tr>
-                                                <td className="row-header"><FileText size={14} /> GBR</td>
-                                                {currentHalfData.map(d => <td key={d.month}>{d.gbr}개</td>)}
-                                                <td>{currentHalfData.reduce((s,d)=>s+d.gbr, 0)}개</td>
-                                            </tr>
+                                            {allSeries.map(({ key, name, color }) => (
+                                                <tr key={key}>
+                                                    <td className="row-header">
+                                                        <span style={{
+                                                            display: 'inline-block', width: 10, height: 10,
+                                                            borderRadius: '2px', background: color, marginRight: 6, verticalAlign: 'middle'
+                                                        }} />
+                                                        {name}
+                                                    </td>
+                                                    {currentHalfData.map(d => <td key={d.month}>{Number(d[key] || 0)}개</td>)}
+                                                    <td className="font-bold">{currentHalfData.reduce((s, d) => s + (Number(d[key]) || 0), 0)}개</td>
+                                                </tr>
+                                            ))}
                                         </tbody>
                                     </table>
                                 </div>
@@ -185,27 +186,83 @@ const TreatmentAnalysis = () => {
                         </div>
                     </div>
                 );
-            case 'insurance':
+            }
+            case 'insurance': {
+                // 단계별 시리즈 정의
+                const impSeries = [
+                    { key: 'insImpStep1', name: '임플 1단계', color: '#3b82f6' },
+                    { key: 'insImpStep2', name: '임플 2단계', color: '#6366f1' },
+                    { key: 'insImpStep3', name: '임플 3단계', color: '#a78bfa' },
+                ];
+                const dentSeries = [
+                    { key: 'insDentStep1', name: '틈니 1단계', color: '#f59e0b' },
+                    { key: 'insDentStep5', name: '틈니 5단계', color: '#fb923c' },
+                    { key: 'insDentStep6', name: '틈니 6단계', color: '#ef4444' },
+                ];
+
+                // 데이터 없으면 insImp/insDent로 확인해 fallback
+                const safeD = (d, key) => Number(d[key] || 0);
+
                 return (
                     <div className="tab-pane">
                         <div className="dashboard-stack">
-                            <DashboardCard title="보험 임플란트 / 보험 틀니 추이">
-                                <div style={{ height: 400, width: '100%' }}>
-                                    <ResponsiveContainer>
-                                        <BarChart data={currentHalfData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-                                            <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                                            <YAxis tick={{ fontSize: 12 }} />
-                                            <Tooltip contentStyle={{ borderRadius: '12px' }} />
-                                            <Legend verticalAlign="top" align="right" height={36} />
-                                            <Bar dataKey="insImp" name="보험 임플란트" fill="#10b981" radius={[4, 4, 0, 0]} stackId="a" />
-                                            <Bar dataKey="insDent" name="보험 틀니" fill="#f59e0b" radius={[4, 4, 0, 0]} stackId="a" />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                </div>
-                            </DashboardCard>
+                            {/* 상단 2분할: 종합 추이 + 단계별 */}
+                            <div className="dashboard-grid" style={{ gridTemplateColumns: '1fr 2fr' }}>
+                                {/* 좌측: 보험 임플/틈니 요약 */}
+                                <DashboardCard
+                                    title="보험 임플/틈니 요약"
+                                    subtitle={`${half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체'} 추이`}
+                                >
+                                    <div style={{ height: 350, width: '100%' }}>
+                                        <ResponsiveContainer>
+                                            <BarChart data={currentHalfData} margin={{ top: 24, right: 16, left: 0, bottom: 0 }}>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+                                                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                                                <YAxis tick={{ fontSize: 12 }} width={36} />
+                                                <Tooltip contentStyle={{ borderRadius: '12px' }} formatter={(v, name) => [`${v}건`, name]} />
+                                                <Legend verticalAlign="top" height={36} iconType="square" wrapperStyle={{ fontSize: '11px' }} />
+                                                <Bar dataKey="insImp" name="보험임플" fill="#4472c4" maxBarSize={50} radius={[4,4,0,0]}>
+                                                    <LabelList dataKey="insImp" position="top" style={{ fontSize: 12, fontWeight: 700, fill: '#4472c4' }} />
+                                                </Bar>
+                                                <Bar dataKey="insDent" name="보험틈니" fill="#f59e0b" maxBarSize={50} radius={[4,4,0,0]}>
+                                                    <LabelList dataKey="insDent" position="top" style={{ fontSize: 12, fontWeight: 700, fill: '#f59e0b' }} />
+                                                </Bar>
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </DashboardCard>
 
-                            <DashboardCard title="보험 진료 상세 통계">
+                                {/* 우측: 단계별 그룹 바차트 */}
+                                <DashboardCard
+                                    title="단계별 사용량"
+                                    subtitle="임플 1·2·3단계 / 틈니 1·5·6단계"
+                                >
+                                    <div style={{ height: 350, width: '100%' }}>
+                                        <ResponsiveContainer>
+                                            <BarChart
+                                                data={currentHalfData}
+                                                margin={{ top: 28, right: 20, left: 0, bottom: 0 }}
+                                                barCategoryGap="10%"
+                                                barGap={2}
+                                            >
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+                                                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                                                <YAxis tick={{ fontSize: 12 }} width={36} />
+                                                <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '12px' }} formatter={(v, name) => [`${v}건`, name]} />
+                                                <Legend verticalAlign="top" height={36} iconType="square" wrapperStyle={{ fontSize: '11px' }} />
+                                                {[...impSeries, ...dentSeries].map(({ key, name, color }) => (
+                                                    <Bar key={key} dataKey={key} name={name} fill={color} maxBarSize={32}>
+                                                        <LabelList dataKey={key} position="top" style={{ fontSize: 9, fontWeight: 700, fill: color }} />
+                                                    </Bar>
+                                                ))}
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </DashboardCard>
+                            </div>
+
+                            {/* 하단 상세 테이블 */}
+                            <DashboardCard title="보험 임플/틈니 상세 데이터">
                                 <div className="treatment-data-table-container">
                                     <table className="treatment-data-table">
                                         <thead>
@@ -216,20 +273,48 @@ const TreatmentAnalysis = () => {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <tr>
-                                                <td className="row-header"><span className="marker green"></span> 보험 임플란트</td>
-                                                {currentHalfData.map(d => <td key={d.month}>{d.insImp}건</td>)}
-                                                <td className="font-bold">{currentHalfData.reduce((s,d)=>s+d.insImp, 0)}건</td>
-                                            </tr>
-                                            <tr>
-                                                <td className="row-header"><span className="marker orange"></span> 보험 틀니</td>
-                                                {currentHalfData.map(d => <td key={d.month}>{d.insDent}건</td>)}
-                                                <td className="font-bold">{currentHalfData.reduce((s,d)=>s+d.insDent, 0)}건</td>
-                                            </tr>
+                                            {/* 보험 임플 합계 */}
                                             <tr className="highlight-row">
-                                                <td className="row-header font-bold"><PlusCircle size={14} /> 보험 진료 합계</td>
-                                                {currentHalfData.map(d => <td key={d.month} className="font-bold">{(d.insImp + d.insDent)}건</td>)}
-                                                <td className="font-bold" style={{ fontSize: '1.1rem' }}>{currentHalfData.reduce((s,d)=>s+(d.insImp+d.insDent), 0)}건</td>
+                                                <td className="row-header"><PlusCircle size={14} /> 보험 임플 합계</td>
+                                                {currentHalfData.map(d => <td key={d.month} className="font-bold">{safeD(d,'insImp')}건</td>)}
+                                                <td className="font-bold" style={{ fontSize: '1.1rem' }}>{currentHalfData.reduce((s,d)=>s+safeD(d,'insImp'),0)}건</td>
+                                            </tr>
+                                            {impSeries.map(({ key, name, color }) => (
+                                                <tr key={key}>
+                                                    <td className="row-header">
+                                                        <span style={{ display:'inline-block', width:10, height:10, borderRadius:'2px', background:color, marginRight:6, verticalAlign:'middle' }} />
+                                                        {name}
+                                                    </td>
+                                                    {currentHalfData.map(d => <td key={d.month}>{safeD(d,key)}건</td>)}
+                                                    <td className="font-bold">{currentHalfData.reduce((s,d)=>s+safeD(d,key),0)}건</td>
+                                                </tr>
+                                            ))}
+
+                                            {/* 구분선 */}
+                                            <tr><td colSpan={currentHalfData.length + 2} style={{ height: 1, padding: 0, background: 'var(--border-color)' }} /></tr>
+
+                                            {/* 보험 틈니 합계 */}
+                                            <tr className="highlight-row">
+                                                <td className="row-header"><PlusCircle size={14} /> 보험 틈니 합계</td>
+                                                {currentHalfData.map(d => <td key={d.month} className="font-bold">{safeD(d,'insDent')}건</td>)}
+                                                <td className="font-bold" style={{ fontSize: '1.1rem' }}>{currentHalfData.reduce((s,d)=>s+safeD(d,'insDent'),0)}건</td>
+                                            </tr>
+                                            {dentSeries.map(({ key, name, color }) => (
+                                                <tr key={key}>
+                                                    <td className="row-header">
+                                                        <span style={{ display:'inline-block', width:10, height:10, borderRadius:'2px', background:color, marginRight:6, verticalAlign:'middle' }} />
+                                                        {name}
+                                                    </td>
+                                                    {currentHalfData.map(d => <td key={d.month}>{safeD(d,key)}건</td>)}
+                                                    <td className="font-bold">{currentHalfData.reduce((s,d)=>s+safeD(d,key),0)}건</td>
+                                                </tr>
+                                            ))}
+
+                                            {/* 전체 합계 */}
+                                            <tr className="highlight-row" style={{ borderTop: '2px solid var(--border-color)' }}>
+                                                <td className="row-header font-bold"><PlusCircle size={14} /> 보험 진료 총합계</td>
+                                                {currentHalfData.map(d => <td key={d.month} className="font-bold">{safeD(d,'insImp')+safeD(d,'insDent')}건</td>)}
+                                                <td className="font-bold" style={{ fontSize: '1.1rem' }}>{currentHalfData.reduce((s,d)=>s+safeD(d,'insImp')+safeD(d,'insDent'),0)}건</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -238,12 +323,14 @@ const TreatmentAnalysis = () => {
                         </div>
                     </div>
                 );
+            }
             default: return null;
         }
     };
 
     return (
         <div className="treatment-analysis-page">
+
             <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
                 <div>
                     <h1>진료분석</h1>
@@ -290,11 +377,11 @@ const TreatmentAnalysis = () => {
             <nav className="tab-navigation">
                 <ul className="tab-list">
                     <li className={subTab === 'implant' ? 'active' : ''} onClick={() => setSubTab('implant')}>
-                        <Activity size={20} />
+                        <Stethoscope size={20} />
                         <span>임플란트 1차 수술</span>
                     </li>
                     <li className={subTab === 'insurance' ? 'active' : ''} onClick={() => setSubTab('insurance')}>
-                        <ShieldCheck size={20} />
+                        <Smile size={20} />
                         <span>보험 임플/틀니</span>
                     </li>
                 </ul>

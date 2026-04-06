@@ -1,21 +1,30 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Users, Upload, FileSpreadsheet } from 'lucide-react';
+import { Users, Upload, FileSpreadsheet, CheckCircle, XCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { parseImplantExcel } from '../utils/implantExcelParser';
+import { parseInsuranceExcel } from '../utils/insuranceExcelParser';
 import './Admin.css';
 
 const Admin = () => {
     const { getAllUsers } = useAuth();
     const [users, setUsers] = useState([]);
     const fileInputRef = useRef(null);
+    const [uploadLog, setUploadLog] = useState([]); // { type, msg } 배열
 
     useEffect(() => {
         setUsers(getAllUsers());
     }, []);
 
+    const addLog = (type, msg) => {
+        setUploadLog(prev => [...prev, { type, msg, id: Date.now() }]);
+    };
+
     const handleFileUpload = async (e) => {
         const files = Array.from(e.target.files);
         if (files.length === 0) return;
+        e.target.value = ''; // 같은 파일 재업로드 허용
+        setUploadLog([]);
 
         const savedDataStr = localStorage.getItem('parsed_sales_data');
         const defaultData = [
@@ -217,18 +226,65 @@ const Admin = () => {
                                 updatedCount++; resolve();
                             } else { reject(`${month} 데이터를 찾을 수 없습니다.`); }
                         }
+                        // ── 임플란트 수술통계 파일 ────────────────────────────────
+                        else if (
+                            fileName.includes('임플란트수술통계') ||
+                            fileName.includes('임플란트 수술통계') ||
+                            /임플란트.*수술/.test(fileName)
+                        ) {
+                            resolve('implant');
+                        }
+                        // ── 보험수가별 통계 파일 ──────────────────────────────────
+                        else if (
+                            fileName.includes('보험수가별통계') ||
+                            fileName.includes('보험수가별 통계') ||
+                            fileName.includes('보험수가') ||
+                            /보험.*수가/.test(fileName)
+                        ) {
+                            resolve('insurance');
+                        }
                         else resolve();
                     } catch (err) { reject(`분석 오류: ${err.message}`); }
                 };
                 reader.readAsBinaryString(file);
             });
-            try { await processFile(); } catch (err) { console.error(err); }
+            try {
+                const flag = await processFile();
+                if (flag === 'implant') {
+                    try {
+                        const result = await parseImplantExcel(file);
+                        addLog('success',
+                            `✅ [임플란트] ${result.year}년 ${result.month} 업로드 완료 ` +
+                            `(오스템 ${result.data.osstem}개 / 덴티움 ${result.data.dentium}개 / 합계 ${result.data.implantTotal}개)`
+                        );
+                        updatedCount++;
+                    } catch (implantErr) {
+                        addLog('error', `❌ [임플란트] ${file.name}: ${implantErr.message}`);
+                    }
+                } else if (flag === 'insurance') {
+                    try {
+                        const result = await parseInsuranceExcel(file);
+                        addLog('success',
+                            `✅ [보험수가] ${result.year}년 ${result.month} 업로드 완료\n` +
+                            `임플 1단계:${result.data.insImpStep1} / 2단계:${result.data.insImpStep2} / 3단계:${result.data.insImpStep3}\n` +
+                            `틀니 1단계:${result.data.insDentStep1} / 5단계:${result.data.insDentStep5} / 6단계:${result.data.insDentStep6}`
+                        );
+                        updatedCount++;
+                    } catch (insErr) {
+                        addLog('error', `❌ [보험수가] ${file.name}: ${insErr.message}`);
+                    }
+                } else {
+                    updatedCount++;
+                    addLog('success', `✅ ${file.name} 처리 완료`);
+                }
+            } catch (err) {
+                addLog('error', `❌ ${file.name}: ${err}`);
+                console.error(err);
+            }
         }
 
         if (updatedCount > 0) {
             localStorage.setItem('parsed_sales_data', JSON.stringify(salesDataMap));
-            alert(`${updatedCount}개 파일 처리 완료. (월 단위 데이터로 업데이트되었습니다.)`);
-            window.location.reload();
         }
     };
 
@@ -282,8 +338,38 @@ const Admin = () => {
                         <FileSpreadsheet size={48} className="upload-icon" />
                         <h3>파일을 여기로 드래그하거나 클릭하여 업로드하세요</h3>
                         <p>.xlsx, .xls, .csv 지원</p>
+                        <p style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                            💡 임플란트 수술통계 및 보험수가별 통계 엑셀 지원
+                        </p>
                         <input type="file" multiple ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx, .xls, .csv" style={{ display: 'none' }} />
                     </div>
+
+                    {/* 업로드 결과 로그 */}
+                    {uploadLog.length > 0 && (
+                        <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            {uploadLog.map((log) => (
+                                <div
+                                    key={log.id}
+                                    style={{
+                                        display: 'flex', alignItems: 'flex-start', gap: '0.6rem',
+                                        padding: '0.75rem 1rem',
+                                        borderRadius: '10px',
+                                        background: log.type === 'success' ? '#f0fdf4' : '#fef2f2',
+                                        border: `1px solid ${log.type === 'success' ? '#86efac' : '#fca5a5'}`,
+                                        fontSize: '0.85rem',
+                                        color: log.type === 'success' ? '#15803d' : '#dc2626',
+                                        lineHeight: 1.5,
+                                    }}
+                                >
+                                    {log.type === 'success'
+                                        ? <CheckCircle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+                                        : <XCircle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+                                    }
+                                    <span>{log.msg}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
