@@ -183,3 +183,131 @@
     opacity: 1;
     transform: scale(1.1);
 }
+
+/* ── 사진 업로드 전용 스타일 ── */
+.image-upload-area {
+    border-color: #a78bfa;
+    background-color: rgba(167, 139, 250, 0.04);
+    transition: border-color 0.2s, background-color 0.2s, transform 0.2s;
+}
+
+.image-upload-area:hover {
+    border-color: #7c3aed;
+    background-color: rgba(124, 58, 237, 0.08);
+}
+
+.image-upload-area.drag-over {
+    border-color: #7c3aed;
+    background-color: rgba(124, 58, 237, 0.12);
+    transform: scale(1.01);
+}
+
+.image-upload-area .upload-icon {
+    color: #7c3aed;
+}
+
+/* 갤러리 섹션 */
+.image-gallery-section {
+    margin-top: 0.5rem;
+}
+
+.gallery-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.75rem;
+}
+
+.image-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.75rem;
+}
+
+/* 갤러리 아이템 */
+.gallery-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    border-radius: 0.6rem;
+    overflow: hidden;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.gallery-item:hover {
+    box-shadow: 0 4px 16px rgba(124, 58, 237, 0.18);
+    transform: translateY(-2px);
+}
+
+/* 이미지 래퍼 (삭제 버튼 포지션용) */
+.gallery-img-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    background: #f1f5f9;
+}
+
+.gallery-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.2s;
+}
+
+.gallery-item:hover .gallery-img {
+    transform: scale(1.04);
+}
+
+/* 삭제 버튼 */
+.gallery-delete-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: rgba(220, 38, 38, 0.88);
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.15s;
+}
+
+.gallery-img-wrap:hover .gallery-delete-btn {
+    opacity: 1;
+}
+
+.gallery-delete-btn:hover {
+    transform: scale(1.15);
+    background: rgba(185, 28, 28, 1);
+}
+
+/* 갤러리 파일 정보 */
+.gallery-info {
+    padding: 0.35rem 0.5rem 0.45rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.gallery-name {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gallery-meta {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}

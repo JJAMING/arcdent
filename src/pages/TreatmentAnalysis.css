@@ -179,3 +179,52 @@
         font-size: 0.75rem;
     }
 }
+
+/* ── 환자분석 KPI 카드 ── */
+.patient-kpi-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+}
+
+.patient-kpi-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 0.85rem;
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    box-shadow: var(--shadow);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.patient-kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+}
+
+.patient-kpi-card.kpi-total { border-top: 3px solid #6366f1; }
+.patient-kpi-card.kpi-new   { border-top: 3px solid #22c55e; }
+.patient-kpi-card.kpi-old   { border-top: 3px solid #3b82f6; }
+
+.kpi-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.kpi-value {
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    line-height: 1;
+}
+
+.kpi-sub {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
