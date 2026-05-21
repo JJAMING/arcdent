@@ -38,6 +38,7 @@ const LAB_SERIES = [
     { key: 'lab_implant', name: '임플란트',  color: '#3b82f6' },
     { key: 'lab_etc',     name: '기타',      color: '#94a3b8' },
 ];
+const CHART_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#14b8a6', '#8b5cf6', '#f97316', '#64748b', '#22c55e'];
 
 // ── 실데이터 병합 헬퍼 (모듈 레벨 — 컴포넌트 밖) ──────────────────────────
 const buildMergedData = (year) => {
@@ -58,6 +59,9 @@ const buildMergedData = (year) => {
                 total:    real.total    != null ? real.total    : mock.total,
                 avgNewPt: real.avgNewPt != null ? real.avgNewPt : null,
                 avgOldPt: real.avgOldPt != null ? real.avgOldPt : null,
+                avgTotalPt: real.avgTotalPt != null ? real.avgTotalPt : null,
+                doctorPatients: real.doctorPatients || null,
+                labRequests: real.labRequests || null,
             };
         });
     } catch (e) {
@@ -245,7 +249,7 @@ const PatientAnalysis = () => {
                                                     <td className="font-bold">{totalOld}명</td>
                                                 </tr>
                                                 <tr className="highlight-row">
-                                                    <td className="row-header"><PlusCircle size={14} /> 총 접수환자수</td>
+                                                    <td className="row-header"><PlusCircle size={14} /> 총 접수 환자 수</td>
                                                     {currentHalfData.map(d => <td key={d.month} className="font-bold">{d.total}명</td>)}
                                                     <td className="font-bold" style={{ fontSize: '1.05rem' }}>{totalAll}명</td>
                                                 </tr>
@@ -279,10 +283,8 @@ const PatientAnalysis = () => {
                                                         신환 일평균
                                                     </td>
                                                     {currentHalfData.map(d => {
-                                                        // 실데이터(avgNewPt) 우선, 없으면 계산
-                                                        const avg = (d.avgNewPt != null)
-                                                            ? parseFloat(d.avgNewPt).toFixed(1)
-                                                            : d.workDays ? (d.newPt / d.workDays).toFixed(1) : '-';
+                                                        // 신환 수 / 진료일수
+                                                        const avg = d.workDays ? (d.newPt / d.workDays).toFixed(1) : '-';
                                                         return <td key={d.month}>{avg}명</td>;
                                                     })}
                                                     <td className="font-bold">
@@ -298,29 +300,31 @@ const PatientAnalysis = () => {
                                                         구환 일평균
                                                     </td>
                                                     {currentHalfData.map(d => {
-                                                        // 실데이터(avgOldPt) 우선, 없으면 계산
-                                                        const avg = (d.avgOldPt != null)
-                                                            ? parseFloat(d.avgOldPt).toFixed(1)
-                                                            : d.workDays ? (d.oldPt / d.workDays).toFixed(1) : '-';
+                                                        // 신환 + 구환 / 진료일수
+                                                        const avg = d.workDays ? ((d.newPt + d.oldPt) / d.workDays).toFixed(1) : '-';
                                                         return <td key={d.month}>{avg}명</td>;
                                                     })}
                                                     <td className="font-bold">
                                                         {(() => {
                                                             const totalDays = currentHalfData.reduce((s, d) => s + (d.workDays || 0), 0);
-                                                            return totalDays ? (totalOld / totalDays).toFixed(1) : '-';
+                                                            return totalDays ? ((totalNew + totalOld) / totalDays).toFixed(1) : '-';
                                                         })()}명
                                                     </td>
                                                 </tr>
                                                 <tr className="highlight-row">
-                                                    <td className="row-header"><PlusCircle size={14} /> 총 일평균</td>
+                                                    <td className="row-header"><PlusCircle size={14} /> 총 접수 환자 수</td>
                                                     {currentHalfData.map(d => {
-                                                        const avg = d.workDays ? (d.total / d.workDays).toFixed(1) : '-';
-                                                        return <td key={d.month} className="font-bold">{avg}명</td>;
+                                                        const totalDailyVisit = d.avgTotalPt != null ? Number(d.avgTotalPt).toFixed(1) : '-';
+                                                        return <td key={d.month} className="font-bold">{totalDailyVisit}명</td>;
                                                     })}
                                                     <td className="font-bold" style={{ fontSize: '1.05rem' }}>
                                                         {(() => {
-                                                            const totalDays = currentHalfData.reduce((s, d) => s + (d.workDays || 0), 0);
-                                                            return totalDays ? (totalAll / totalDays).toFixed(1) : '-';
+                                                            const values = currentHalfData
+                                                                .map(d => d.avgTotalPt)
+                                                                .filter(v => v != null && !isNaN(Number(v)));
+                                                            if (values.length === 0) return '-';
+                                                            const sum = values.reduce((s, v) => s + Number(v), 0);
+                                                            return (sum / values.length).toFixed(1);
                                                         })()}명
                                                     </td>
                                                 </tr>
@@ -336,12 +340,36 @@ const PatientAnalysis = () => {
 
             // ── 탭 2: 총 환자수 (의사별) ─────────────────────────────────
             case 'byDoctor': {
-                const docSeries = DOCTOR_KEYS.map((key, i) => ({
-                    key, name: DOCTOR_NAMES[i], color: DOCTOR_COLORS[i]
+                const uploadedDoctorNames = Array.from(new Set(
+                    currentHalfData.flatMap(d => Object.keys(d.doctorPatients || {}))
+                ));
+                const hasUploadedDoctorData = uploadedDoctorNames.length > 0;
+                const docSeries = hasUploadedDoctorData
+                    ? uploadedDoctorNames.map((name, i) => ({
+                        key: `doctor_${i}`,
+                        name,
+                        color: DOCTOR_COLORS[i % DOCTOR_COLORS.length],
+                        getValue: (d) => d.doctorPatients?.[name] || 0,
+                    }))
+                    : DOCTOR_KEYS.map((key, i) => ({
+                        key,
+                        name: DOCTOR_NAMES[i],
+                        color: DOCTOR_COLORS[i],
+                        getValue: (d) => d[key] || 0,
+                    }));
+                const doctorChartData = currentHalfData.map((d) => {
+                    const row = { ...d };
+                    docSeries.forEach(({ key, getValue }) => {
+                        row[key] = getValue(d);
+                    });
+                    return row;
+                });
+                const doctorTotals = docSeries.map(({ key, name, color, getValue }) => ({
+                    key, name, total: currentHalfData.reduce((s, d) => s + getValue(d), 0), color
                 }));
-                const doctorTotals = docSeries.map(({ key, name, color }) => ({
-                    name, total: currentHalfData.reduce((s, d) => s + (d[key] || 0), 0), color
-                }));
+                const getDoctorMonthTotal = (monthData) => (
+                    docSeries.reduce((sum, { getValue }) => sum + getValue(monthData), 0)
+                );
 
                 return (
                     <div className="tab-pane">
@@ -351,7 +379,7 @@ const PatientAnalysis = () => {
                                 <DashboardCard title="의사별 월간 환자수" subtitle="담당 의사 기준">
                                     <div style={{ height: 350, width: '100%' }}>
                                         <ResponsiveContainer>
-                                            <BarChart data={currentHalfData} margin={{ top: 24, right: 12, left: 0, bottom: 0 }} barCategoryGap="12%" barGap={2}>
+                                            <BarChart data={doctorChartData} margin={{ top: 24, right: 12, left: 0, bottom: 0 }} barCategoryGap="12%" barGap={2}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                                                 <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                                                 <YAxis tick={{ fontSize: 12 }} width={42} />
@@ -405,17 +433,17 @@ const PatientAnalysis = () => {
                                         <tbody>
                                             <tr className="highlight-row">
                                                 <td className="row-header"><PlusCircle size={14} /> 전체 합계</td>
-                                                {currentHalfData.map(d => <td key={d.month} className="font-bold">{d.total}명</td>)}
-                                                <td className="font-bold" style={{ fontSize: '1.05rem' }}>{currentHalfData.reduce((s, d) => s + d.total, 0)}명</td>
+                                                {currentHalfData.map(d => <td key={d.month} className="font-bold">{getDoctorMonthTotal(d)}명</td>)}
+                                                <td className="font-bold" style={{ fontSize: '1.05rem' }}>{currentHalfData.reduce((s, d) => s + getDoctorMonthTotal(d), 0)}명</td>
                                             </tr>
-                                            {docSeries.map(({ key, name, color }) => (
+                                            {docSeries.map(({ key, name, color, getValue }) => (
                                                 <tr key={key}>
                                                     <td className="row-header">
                                                         <span style={{ display:'inline-block', width:10, height:10, borderRadius:'2px', background:color, marginRight:6, verticalAlign:'middle' }} />
                                                         {name}
                                                     </td>
-                                                    {currentHalfData.map(d => <td key={d.month}>{d[key] || 0}명</td>)}
-                                                    <td className="font-bold">{currentHalfData.reduce((s, d) => s + (d[key] || 0), 0)}명</td>
+                                                    {currentHalfData.map(d => <td key={d.month}>{getValue(d)}명</td>)}
+                                                    <td className="font-bold">{currentHalfData.reduce((s, d) => s + getValue(d), 0)}명</td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -429,9 +457,70 @@ const PatientAnalysis = () => {
 
             // ── 탭 3: 기공물 의뢰 현황 ───────────────────────────────────
             case 'labRequest': {
-                const totalByLab = LAB_SERIES.map(({ key, name, color }) => ({
-                    name, total: currentHalfData.reduce((s, d) => s + (d[key] || 0), 0), color
-                }));
+                const normalizeLabRequests = (labRequests) => {
+                    if (!labRequests) return [];
+                    if (Array.isArray(labRequests)) return labRequests;
+                    return Object.entries(labRequests).map(([type, count]) => ({
+                        category: '미분류',
+                        type,
+                        count,
+                    }));
+                };
+                const uploadedLabRows = currentHalfData.flatMap(d => normalizeLabRequests(d.labRequests));
+                const hasUploadedLabData = uploadedLabRows.length > 0;
+                const uploadedLabKeys = Array.from(new Set(
+                    uploadedLabRows.map(item => `${item.category || '미분류'}|||${item.type}`)
+                ));
+                const allLabSeries = hasUploadedLabData
+                    ? uploadedLabKeys.map((compoundKey, i) => {
+                        const [category, type] = compoundKey.split('|||');
+                        return {
+                            key: `lab_uploaded_${i}`,
+                            category,
+                            type,
+                            name: type,
+                            color: CHART_COLORS[i % CHART_COLORS.length],
+                            getValue: (d) => normalizeLabRequests(d.labRequests)
+                                .filter(item => (item.category || '미분류') === category && item.type === type)
+                                .reduce((sum, item) => sum + (Number(item.count) || 0), 0),
+                        };
+                    })
+                    : LAB_SERIES.map(({ key, name, color }) => ({
+                        key,
+                        category: '기본',
+                        type: name,
+                        name,
+                        color,
+                        getValue: (d) => d[key] || 0,
+                    }));
+                const totalByLab = allLabSeries
+                    .map(({ key, category, type, name, color, getValue }) => ({
+                        key,
+                        category,
+                        type,
+                        name: hasUploadedLabData ? `${category} - ${type}` : name,
+                        total: currentHalfData.reduce((s, d) => s + getValue(d), 0),
+                        color,
+                        getValue,
+                    }))
+                    .sort((a, b) => b.total - a.total);
+                const labCategoryOrder = Array.from(new Set(
+                    allLabSeries.map(({ category }) => category)
+                ));
+                const detailLabRows = [...totalByLab].sort((a, b) => {
+                    const categoryDiff = labCategoryOrder.indexOf(a.category) - labCategoryOrder.indexOf(b.category);
+                    if (categoryDiff !== 0) return categoryDiff;
+                    return b.total - a.total;
+                });
+                const topLabSeries = totalByLab.slice(0, 10);
+                const chartLabSeries = topLabSeries;
+                const labChartData = currentHalfData.map((d) => {
+                    const row = { ...d };
+                    chartLabSeries.forEach(({ key, getValue }) => {
+                        row[key] = getValue(d);
+                    });
+                    return row;
+                });
                 const grandTotal = totalByLab.reduce((s, v) => s + v.total, 0);
 
                 return (
@@ -439,7 +528,7 @@ const PatientAnalysis = () => {
                         <div className="dashboard-stack">
                             {/* KPI 요약 */}
                             <div className="patient-kpi-row">
-                                {totalByLab.map(({ name, total, color }) => (
+                                {topLabSeries.map(({ name, total, color }) => (
                                     <div key={name} className="patient-kpi-card" style={{ borderTop: `3px solid ${color}` }}>
                                         <span className="kpi-label">{name}</span>
                                         <span className="kpi-value" style={{ color }}>{total}건</span>
@@ -450,16 +539,16 @@ const PatientAnalysis = () => {
 
                             <div className="dashboard-grid" style={{ gridTemplateColumns: '2fr 1fr' }}>
                                 {/* 좌: 월별 종류 그룹 바차트 */}
-                                <DashboardCard title="기공물 종류별 월간 의뢰 현황" subtitle="크라운 · 브릿지 · 틀니 · 임플란트 · 기타">
+                                <DashboardCard title="기공물 종류별 월간 의뢰 현황" subtitle="의뢰 건수 상위 10개">
                                     <div style={{ height: 350, width: '100%' }}>
                                         <ResponsiveContainer>
-                                            <BarChart data={currentHalfData} margin={{ top: 24, right: 12, left: 0, bottom: 0 }} barCategoryGap="10%" barGap={2}>
+                                            <BarChart data={labChartData} margin={{ top: 24, right: 12, left: 0, bottom: 0 }} barCategoryGap="10%" barGap={2}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                                                 <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                                                 <YAxis tick={{ fontSize: 12 }} width={36} />
                                                 <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '12px' }} formatter={(v, name) => [`${v}건`, name]} />
                                                 <Legend verticalAlign="top" height={36} iconType="square" wrapperStyle={{ fontSize: '11px' }} />
-                                                {LAB_SERIES.map(({ key, name, color }) => (
+                                                {chartLabSeries.map(({ key, name, color }) => (
                                                     <Bar key={key} dataKey={key} name={name} fill={color} maxBarSize={34} radius={[3,3,0,0]}>
                                                         <LabelList dataKey={key} position="top" style={{ fontSize: 9, fill: color, fontWeight: 700 }} />
                                                     </Bar>
@@ -474,8 +563,8 @@ const PatientAnalysis = () => {
                                     <div style={{ height: 280, width: '100%' }}>
                                         <ResponsiveContainer>
                                             <PieChart>
-                                                <Pie data={totalByLab} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="total">
-                                                    {totalByLab.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                                                <Pie data={topLabSeries} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="total">
+                                                    {topLabSeries.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                                                 </Pie>
                                                 <Tooltip formatter={(v, name) => [`${v}건`, name]} />
                                                 <Legend verticalAlign="bottom" height={20} iconSize={10} wrapperStyle={{ fontSize: '11px' }} />
@@ -492,27 +581,21 @@ const PatientAnalysis = () => {
                                         <thead>
                                             <tr>
                                                 <th className="row-header">구분</th>
+                                                <th>기공물 종류</th>
                                                 {currentHalfData.map(d => <th key={d.month}>{d.month}</th>)}
                                                 <th>합계</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <tr className="highlight-row">
-                                                <td className="row-header"><PlusCircle size={14} /> 전체 합계</td>
-                                                {currentHalfData.map(d => {
-                                                    const t = LAB_SERIES.reduce((s, { key }) => s + (d[key] || 0), 0);
-                                                    return <td key={d.month} className="font-bold">{t}건</td>;
-                                                })}
-                                                <td className="font-bold" style={{ fontSize: '1.05rem' }}>{grandTotal}건</td>
-                                            </tr>
-                                            {LAB_SERIES.map(({ key, name, color }) => (
+                                            {detailLabRows.map(({ key, category, type, color, getValue }) => (
                                                 <tr key={key}>
                                                     <td className="row-header">
                                                         <span style={{ display:'inline-block', width:10, height:10, borderRadius:'2px', background:color, marginRight:6, verticalAlign:'middle' }} />
-                                                        {name}
+                                                        {category}
                                                     </td>
-                                                    {currentHalfData.map(d => <td key={d.month}>{d[key] || 0}건</td>)}
-                                                    <td className="font-bold">{currentHalfData.reduce((s, d) => s + (d[key] || 0), 0)}건</td>
+                                                    <td>{type}</td>
+                                                    {currentHalfData.map(d => <td key={d.month}>{getValue(d)}건</td>)}
+                                                    <td className="font-bold">{currentHalfData.reduce((s, d) => s + getValue(d), 0)}건</td>
                                                 </tr>
                                             ))}
                                         </tbody>

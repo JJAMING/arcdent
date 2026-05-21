@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Users, Upload, FileSpreadsheet, CheckCircle, XCircle, Image, Trash2, X } from 'lucide-react';
+import { Users, Upload, FileSpreadsheet, CheckCircle, XCircle, Image, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { parseImplantExcel } from '../utils/implantExcelParser';
 import { parseInsuranceExcel } from '../utils/insuranceExcelParser';
-import { parseLedgerImage, saveLedgerData, extractYearMonthFromFileName } from '../utils/ledgerImageParser';
+import { parseLedgerImage, saveLedgerData, loadLedgerData, extractYearMonthFromFileName } from '../utils/ledgerImageParser';
 import './Admin.css';
 
 // ── 모달/버튼 스타일 상수 ────────────────────────────────────────────────────
@@ -36,8 +36,9 @@ const OCR_FIELDS = [
     { key: 'workDays', label: '진료일수',        unit: '일' },
     { key: 'newPt',    label: '신환',            unit: '명' },
     { key: 'oldPt',    label: '구환',            unit: '명' },
-    { key: 'total',    label: '총 접수환자수',   unit: '명' },
+    { key: 'total',    label: '총 접수 환자 수', unit: '명' },
     { key: 'avgNewPt', label: '신환 일평균',      unit: '명' },
+    { key: 'avgTotalPt', label: '일평균 내원',    unit: '명' },
     { key: 'avgOldPt', label: '구환 일평균 (자동)', unit: '명', readOnly: true },
 ];
 
@@ -47,7 +48,6 @@ const Admin = () => {
     const fileInputRef  = useRef(null);
     const imageInputRef = useRef(null);
     const [uploadLog, setUploadLog]       = useState([]);
-    const [uploadedImages, setUploadedImages] = useState([]);
     const [isDragOver, setIsDragOver]     = useState(false);
 
     // OCR 모달
@@ -56,10 +56,7 @@ const Admin = () => {
 
     useEffect(() => {
         setUsers(getAllUsers());
-        const savedImages = localStorage.getItem('admin_uploaded_images');
-        if (savedImages) {
-            try { setUploadedImages(JSON.parse(savedImages)); } catch (e) { /* ignore */ }
-        }
+        localStorage.removeItem('admin_uploaded_images');
     }, []);
 
     const addLog = (type, msg) => {
@@ -210,11 +207,175 @@ const Admin = () => {
                                 updatedCount++; resolve();
                             } else { reject(`파일 내 헤더를 찾을 수 없습니다. (${fileName})`); }
                         }
+                        // 의사별 진료 환자수
+                        else if (/의사별.*진료비.*수납액/.test(fileName.replace(/\s+/g, ''))) {
+                            if (!monthFromFile) {
+                                reject(`파일명에서 월을 찾을 수 없습니다. (${fileName})`);
+                                return;
+                            }
+                            const doctorColumns = { name: -1, patientCount: -1 };
+                            let headerIdx = -1;
+
+                            for (let i = 0; i < Math.min(30, rawData.length); i++) {
+                                const row = rawData[i] || [];
+                                row.forEach((cell, idx) => {
+                                    if (cell == null) return;
+                                    const text = String(cell).trim().replace(/\s+/g, '');
+                                    if (text === '의사이름' || text === '의사명' || text === '담당의') {
+                                        doctorColumns.name = idx;
+                                    }
+                                    if (text === '진료환자수' || text === '환자수' || text === '진료환자') {
+                                        doctorColumns.patientCount = idx;
+                                    }
+                                });
+                                if (doctorColumns.name !== -1 && doctorColumns.patientCount !== -1) {
+                                    headerIdx = i;
+                                    break;
+                                }
+                            }
+
+                            if (headerIdx === -1) {
+                                reject(`의사이름/진료 환자수 컬럼을 찾을 수 없습니다. (${fileName})`);
+                                return;
+                            }
+
+                            const doctorPatients = {};
+                            for (let i = headerIdx + 1; i < rawData.length; i++) {
+                                const row = rawData[i] || [];
+                                const doctorName = String(row[doctorColumns.name] || '').trim();
+                                const patientCount = parseNum(row[doctorColumns.patientCount]);
+                                if (!doctorName || doctorName === '합계' || patientCount <= 0) continue;
+                                doctorPatients[doctorName] = (doctorPatients[doctorName] || 0) + patientCount;
+                            }
+
+                            if (Object.keys(doctorPatients).length === 0) {
+                                reject(`저장할 의사별 환자수 데이터가 없습니다. (${fileName})`);
+                                return;
+                            }
+
+                            const month = monthFromFile;
+                            const existingLedger = loadLedgerData()?.[yearFromFile]?.[month] || {};
+                            saveLedgerData(yearFromFile, month, { ...existingLedger, doctorPatients });
+                            window.dispatchEvent(new CustomEvent('patientLedgerUpdated', {
+                                detail: { year: yearFromFile, month }
+                            }));
+                            addLog('success', `✅ [의사별 환자수] ${yearFromFile}년 ${month} 업로드 완료 (${Object.keys(doctorPatients).length}명)`);
+                            updatedCount++;
+                            resolve('doctorPatients');
+                        }
+                        // 기공물 의뢰 통계
+                        else if (/기공의뢰통계/.test(fileName.replace(/\s+/g, ''))) {
+                            if (!monthFromFile) {
+                                reject(`파일명에서 월을 찾을 수 없습니다. (${fileName})`);
+                                return;
+                            }
+                            const labColumns = { category: -1, type: -1, toothCount: -1 };
+                            let headerIdx = -1;
+
+                            for (let i = 0; i < Math.min(30, rawData.length); i++) {
+                                const row = rawData[i] || [];
+                                row.forEach((cell, idx) => {
+                                    if (cell == null) return;
+                                    const text = String(cell).trim().replace(/\s+/g, '');
+                                    if (text === '구분') {
+                                        labColumns.category = idx;
+                                    }
+                                    if (text === '기공물종류' || text === '기공물명' || text === '종류') {
+                                        labColumns.type = idx;
+                                    }
+                                    if (text === '치아수' || text === '건수' || text === '수량') {
+                                        labColumns.toothCount = idx;
+                                    }
+                                });
+                                if (labColumns.category !== -1 && labColumns.type !== -1 && labColumns.toothCount !== -1) {
+                                    headerIdx = i;
+                                    break;
+                                }
+                            }
+
+                            if (headerIdx === -1) {
+                                reject(`구분/기공물 종류/치아 수 컬럼을 찾을 수 없습니다. (${fileName})`);
+                                return;
+                            }
+
+                            const labRequests = {};
+                            let currentCategory = '';
+                            const isRepeatCategoryMark = (value) => {
+                                const normalized = String(value || '').trim().replace(/\s+/g, '');
+                                return ['"', '＂', '〃', '“', '”', "'", '＇'].includes(normalized);
+                            };
+                            for (let i = headerIdx + 1; i < rawData.length; i++) {
+                                const row = rawData[i] || [];
+                                const categoryCell = String(row[labColumns.category] || '').trim();
+                                const labType = String(row[labColumns.type] || '').trim();
+                                const toothCount = parseNum(row[labColumns.toothCount]);
+                                if (categoryCell && !isRepeatCategoryMark(categoryCell)) {
+                                    currentCategory = categoryCell;
+                                }
+                                const category = currentCategory;
+                                if (!labType || labType === '합계' || toothCount <= 0) continue;
+                                const key = `${category || '미분류'}|||${labType}`;
+                                labRequests[key] = {
+                                    category: category || '미분류',
+                                    type: labType,
+                                    count: (labRequests[key]?.count || 0) + toothCount,
+                                };
+                            }
+
+                            if (Object.keys(labRequests).length === 0) {
+                                reject(`저장할 기공물 의뢰 데이터가 없습니다. (${fileName})`);
+                                return;
+                            }
+
+                            const month = monthFromFile;
+                            const existingLedger = loadLedgerData()?.[yearFromFile]?.[month] || {};
+                            saveLedgerData(yearFromFile, month, { ...existingLedger, labRequests: Object.values(labRequests) });
+                            window.dispatchEvent(new CustomEvent('patientLedgerUpdated', {
+                                detail: { year: yearFromFile, month }
+                            }));
+                            addLog('success', `✅ [기공물 의뢰] ${yearFromFile}년 ${month} 업로드 완료 (${Object.keys(labRequests).length}종)`);
+                            updatedCount++;
+                            resolve('labRequests');
+                        }
                         // 월간장부 (엑셀 버전)
                         else if (fileName.includes('월간장부')) {
                             const month = extractMonth(fileName);
                             let cashVal = 0, cardVal = 0, otherVal = 0;
                             let cashCol = -1, cardCol = -1, otherCol = -1, tonghapIdx = -1;
+                            const parseMaybeNum = (val) => {
+                                if (typeof val === 'number') return val;
+                                if (typeof val === 'string') {
+                                    const cleaned = val.replace(/[^0-9.,-]/g, '');
+                                    if (!cleaned) return null;
+                                    const num = parseFloat(cleaned.replace(/,/g, ''));
+                                    return isNaN(num) ? null : num;
+                                }
+                                return null;
+                            };
+                            const findMetric = (labels) => {
+                                for (let r = 0; r < rawData.length; r++) {
+                                    const row = rawData[r] || [];
+                                    for (let c = 0; c < row.length; c++) {
+                                        const cellText = String(row[c] ?? '').replace(/\s+/g, '');
+                                        if (!cellText || !labels.some(label => cellText.includes(label))) continue;
+                                        if (labels.includes('총내원') && cellText.includes('총내원횟수')) continue;
+
+                                        const sameCellValue = parseMaybeNum(String(row[c]).replace(/[^\d.,-]/g, ''));
+                                        if (sameCellValue != null) return sameCellValue;
+
+                                        for (let offset = 1; offset <= 4; offset++) {
+                                            const rightValue = parseMaybeNum(row[c + offset]);
+                                            if (rightValue != null) return rightValue;
+                                        }
+
+                                        for (let offset = 1; offset <= 3; offset++) {
+                                            const belowValue = parseMaybeNum(rawData[r + offset]?.[c]);
+                                            if (belowValue != null) return belowValue;
+                                        }
+                                    }
+                                }
+                                return null;
+                            };
                             for (let r = 0; r < Math.min(100, rawData.length); r++) {
                                 const row = rawData[r] || [];
                                 row.forEach((cell, idx) => {
@@ -240,6 +401,29 @@ const Admin = () => {
                                 d.cash = cashVal; d.card = cardVal; d.other = otherVal;
                                 d.netSales = cashVal + cardVal + otherVal;
                                 d.total = d.netSales + (Number(d.insurance) || 0);
+
+                                const patientLedger = {
+                                    workDays: findMetric(['진료일수', '진료일', '영업일수']),
+                                    newPt: findMetric(['신환', '신규환자', '새환자']),
+                                    oldPt: findMetric(['구환', '재진환자', '기존환자']),
+                                    total: findMetric(['총내원', '총접수', '내원합계']),
+                                    avgNewPt: findMetric(['일평균신환', '신환일평균', '평균신환']),
+                                    avgTotalPt: findMetric(['일평균내원수', '일평균내원', '평균내원수', '평균내원']),
+                                    avgOldPt: null,
+                                };
+                                if ((patientLedger.newPt || patientLedger.oldPt) && patientLedger.workDays) {
+                                    patientLedger.avgOldPt = parseFloat((((patientLedger.newPt || 0) + (patientLedger.oldPt || 0)) / patientLedger.workDays).toFixed(1));
+                                }
+                                const detectedLedger = Object.fromEntries(
+                                    Object.entries(patientLedger).filter(([, value]) => value != null)
+                                );
+                                if (Object.keys(detectedLedger).length > 0) {
+                                    const existingLedger = loadLedgerData()?.[yearFromFile]?.[month] || {};
+                                    saveLedgerData(yearFromFile, month, { ...existingLedger, ...detectedLedger });
+                                    window.dispatchEvent(new CustomEvent('patientLedgerUpdated', {
+                                        detail: { year: yearFromFile, month }
+                                    }));
+                                }
                                 updatedCount++; resolve();
                             } else { reject(`${month} 데이터를 찾을 수 없습니다.`); }
                         }
@@ -271,6 +455,10 @@ const Admin = () => {
                         addLog('success', `✅ [보험수가] ${result.year}년 ${result.month} 업로드 완료\n임플 1단계:${result.data.insImpStep1} / 2단계:${result.data.insImpStep2} / 3단계:${result.data.insImpStep3}\n틀니 1단계:${result.data.insDentStep1} / 5단계:${result.data.insDentStep5} / 6단계:${result.data.insDentStep6}`);
                         updatedCount++;
                     } catch (insErr) { addLog('error', `❌ [보험수가] ${file.name}: ${insErr.message}`); }
+                } else if (flag === 'doctorPatients') {
+                    // handled inside processFile
+                } else if (flag === 'labRequests') {
+                    // handled inside processFile
                 } else {
                     updatedCount++;
                     addLog('success', `✅ ${file.name} 처리 완료`);
@@ -295,27 +483,16 @@ const Admin = () => {
         return name.includes('월간장부');
     };
 
-    const saveToGallery = (file, dataUrl) => {
-        const newImage = { id: Date.now() + Math.random(), name: file.name, dataUrl, size: file.size, uploadedAt: new Date().toLocaleString('ko-KR') };
-        setUploadedImages(prev => {
-            const updated = [...prev, newImage];
-            localStorage.setItem('admin_uploaded_images', JSON.stringify(updated));
-            return updated;
-        });
-    };
-
     const handleImageUpload = async (files) => {
         const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
         if (imageFiles.length === 0) return;
 
         for (const file of imageFiles) {
-            // 모든 이미지 → 갤러리 저장
             const reader = new FileReader();
             const dataUrl = await new Promise(resolve => {
                 reader.onload = e => resolve(e.target.result);
                 reader.readAsDataURL(file);
             });
-            saveToGallery(file, dataUrl);
 
             // 월간장부이면 OCR 실행
             if (isLedgerFile(file.name)) {
@@ -324,7 +501,7 @@ const Admin = () => {
                     file, previewUrl: dataUrl, ocrProgress: 0,
                     yearMonth: ym || { year: '2025', month: '1월' },
                     yearMonthDetected: !!ym,
-                    parsedData: { workDays: '', newPt: '', oldPt: '', total: '', avgNewPt: '', avgOldPt: '' },
+                    parsedData: { workDays: '', newPt: '', oldPt: '', total: '', avgNewPt: '', avgTotalPt: '', avgOldPt: '' },
                     rawText: '', status: 'loading',
                 });
                 setOcrLoading(true);
@@ -334,10 +511,10 @@ const Admin = () => {
                         setOcrModal(prev => prev ? { ...prev, ocrProgress: progress } : prev);
                     });
 
-                    // 구환 일평균 자동 계산
+                    // 구환 일평균 자동 계산: (신환 + 구환) / 진료일수
                     const pd = result.parsedData;
-                    if (pd.oldPt && pd.workDays && !pd.avgOldPt) {
-                        pd.avgOldPt = parseFloat((pd.oldPt / pd.workDays).toFixed(1));
+                    if ((pd.newPt || pd.oldPt) && pd.workDays && !pd.avgOldPt) {
+                        pd.avgOldPt = parseFloat((((pd.newPt || 0) + (pd.oldPt || 0)) / pd.workDays).toFixed(1));
                     }
 
                     setOcrModal(prev => prev ? {
@@ -351,6 +528,7 @@ const Admin = () => {
                             oldPt:    pd.oldPt    ?? '',
                             total:    pd.total    ?? '',
                             avgNewPt: pd.avgNewPt ?? '',
+                            avgTotalPt: pd.avgTotalPt ?? '',
                             avgOldPt: pd.avgOldPt ?? '',
                         },
                         rawText: result.rawText,
@@ -372,10 +550,11 @@ const Admin = () => {
         setOcrModal(prev => {
             if (!prev) return prev;
             const updated = { ...prev, parsedData: { ...prev.parsedData, [field]: val } };
+            const newPt   = parseFloat(updated.parsedData.newPt);
             const oldPt   = parseFloat(updated.parsedData.oldPt);
             const workDays = parseFloat(updated.parsedData.workDays);
             if (!isNaN(oldPt) && !isNaN(workDays) && workDays > 0) {
-                updated.parsedData.avgOldPt = parseFloat((oldPt / workDays).toFixed(1));
+                updated.parsedData.avgOldPt = parseFloat((((isNaN(newPt) ? 0 : newPt) + oldPt) / workDays).toFixed(1));
             }
             return updated;
         });
@@ -398,6 +577,7 @@ const Admin = () => {
             oldPt:    safeNum(parsedData.oldPt),
             total:    safeNum(parsedData.total),
             avgNewPt: safeNum(parsedData.avgNewPt),
+            avgTotalPt: safeNum(parsedData.avgTotalPt),
             avgOldPt: safeNum(parsedData.avgOldPt),
         };
 
@@ -418,20 +598,6 @@ const Admin = () => {
     const handleDragOver  = (e) => { e.preventDefault(); setIsDragOver(true); };
     const handleDragLeave = ()  => setIsDragOver(false);
     const handleDrop = (e) => { e.preventDefault(); setIsDragOver(false); handleImageUpload(e.dataTransfer.files); };
-
-    const handleDeleteImage = (id) => {
-        setUploadedImages(prev => {
-            const updated = prev.filter(img => img.id !== id);
-            localStorage.setItem('admin_uploaded_images', JSON.stringify(updated));
-            return updated;
-        });
-    };
-
-    const formatFileSize = (bytes) => {
-        if (bytes < 1024) return bytes + ' B';
-        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-    };
 
     // ── JSX ──────────────────────────────────────────────────────────────────
     return (
@@ -663,38 +829,6 @@ const Admin = () => {
                         <input type="file" multiple ref={imageInputRef} onChange={handleImageInputChange} accept="image/*" style={{ display: 'none' }} />
                     </div>
 
-                    {uploadedImages.length > 0 && (
-                        <div className="image-gallery-section">
-                            <h4 className="gallery-title">업로드된 사진 ({uploadedImages.length}장)</h4>
-                            <div className="image-gallery">
-                                {uploadedImages.map(img => (
-                                    <div key={img.id} className="gallery-item">
-                                        <div className="gallery-img-wrap">
-                                            <img src={img.dataUrl} alt={img.name} className="gallery-img" />
-                                            {isLedgerFile(img.name) && (
-                                                <div style={{
-                                                    position: 'absolute', bottom: 0, left: 0, right: 0,
-                                                    background: 'rgba(124,58,237,0.85)',
-                                                    color: '#fff', fontSize: '0.68rem', textAlign: 'center', padding: '2px 0',
-                                                }}>
-                                                    📄 월간장부
-                                                </div>
-                                            )}
-                                            <button className="gallery-delete-btn"
-                                                onClick={(e) => { e.stopPropagation(); handleDeleteImage(img.id); }}
-                                                title="삭제">
-                                                <Trash2 size={14} />
-                                            </button>
-                                        </div>
-                                        <div className="gallery-info">
-                                            <span className="gallery-name" title={img.name}>{img.name}</span>
-                                            <span className="gallery-meta">{formatFileSize(img.size)} · {img.uploadedAt}</span>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
                 </div>
 
             </div>

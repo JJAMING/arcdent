@@ -64,6 +64,7 @@ export const parseLedgerText = (text) => {
         total: null,
         avgNewPt: null,
         avgOldPt: null,
+        avgTotalPt: null,
     };
 
     // 줄 단위 + 전체 텍스트 모두 탐색
@@ -98,8 +99,7 @@ export const parseLedgerText = (text) => {
         {
             field: 'total',
             patterns: [
-                /총\s*내\s*원\s*횟\s*수[^\d]*([\d,]+)/,
-                /총\s*내\s*원[^\d]*([\d,]+)/,
+                /총\s*내\s*원(?!\s*횟\s*수)[^\d]*([\d,]+)/,
                 /총\s*접\s*수[^\d]*([\d,]+)/,
                 /내\s*원\s*합\s*계[^\d]*([\d,]+)/,
                 /합\s*계[^\n\d]{0,5}([\d,]+)/,
@@ -111,6 +111,14 @@ export const parseLedgerText = (text) => {
                 /일\s*평\s*균\s*신\s*환[^\d]*([\d,.]+)/,
                 /신환\s*일\s*평\s*균[^\d]*([\d,.]+)/,
                 /평\s*균\s*신\s*환[^\d]*([\d,.]+)/,
+            ],
+        },
+        {
+            field: 'avgTotalPt',
+            patterns: [
+                /일\s*평\s*균\s*내\s*원\s*수[^\d]*([\d,.]+)/,
+                /일\s*평\s*균\s*내\s*원[^\d]*([\d,.]+)/,
+                /평\s*균\s*내\s*원\s*수[^\d]*([\d,.]+)/,
             ],
         },
     ];
@@ -144,19 +152,23 @@ export const parseLedgerText = (text) => {
             const nm = line.match(/([\d,]+)\s*명?\s*$/);
             if (nm) result.oldPt = parseNum(nm[1]);
         }
-        if (result.total === null && /(총\s*내원|내원.{0,3}합계|총\s*접수)/.test(line)) {
-            const nm = line.match(/([\d,]+)\s*명?\s*$/);
+        if (result.total === null && /(총\s*내원(?!\s*횟수)|내원.{0,3}합계|총\s*접수)/.test(line)) {
+            const nm = line.match(/([\d,.]+)\s*명?\s*$/);
             if (nm) result.total = parseNum(nm[1]);
         }
         if (result.avgNewPt === null && /일평균.{0,4}신환/.test(line)) {
             const nm = line.match(/([\d,.]+)\s*$/);
             if (nm) result.avgNewPt = parseNum(nm[1]);
         }
+        if (result.avgTotalPt === null && /(일\s*평균\s*내원|평균\s*내원)/.test(line)) {
+            const nm = line.match(/([\d,.]+)\s*명?\s*$/);
+            if (nm) result.avgTotalPt = parseNum(nm[1]);
+        }
     }
 
-    // 구환 일평균 계산 (oldPt / workDays)
-    if (result.oldPt !== null && result.workDays) {
-        result.avgOldPt = parseFloat((result.oldPt / result.workDays).toFixed(1));
+    // 구환 일평균 계산 ((newPt + oldPt) / workDays)
+    if ((result.newPt !== null || result.oldPt !== null) && result.workDays) {
+        result.avgOldPt = parseFloat((((result.newPt || 0) + (result.oldPt || 0)) / result.workDays).toFixed(1));
     }
 
     return result;
