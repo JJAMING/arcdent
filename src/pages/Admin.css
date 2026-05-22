@@ -122,6 +122,68 @@
     color: var(--text-secondary);
 }
 
+.admin-loading-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(3px);
+}
+
+.admin-loading-dialog {
+    width: min(420px, 100%);
+    padding: 1.5rem;
+    border-radius: 1rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 20px 55px rgba(15, 23, 42, 0.22);
+    text-align: center;
+}
+
+.admin-loading-title {
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.admin-loading-file {
+    margin-top: 0.4rem;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    word-break: keep-all;
+}
+
+.admin-loading-bar {
+    position: relative;
+    height: 0.55rem;
+    margin-top: 1.25rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(59, 130, 246, 0.12);
+}
+
+.admin-loading-bar-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 42%;
+    border-radius: inherit;
+    background: var(--accent-primary);
+    animation: adminLoadingBar 1.1s ease-in-out infinite;
+}
+
+@keyframes adminLoadingBar {
+    0% {
+        transform: translateX(-110%);
+    }
+    100% {
+        transform: translateX(250%);
+    }
+}
+
 /* Uploaded Files List */
 .uploaded-files-list {
     margin-top: 1rem;

@@ -39,24 +39,38 @@ const LAB_SERIES = [
     { key: 'lab_etc',     name: '기타',      color: '#94a3b8' },
 ];
 const CHART_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#14b8a6', '#8b5cf6', '#f97316', '#64748b', '#22c55e'];
+const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+
+const createEmptyPatientData = () => MONTHS.map(month => ({
+    month,
+    workDays: 0,
+    newPt: 0,
+    oldPt: 0,
+    total: 0,
+    avgNewPt: null,
+    avgOldPt: null,
+    avgTotalPt: null,
+    doctorPatients: null,
+    labRequests: null,
+}));
 
 // ── 실데이터 병합 헬퍼 (모듈 레벨 — 컴포넌트 밖) ──────────────────────────
 const buildMergedData = (year) => {
     try {
         const raw = localStorage.getItem('patient_ledger_data');
-        if (!raw) return MOCK_PATIENT_DATA;
+        if (!raw) return createEmptyPatientData();
         const ledger = JSON.parse(raw);
         const yearData = ledger[year] || {};
-        if (Object.keys(yearData).length === 0) return MOCK_PATIENT_DATA;
-        return MOCK_PATIENT_DATA.map((mock) => {
-            const real = yearData[mock.month];
-            if (!real) return mock;
+        if (Object.keys(yearData).length === 0) return createEmptyPatientData();
+        return createEmptyPatientData().map((empty) => {
+            const real = yearData[empty.month];
+            if (!real) return empty;
             return {
-                ...mock,
-                workDays: real.workDays != null ? real.workDays : mock.workDays,
-                newPt:    real.newPt    != null ? real.newPt    : mock.newPt,
-                oldPt:    real.oldPt    != null ? real.oldPt    : mock.oldPt,
-                total:    real.total    != null ? real.total    : mock.total,
+                ...empty,
+                workDays: real.workDays != null ? real.workDays : 0,
+                newPt:    real.newPt    != null ? real.newPt    : 0,
+                oldPt:    real.oldPt    != null ? real.oldPt    : 0,
+                total:    real.total    != null ? real.total    : 0,
                 avgNewPt: real.avgNewPt != null ? real.avgNewPt : null,
                 avgOldPt: real.avgOldPt != null ? real.avgOldPt : null,
                 avgTotalPt: real.avgTotalPt != null ? real.avgTotalPt : null,
@@ -66,7 +80,7 @@ const buildMergedData = (year) => {
         });
     } catch (e) {
         console.error('[PatientAnalysis] buildMergedData 오류:', e);
-        return MOCK_PATIENT_DATA;
+        return createEmptyPatientData();
     }
 };
 

@@ -11,6 +11,9 @@ export const LEDGER_STORAGE_KEY = 'patient_ledger_data';
 
 // ── 파일명에서 연·월 추출 ────────────────────────────────────────────────────
 export const extractYearMonthFromFileName = (filename) => {
+    const normalized = String(filename || '')
+        .replace(/\.[^.]+$/, '')
+        .replace(/\s+/g, '');
     // 2025년03월, 2025_03, 2025-03, 25년3월 등 다양한 형식 대응
     const patterns = [
         // 2025년 3월  /  2025년03월
@@ -24,7 +27,7 @@ export const extractYearMonthFromFileName = (filename) => {
     ];
 
     for (const pattern of patterns) {
-        const m = filename.match(pattern);
+        const m = normalized.match(pattern) || String(filename || '').match(pattern);
         if (m) {
             let year = m[1];
             let month = m[2];
@@ -42,7 +45,11 @@ export const extractYearMonthFromFileName = (filename) => {
 
 // ── OCR 텍스트에서 연·월 추출 (Fallback) ─────────────────────────────────────
 const extractYearMonthFromText = (text) => {
-    const m = text.match(/([12]\d{3})년\s*(\d{1,2})월/);
+    const normalized = String(text || '').replace(/\s+/g, '');
+    const m =
+        normalized.match(/([12]\d{3})년(\d{1,2})월/) ||
+        String(text || '').match(/([12]\d{3})\s*년\s*(\d{1,2})\s*월/) ||
+        normalized.match(/(\d{2})년(\d{1,2})월/);
     if (m) return { year: m[1], month: parseInt(m[2]) + '월' };
     return null;
 };
@@ -62,9 +69,9 @@ export const parseLedgerText = (text) => {
         newPt: null,
         oldPt: null,
         total: null,
+        totalVisits: null,
         avgNewPt: null,
         avgOldPt: null,
-        avgTotalPt: null,
     };
 
     // 줄 단위 + 전체 텍스트 모두 탐색
@@ -97,12 +104,11 @@ export const parseLedgerText = (text) => {
             ],
         },
         {
-            field: 'total',
+            field: 'totalVisits',
             patterns: [
-                /총\s*내\s*원(?!\s*횟\s*수)[^\d]*([\d,]+)/,
-                /총\s*접\s*수[^\d]*([\d,]+)/,
-                /내\s*원\s*합\s*계[^\d]*([\d,]+)/,
-                /합\s*계[^\n\d]{0,5}([\d,]+)/,
+                /총\s*내\s*원\s*횟\s*수[^\d]*([\d,]+)/,
+                /총\s*내\s*원\s*회\s*수[^\d]*([\d,]+)/,
+                /내\s*원\s*횟\s*수[^\d]*([\d,]+)/,
             ],
         },
         {
@@ -111,14 +117,6 @@ export const parseLedgerText = (text) => {
                 /일\s*평\s*균\s*신\s*환[^\d]*([\d,.]+)/,
                 /신환\s*일\s*평\s*균[^\d]*([\d,.]+)/,
                 /평\s*균\s*신\s*환[^\d]*([\d,.]+)/,
-            ],
-        },
-        {
-            field: 'avgTotalPt',
-            patterns: [
-                /일\s*평\s*균\s*내\s*원\s*수[^\d]*([\d,.]+)/,
-                /일\s*평\s*균\s*내\s*원[^\d]*([\d,.]+)/,
-                /평\s*균\s*내\s*원\s*수[^\d]*([\d,.]+)/,
             ],
         },
     ];
@@ -152,18 +150,18 @@ export const parseLedgerText = (text) => {
             const nm = line.match(/([\d,]+)\s*명?\s*$/);
             if (nm) result.oldPt = parseNum(nm[1]);
         }
-        if (result.total === null && /(총\s*내원(?!\s*횟수)|내원.{0,3}합계|총\s*접수)/.test(line)) {
-            const nm = line.match(/([\d,.]+)\s*명?\s*$/);
-            if (nm) result.total = parseNum(nm[1]);
+        if (result.totalVisits === null && /(총\s*내원\s*횟수|총\s*내원\s*회수|내원\s*횟수)/.test(line)) {
+            const nm = line.match(/([\d,.]+)\s*회?\s*$/);
+            if (nm) result.totalVisits = parseNum(nm[1]);
         }
         if (result.avgNewPt === null && /일평균.{0,4}신환/.test(line)) {
             const nm = line.match(/([\d,.]+)\s*$/);
             if (nm) result.avgNewPt = parseNum(nm[1]);
         }
-        if (result.avgTotalPt === null && /(일\s*평균\s*내원|평균\s*내원)/.test(line)) {
-            const nm = line.match(/([\d,.]+)\s*명?\s*$/);
-            if (nm) result.avgTotalPt = parseNum(nm[1]);
-        }
+    }
+
+    if (result.totalVisits !== null && result.workDays) {
+        result.total = parseFloat((result.totalVisits / result.workDays).toFixed(1));
     }
 
     // 구환 일평균 계산 ((newPt + oldPt) / workDays)
