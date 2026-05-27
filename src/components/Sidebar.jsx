@@ -23,8 +23,8 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
         { id: 'treatment', icon: <Stethoscope size={20} />, label: '진료분석' },
         { id: 'patient', icon: <Users size={20} />, label: '환자분석' },
         { id: 'new-patient', icon: <UserPlus size={20} />, label: '신환분석' },
-        { id: 'consultation', icon: <MessageSquare size={20} />, label: '상담분석' },
         { id: 'insurance', icon: <ShieldCheck size={20} />, label: '보험청구분석' },
+        { id: 'consultation', icon: <MessageSquare size={20} />, label: '상담분석' },
     ];
 
     return (

@@ -34,6 +34,7 @@ const cancelBtnStyle = {
 const YEARS  = ['2023', '2024', '2025', '2026'];
 const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
 const NEW_PATIENT_STORAGE_KEY = 'new_patient_analysis_data';
+const AGE_RANGES = ['0대', '10대', '20대', '30대', '40대', '50대', '60대', '70대+'];
 const OCR_FIELDS = [
     { key: 'workDays', label: '진료일수',        unit: '일' },
     { key: 'newPt',    label: '신환',            unit: '명' },
@@ -59,6 +60,237 @@ const normalizeHeader = (val) => String(val ?? '').trim().replace(/\s+/g, '');
 const isNewPatientPathDistributionFile = (filename) => (
     /^[12]\d{3}년\d{1,2}월내원환자내원경로분포/.test(normalizeHeader(filename))
 );
+
+const isNewPatientAgeDistributionFile = (filename) => (
+    /^[12]\d{3}년\d{1,2}월내원환자연령분포/.test(normalizeHeader(filename))
+);
+
+const isInsuranceClaimFile = (filename) => (
+    /^[12]\d{3}년.*보험청구액/.test(normalizeHeader(filename))
+);
+
+const saveInsuranceClaimData = ({ year, rows }) => {
+    let store = {};
+    try {
+        store = JSON.parse(localStorage.getItem('insurance_claim_data') || '{}');
+    } catch (e) {
+        store = {};
+    }
+
+    store[year] = MONTHS.map(month => {
+        const found = rows.find(row => row.month === month) || {};
+        return {
+            month,
+            health: Number(found.health || 0),
+            medicalAid: Number(found.medicalAid || 0),
+            amount: Number(found.amount || 0),
+        };
+    });
+
+    localStorage.setItem('insurance_claim_data', JSON.stringify(store));
+    window.dispatchEvent(new CustomEvent('insuranceClaimUpdated', { detail: { year } }));
+};
+
+const parseInsuranceClaimRows = (rows, fileName) => {
+    const year = extractYearMonthFromFileName(fileName)?.year || String(fileName).match(/([12]\d{3})년/)?.[1];
+    if (!year) throw new Error('파일명에서 연도를 찾을 수 없습니다. 예: 2025년 보험청구액.xlsx');
+
+    let headerIdx = -1;
+    let columns = { month: -1, health: -1, medicalAid: -1 };
+    for (let i = 0; i < Math.min(rows.length, 50); i++) {
+        const row = rows[i] || [];
+        const currentColumns = { month: -1, health: -1, medicalAid: -1 };
+        row.forEach((cell, idx) => {
+            const text = normalizeHeader(cell);
+            if (!text) return;
+            if (text === '월' || text.includes('청구월') || text.includes('진료월') || text.includes('년월')) {
+                currentColumns.month = idx;
+            }
+            if (text.includes('청구액') && text.includes('건강보험')) {
+                currentColumns.health = idx;
+            }
+            if (text.includes('청구액') && text.includes('의료급여')) {
+                currentColumns.medicalAid = idx;
+            }
+        });
+        if (currentColumns.health !== -1 && currentColumns.medicalAid !== -1) {
+            headerIdx = i;
+            columns = currentColumns;
+            break;
+        }
+    }
+
+    if (headerIdx === -1) {
+        throw new Error('청구액(건강보험)/청구액(의료급여) 컬럼을 찾을 수 없습니다.');
+    }
+
+    const extractMonthFromValue = (value) => {
+        const text = String(value ?? '').trim();
+        let match = text.match(/(\d{1,2})\s*월/);
+        if (!match) match = text.match(/[./-](\d{1,2})(?!\d)/);
+        if (!match) match = text.match(/^(\d{1,2})$/);
+        if (!match) return null;
+        const monthNumber = Number(match[1]);
+        return monthNumber >= 1 && monthNumber <= 12 ? `${monthNumber}월` : null;
+    };
+
+    const monthly = {};
+    for (let i = headerIdx + 1; i < rows.length; i++) {
+        const row = rows[i] || [];
+        const month = columns.month !== -1
+            ? extractMonthFromValue(row[columns.month])
+            : row.map(extractMonthFromValue).find(Boolean);
+        if (!month) continue;
+        const health = parseNumber(row[columns.health]);
+        const medicalAid = parseNumber(row[columns.medicalAid]);
+        if (health === 0 && medicalAid === 0) continue;
+        if (!monthly[month]) monthly[month] = { month, health: 0, medicalAid: 0, amount: 0 };
+        monthly[month].health += health;
+        monthly[month].medicalAid += medicalAid;
+        monthly[month].amount += health + medicalAid;
+    }
+
+    const parsedRows = Object.values(monthly);
+    if (parsedRows.length === 0) {
+        throw new Error('저장할 월별 보험청구액 데이터가 없습니다.');
+    }
+
+    return { year, rows: parsedRows };
+};
+
+const parseInsuranceClaimExcel = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        try {
+            const workbook = XLSX.read(event.target.result, { type: 'binary' });
+            const allRows = workbook.SheetNames.flatMap(sheetName => (
+                XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '' })
+            ));
+            resolve(parseInsuranceClaimRows(allRows, file.name));
+        } catch (err) {
+            reject(err);
+        }
+    };
+    reader.onerror = () => reject(new Error('파일을 읽을 수 없습니다.'));
+    reader.readAsBinaryString(file);
+});
+
+const saveInsuranceFeeStatsData = ({ year, month, rows }) => {
+    let store = {};
+    try {
+        store = JSON.parse(localStorage.getItem('insurance_fee_stats_data') || '{}');
+    } catch (e) {
+        store = {};
+    }
+
+    const yearData = Array.isArray(store[year])
+        ? store[year]
+        : MONTHS.map(item => ({ month: item, fees: [] }));
+    const target = yearData.find(item => item.month === month);
+    if (!target) throw new Error(`${year}년 ${month} 데이터를 만들 수 없습니다.`);
+
+    target.fees = rows;
+    store[year] = yearData;
+    localStorage.setItem('insurance_fee_stats_data', JSON.stringify(store));
+    window.dispatchEvent(new CustomEvent('insuranceFeeStatsUpdated', { detail: { year, month } }));
+};
+
+const parseInsuranceFeeStatsRows = (rows, fileName) => {
+    const yearMonth = extractYearMonthFromFileName(fileName);
+    if (!yearMonth) {
+        throw new Error('파일명에서 연월을 찾을 수 없습니다. 예: 2025년01월보험수가별통계.xlsx');
+    }
+
+    let headerIdx = -1;
+    let columns = { code: -1, name: -1, patients: -1, visits: -1 };
+    for (let i = 0; i < Math.min(rows.length, 60); i++) {
+        const row = rows[i] || [];
+        const currentColumns = { code: -1, name: -1, patients: -1, visits: -1 };
+        row.forEach((cell, idx) => {
+            const text = normalizeHeader(cell);
+            if (!text) return;
+            if (text === '코드' || text === '수가코드' || text === '보험코드') {
+                currentColumns.code = idx;
+            }
+            if (text === '수가명' || text === '보험수가명' || text === '명칭' || text === '항목명') {
+                currentColumns.name = idx;
+            }
+            if (text === '환자수' || text === '환자') {
+                currentColumns.patients = idx;
+            }
+            if (text === '진료횟수' || text === '횟수' || text === '입력횟수' || text === '건수') {
+                currentColumns.visits = idx;
+            }
+        });
+        if (currentColumns.code !== -1 && currentColumns.name !== -1 && currentColumns.patients !== -1 && currentColumns.visits !== -1) {
+            headerIdx = i;
+            columns = currentColumns;
+            break;
+        }
+    }
+
+    if (headerIdx === -1) {
+        throw new Error('코드/수가명/환자수/진료횟수 컬럼을 찾을 수 없습니다.');
+    }
+
+    const grouped = {};
+    for (let i = headerIdx + 1; i < rows.length; i++) {
+        const row = rows[i] || [];
+        const code = String(row[columns.code] || '').trim();
+        const name = String(row[columns.name] || '').trim();
+        if (!code || !name || code === '합계' || name === '합계') continue;
+
+        const patients = parseNumber(row[columns.patients]);
+        const visits = parseNumber(row[columns.visits]);
+        if (patients <= 0 && visits <= 0) continue;
+
+        const key = `${code}|||${name}`;
+        if (!grouped[key]) grouped[key] = { code, name, patients: 0, visits: 0 };
+        grouped[key].patients += patients;
+        grouped[key].visits += visits;
+    }
+
+    const parsedRows = Object.values(grouped);
+    if (parsedRows.length === 0) {
+        throw new Error('저장할 보험수가별 통계 데이터가 없습니다.');
+    }
+
+    return { ...yearMonth, rows: parsedRows };
+};
+
+const parseInsuranceFeeStatsExcel = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        try {
+            const workbook = XLSX.read(event.target.result, { type: 'binary' });
+            const allRows = workbook.SheetNames.flatMap(sheetName => (
+                XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '' })
+            ));
+            resolve(parseInsuranceFeeStatsRows(allRows, file.name));
+        } catch (err) {
+            reject(err);
+        }
+    };
+    reader.onerror = () => reject(new Error('파일을 읽을 수 없습니다.'));
+    reader.readAsBinaryString(file);
+});
+
+const normalizeAgeRange = (value) => {
+    const text = normalizeHeader(value);
+    const numbers = text.match(/\d+/g)?.map(Number) || [];
+    if (/70대\+|70세이상|70이상|70~99세/.test(text)) return '70대+';
+    if (/60대\+/.test(text)) return '60대';
+    const startAge = numbers.length > 0 ? numbers[0] : null;
+    if (startAge == null) return '';
+    if (startAge <= 9) return '0대';
+    if (startAge <= 19) return '10대';
+    if (startAge <= 29) return '20대';
+    if (startAge <= 39) return '30대';
+    if (startAge <= 49) return '40대';
+    if (startAge <= 59) return '50대';
+    if (startAge <= 69) return '60대';
+    return '70대+';
+};
 
 const extractPathFromDistributionFileName = (filename) => {
     const baseName = filename.split(/[\\/]/).pop().replace(/\.[^.]+$/, '').trim();
@@ -161,6 +393,63 @@ const createEmptyNewPatientYearData = () => MONTHS.map(month => ({
 const findColumn = (headers, patterns) => (
     headers.findIndex(header => patterns.some(pattern => header.includes(pattern)))
 );
+
+const parseNewPatientAgeRows = (rows, fileName) => {
+    const yearMonth = extractYearMonthFromFileName(fileName);
+    if (!yearMonth) {
+        throw new Error('파일명에서 연월을 찾을 수 없습니다. 예: 2025년01월내원환자연령분포.xlsx');
+    }
+
+    let headerIdx = -1;
+    let columns = {};
+    for (let i = 0; i < Math.min(rows.length, 40); i++) {
+        const headers = (rows[i] || []).map(normalizeHeader);
+        const age = findColumn(headers, ['연령대', '연령', '나이']);
+        const newPatient = findColumn(headers, ['신환수', '신환', '신규환자']);
+        if (age !== -1 && newPatient !== -1) {
+            headerIdx = i;
+            columns = { age, newPatient };
+            break;
+        }
+    }
+
+    if (headerIdx === -1) {
+        throw new Error('연령대/신환수 컬럼을 찾을 수 없습니다.');
+    }
+
+    const ages = Object.fromEntries(AGE_RANGES.map(range => [range, 0]));
+    for (let i = headerIdx + 1; i < rows.length; i++) {
+        const row = rows[i] || [];
+        const ageRange = normalizeAgeRange(row[columns.age]);
+        if (!ageRange) continue;
+        ages[ageRange] += parseNumber(row[columns.newPatient]);
+    }
+
+    const total = Object.values(ages).reduce((sum, count) => sum + Number(count || 0), 0);
+    if (total === 0) {
+        throw new Error('저장할 연령별 신환수 데이터가 없습니다.');
+    }
+
+    return { ...yearMonth, ages };
+};
+
+const parseNewPatientAgeExcel = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        try {
+            const workbook = XLSX.read(event.target.result, { type: 'binary' });
+            const targetSheetName = workbook.SheetNames.find(sheetName => (
+                normalizeHeader(sheetName).includes('연령분포')
+            )) || workbook.SheetNames[0];
+            const rows = XLSX.utils.sheet_to_json(workbook.Sheets[targetSheetName], { header: 1 });
+            resolve(parseNewPatientAgeRows(rows, file.name));
+        } catch (err) {
+            reject(err);
+        }
+    };
+    reader.onerror = () => reject(new Error('파일을 읽을 수 없습니다.'));
+    reader.readAsBinaryString(file);
+});
 
 const parseNewPatientPathRows = (rows, fileName) => {
     const yearMonth = extractYearMonthFromFileName(fileName);
@@ -382,13 +671,31 @@ const saveNewPatientPathDistribution = ({ year, month, rows = [], summary, insur
     window.dispatchEvent(new CustomEvent('newPatientAnalysisUpdated', { detail: { year, month } }));
 };
 
+const saveNewPatientAgeDistribution = ({ year, month, ages }) => {
+    let store = {};
+    try {
+        store = JSON.parse(localStorage.getItem(NEW_PATIENT_STORAGE_KEY) || '{}');
+    } catch (e) {
+        store = {};
+    }
+
+    const yearData = Array.isArray(store[year]) ? store[year] : createEmptyNewPatientYearData();
+    const target = yearData.find(item => item.month === month);
+    if (!target) throw new Error(`${year}년 ${month} 데이터를 만들 수 없습니다.`);
+
+    target.ages = Object.fromEntries(AGE_RANGES.map(range => [range, Number(ages?.[range] || 0)]));
+    store[year] = yearData;
+    localStorage.setItem(NEW_PATIENT_STORAGE_KEY, JSON.stringify(store));
+    window.dispatchEvent(new CustomEvent('newPatientAnalysisUpdated', { detail: { year, month } }));
+};
+
 const Admin = () => {
     const { getAllUsers } = useAuth();
     const [users, setUsers] = useState([]);
     const fileInputRef  = useRef(null);
     const [uploadLog, setUploadLog]       = useState([]);
     const [isDragOver, setIsDragOver]     = useState(false);
-    const [pendingNewPatientUpload, setPendingNewPatientUpload] = useState(null);
+    const [pendingNewPatientUploads, setPendingNewPatientUploads] = useState([]);
 
     // OCR 모달
     const [ocrModal, setOcrModal]   = useState(null);
@@ -404,24 +711,29 @@ const Admin = () => {
     };
 
     const showNewPatientPreview = (file, parsed) => {
-        setPendingNewPatientUpload({
+        setPendingNewPatientUploads(prev => [...prev, {
+            id: `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             fileName: file.name,
             year: parsed.year,
             month: parsed.month,
             rows: parsed.rows || [],
             summary: parsed.summary,
             insuranceRatios: parsed.insuranceRatios || {},
-        });
+        }]);
     };
 
     const handleApproveNewPatientUpload = () => {
-        if (!pendingNewPatientUpload) return;
+        if (pendingNewPatientUploads.length === 0) return;
+        let savedCount = 0;
         try {
-            saveNewPatientPathDistribution(pendingNewPatientUpload);
-            addLog('success', `✅ [신환분석] ${pendingNewPatientUpload.year}년 ${pendingNewPatientUpload.month} 내원경로 데이터 반영 완료 (${pendingNewPatientUpload.rows.length}개 경로)`);
-            setPendingNewPatientUpload(null);
+            pendingNewPatientUploads.forEach(upload => {
+                saveNewPatientPathDistribution(upload);
+                savedCount += 1;
+                addLog('success', `✅ [신환분석] ${upload.year}년 ${upload.month} ${upload.fileName} 반영 완료 (${upload.rows.length}개 경로)`);
+            });
+            setPendingNewPatientUploads([]);
         } catch (err) {
-            addLog('error', `❌ [신환분석 저장 오류] ${err.message}`);
+            addLog('error', `❌ [신환분석 저장 오류] ${savedCount}개 반영 후 중단: ${err.message}`);
         }
     };
 
@@ -435,7 +747,16 @@ const Admin = () => {
 
         for (const file of uploadFiles) {
             const isImage = file.type.startsWith('image/');
-            if (isNewPatientPathDistributionFile(file.name)) {
+            if (isNewPatientAgeDistributionFile(file.name) && !isImage) {
+                try {
+                    const parsed = await parseNewPatientAgeExcel(file);
+                    saveNewPatientAgeDistribution(parsed);
+                    const total = Object.values(parsed.ages || {}).reduce((sum, count) => sum + Number(count || 0), 0);
+                    addLog('success', `✅ [신환분석/연령별] ${parsed.year}년 ${parsed.month} 연령별 신환수 반영 완료 (${total.toLocaleString()}명)`);
+                } catch (err) {
+                    addLog('error', `❌ [신환분석/연령별 파싱 오류] ${file.name}: ${err.message}`);
+                }
+            } else if (isNewPatientPathDistributionFile(file.name)) {
                 try {
                     if (isImage) {
                         setOcrProcessingFile(file.name);
@@ -867,6 +1188,19 @@ const Admin = () => {
                             updatedCount++;
                             resolve('newPatientRevenue');
                         }
+                        // 보험청구액 → 보험청구분석
+                        else if (isInsuranceClaimFile(fileName)) {
+                            try {
+                                const parsed = await parseInsuranceClaimExcel(file);
+                                saveInsuranceClaimData(parsed);
+                                const total = parsed.rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+                                addLog('success', `✅ [보험청구분석] ${parsed.year}년 보험청구액 업로드 완료 (${total.toLocaleString()}원)`);
+                                updatedCount++;
+                                resolve('insuranceClaim');
+                            } catch (err) {
+                                reject(err.message || err);
+                            }
+                        }
                         // 기공물 의뢰 통계
                         else if (/기공의뢰통계/.test(fileName.replace(/\s+/g, ''))) {
                             if (!monthFromFile) {
@@ -1077,6 +1411,11 @@ const Admin = () => {
                         addLog('success', `✅ [보험수가] ${result.year}년 ${result.month} 업로드 완료\n임플 1단계:${result.data.insImpStep1} / 2단계:${result.data.insImpStep2} / 3단계:${result.data.insImpStep3}\n틀니 1단계:${result.data.insDentStep1} / 5단계:${result.data.insDentStep5} / 6단계:${result.data.insDentStep6}`);
                         updatedCount++;
                     } catch (insErr) { addLog('error', `❌ [보험수가] ${file.name}: ${insErr.message}`); }
+                    try {
+                        const feeStats = await parseInsuranceFeeStatsExcel(file);
+                        saveInsuranceFeeStatsData(feeStats);
+                        addLog('success', `✅ [보험청구분석/보험수가별] ${feeStats.year}년 ${feeStats.month} 업로드 완료 (${feeStats.rows.length}개 수가)`);
+                    } catch (feeErr) { addLog('error', `❌ [보험청구분석/보험수가별] ${file.name}: ${feeErr.message}`); }
                 } else if (flag === 'doctorPatients') {
                     // handled inside processFile
                 } else if (flag === 'labRequests') {
@@ -1084,6 +1423,8 @@ const Admin = () => {
                 } else if (flag === 'topPatients') {
                     // handled inside processFile
                 } else if (flag === 'newPatientRevenue') {
+                    // handled inside processFile
+                } else if (flag === 'insuranceClaim') {
                     // handled inside processFile
                 } else {
                     updatedCount++;
@@ -1248,7 +1589,7 @@ const Admin = () => {
                 </div>
             )}
 
-            {pendingNewPatientUpload && (
+            {pendingNewPatientUploads.length > 0 && (
                 <div style={{
                     position: 'fixed', inset: 0,
                     background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
@@ -1267,10 +1608,10 @@ const Admin = () => {
                                     신환분석 업로드 파싱 결과
                                 </h2>
                                 <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                                    {pendingNewPatientUpload.fileName} · {pendingNewPatientUpload.year}년 {pendingNewPatientUpload.month}
+                                    {pendingNewPatientUploads.length}개 파일 · 승인하면 모두 순서대로 반영됩니다.
                                 </p>
                             </div>
-                            <button onClick={() => setPendingNewPatientUpload(null)}
+                            <button onClick={() => setPendingNewPatientUploads([])}
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
                                 <X size={22} />
                             </button>
@@ -1281,93 +1622,106 @@ const Admin = () => {
                             <strong>내원경로별 1인당 평균 진료비 상세 데이터</strong>에 아래 값이 반영됩니다.
                         </div>
 
-                        {pendingNewPatientUpload.rows.length > 0 && (
-                            <div className="table-responsive">
-                                <table className="admin-table">
-                                    <thead>
-                                        <tr>
-                                            <th>내원경로</th>
-                                            <th>신환수</th>
-                                            <th>총 진료비</th>
-                                            <th>평균 진료비</th>
-                                            <th>보험환자</th>
-                                            <th>비보험환자</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {pendingNewPatientUpload.rows.map(row => (
-                                            <tr key={row.path}>
-                                                <td>{row.path}</td>
-                                                <td>{row.newPatient.toLocaleString()}명</td>
-                                                <td>{Math.round(row.totalFee || 0).toLocaleString()}원</td>
-                                                <td>{Math.round(row.avgFee || 0).toLocaleString()}원</td>
-                                                <td>{Math.round(row.insurancePatients || 0).toLocaleString()}명</td>
-                                                <td>{Math.round(row.nonInsurancePatients || 0).toLocaleString()}명</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
+                        {pendingNewPatientUploads.map((upload, uploadIndex) => (
+                            <div key={upload.id} style={{ marginTop: uploadIndex === 0 ? 0 : '1.25rem', paddingTop: uploadIndex === 0 ? 0 : '1.25rem', borderTop: uploadIndex === 0 ? 'none' : '1px solid var(--border-color)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center', marginBottom: '0.75rem' }}>
+                                    <strong style={{ color: 'var(--text-primary)' }}>
+                                        {uploadIndex + 1}. {upload.fileName}
+                                    </strong>
+                                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                                        {upload.year}년 {upload.month}
+                                    </span>
+                                </div>
 
-                        {pendingNewPatientUpload.insuranceRatios && Object.keys(pendingNewPatientUpload.insuranceRatios).length > 0 && (
-                            <div className="table-responsive" style={{ marginTop: '1rem' }}>
-                                <table className="admin-table">
-                                    <thead>
-                                        <tr>
-                                            <th>내원경로</th>
-                                            <th>보험환자 비율</th>
-                                            <th>비보험환자 비율</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {Object.entries(pendingNewPatientUpload.insuranceRatios).map(([path, ratio]) => (
-                                            <tr key={path}>
-                                                <td>{path}</td>
-                                                <td>{Number(ratio || 0).toFixed(1)}%</td>
-                                                <td>{Math.max(0, 100 - Number(ratio || 0)).toFixed(1)}%</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
+                                {upload.rows.length > 0 && (
+                                    <div className="table-responsive">
+                                        <table className="admin-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>내원경로</th>
+                                                    <th>신환수</th>
+                                                    <th>총 진료비</th>
+                                                    <th>평균 진료비</th>
+                                                    <th>보험환자</th>
+                                                    <th>비보험환자</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {upload.rows.map(row => (
+                                                    <tr key={`${upload.id}-${row.path}`}>
+                                                        <td>{row.path}</td>
+                                                        <td>{row.newPatient.toLocaleString()}명</td>
+                                                        <td>{Math.round(row.totalFee || 0).toLocaleString()}원</td>
+                                                        <td>{Math.round(row.avgFee || 0).toLocaleString()}원</td>
+                                                        <td>{Math.round(row.insurancePatients || 0).toLocaleString()}명</td>
+                                                        <td>{Math.round(row.nonInsurancePatients || 0).toLocaleString()}명</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
 
-                        {pendingNewPatientUpload.summary && (
-                            <div className="table-responsive" style={{ marginTop: '1rem' }}>
-                                <table className="admin-table">
-                                    <thead>
-                                        <tr>
-                                            <th>구분</th>
-                                            <th>내원환자수</th>
-                                            <th>구환수</th>
-                                            <th>신환수</th>
-                                            <th>총내원횟수</th>
-                                            <th>총 진료비</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {[
-                                            ['합계', pendingNewPatientUpload.summary.total],
-                                            ['평균', pendingNewPatientUpload.summary.average],
-                                        ].map(([label, values]) => (
-                                            <tr key={label}>
-                                                <td>{label}</td>
-                                                <td>{Math.round(values?.visitPatients || 0).toLocaleString()}명</td>
-                                                <td>{Math.round(values?.oldPatients || 0).toLocaleString()}명</td>
-                                                <td>{Math.round(values?.newPatients || 0).toLocaleString()}명</td>
-                                                <td>{Math.round(values?.totalVisits || 0).toLocaleString()}회</td>
-                                                <td>{Math.round(values?.totalFee || 0).toLocaleString()}원</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                {upload.insuranceRatios && Object.keys(upload.insuranceRatios).length > 0 && (
+                                    <div className="table-responsive" style={{ marginTop: '1rem' }}>
+                                        <table className="admin-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>내원경로</th>
+                                                    <th>보험환자 비율</th>
+                                                    <th>비보험환자 비율</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {Object.entries(upload.insuranceRatios).map(([path, ratio]) => (
+                                                    <tr key={`${upload.id}-${path}`}>
+                                                        <td>{path}</td>
+                                                        <td>{Number(ratio || 0).toFixed(1)}%</td>
+                                                        <td>{Math.max(0, 100 - Number(ratio || 0)).toFixed(1)}%</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+
+                                {upload.summary && (
+                                    <div className="table-responsive" style={{ marginTop: '1rem' }}>
+                                        <table className="admin-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>구분</th>
+                                                    <th>내원환자수</th>
+                                                    <th>구환수</th>
+                                                    <th>신환수</th>
+                                                    <th>총내원횟수</th>
+                                                    <th>총 진료비</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {[
+                                                    ['합계', upload.summary.total],
+                                                    ['평균', upload.summary.average],
+                                                ].map(([label, values]) => (
+                                                    <tr key={`${upload.id}-${label}`}>
+                                                        <td>{label}</td>
+                                                        <td>{Math.round(values?.visitPatients || 0).toLocaleString()}명</td>
+                                                        <td>{Math.round(values?.oldPatients || 0).toLocaleString()}명</td>
+                                                        <td>{Math.round(values?.newPatients || 0).toLocaleString()}명</td>
+                                                        <td>{Math.round(values?.totalVisits || 0).toLocaleString()}회</td>
+                                                        <td>{Math.round(values?.totalFee || 0).toLocaleString()}원</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
                             </div>
-                        )}
+                        ))}
 
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
-                            <button onClick={() => setPendingNewPatientUpload(null)} style={cancelBtnStyle}>취소</button>
-                            <button onClick={handleApproveNewPatientUpload} style={saveBtnStyle}>승인 후 반영</button>
+                            <button onClick={() => setPendingNewPatientUploads([])} style={cancelBtnStyle}>취소</button>
+                            <button onClick={handleApproveNewPatientUpload} style={saveBtnStyle}>전체 승인 후 반영</button>
                         </div>
                     </div>
                 </div>
