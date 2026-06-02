@@ -46,6 +46,7 @@ const createEmptyPatientData = () => MONTHS.map(month => ({
     workDays: 0,
     newPt: 0,
     oldPt: 0,
+    totalVisits: 0,
     total: 0,
     avgNewPt: null,
     avgOldPt: null,
@@ -53,6 +54,36 @@ const createEmptyPatientData = () => MONTHS.map(month => ({
     doctorPatients: null,
     labRequests: null,
 }));
+
+const roundToOneDecimal = (value) => {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return null;
+    return Math.round(number * 10) / 10;
+};
+
+const formatOneDecimalPatient = (value, empty = '-') => {
+    const rounded = roundToOneDecimal(value);
+    if (rounded == null) return empty;
+    return rounded.toLocaleString('ko-KR', {
+        minimumFractionDigits: Number.isInteger(rounded) ? 0 : 1,
+        maximumFractionDigits: 1,
+    });
+};
+
+const getTotalReceptionPatients = (data) => {
+    const totalVisits = Number(data.totalVisits || 0);
+    const workDays = Number(data.workDays || 0);
+    if (totalVisits > 0 && workDays > 0) {
+        return roundToOneDecimal(totalVisits / workDays);
+    }
+    if (data.total != null && Number.isFinite(Number(data.total)) && Number(data.total) > 0) {
+        return roundToOneDecimal(data.total);
+    }
+    if (data.avgTotalPt != null && Number.isFinite(Number(data.avgTotalPt)) && Number(data.avgTotalPt) > 0) {
+        return roundToOneDecimal(data.avgTotalPt);
+    }
+    return null;
+};
 
 // ── 실데이터 병합 헬퍼 (모듈 레벨 — 컴포넌트 밖) ──────────────────────────
 const buildMergedData = (year) => {
@@ -70,6 +101,7 @@ const buildMergedData = (year) => {
                 workDays: real.workDays != null ? real.workDays : 0,
                 newPt:    real.newPt    != null ? real.newPt    : 0,
                 oldPt:    real.oldPt    != null ? real.oldPt    : 0,
+                totalVisits: real.totalVisits != null ? real.totalVisits : 0,
                 total:    real.total    != null ? real.total    : 0,
                 avgNewPt: real.avgNewPt != null ? real.avgNewPt : null,
                 avgOldPt: real.avgOldPt != null ? real.avgOldPt : null,
@@ -153,7 +185,10 @@ const PatientAnalysis = () => {
             case 'newOld': {
                 const totalNew = currentHalfData.reduce((s, d) => s + d.newPt, 0);
                 const totalOld = currentHalfData.reduce((s, d) => s + d.oldPt, 0);
-                const totalAll = currentHalfData.reduce((s, d) => s + d.total, 0);
+                const totalReceptionValues = currentHalfData
+                    .map(getTotalReceptionPatients)
+                    .filter(v => v != null);
+                const totalAll = roundToOneDecimal(totalReceptionValues.reduce((s, v) => s + v, 0)) || 0;
 
                 return (
                     <div className="tab-pane">
@@ -162,18 +197,18 @@ const PatientAnalysis = () => {
                             <div className="patient-kpi-row">
                                 <div className="patient-kpi-card kpi-total">
                                     <span className="kpi-label">총 환자 합계</span>
-                                    <span className="kpi-value">{totalAll.toLocaleString()}명</span>
+                                    <span className="kpi-value">{formatOneDecimalPatient(totalAll, '0')}명</span>
                                     <span className="kpi-sub">{half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체'}</span>
                                 </div>
                                 <div className="patient-kpi-card kpi-new">
                                     <span className="kpi-label">신환 합계</span>
                                     <span className="kpi-value">{totalNew.toLocaleString()}명</span>
-                                    <span className="kpi-sub">비율 {((totalNew / totalAll) * 100).toFixed(1)}%</span>
+                                    <span className="kpi-sub">비율 {totalAll ? ((totalNew / totalAll) * 100).toFixed(1) : '0.0'}%</span>
                                 </div>
                                 <div className="patient-kpi-card kpi-old">
                                     <span className="kpi-label">구환 합계</span>
                                     <span className="kpi-value">{totalOld.toLocaleString()}명</span>
-                                    <span className="kpi-sub">비율 {((totalOld / totalAll) * 100).toFixed(1)}%</span>
+                                    <span className="kpi-sub">비율 {totalAll ? ((totalOld / totalAll) * 100).toFixed(1) : '0.0'}%</span>
                                 </div>
                             </div>
 
@@ -264,8 +299,11 @@ const PatientAnalysis = () => {
                                                 </tr>
                                                 <tr className="highlight-row">
                                                     <td className="row-header"><PlusCircle size={14} /> 총 접수 환자 수</td>
-                                                    {currentHalfData.map(d => <td key={d.month} className="font-bold">{d.total}명</td>)}
-                                                    <td className="font-bold" style={{ fontSize: '1.05rem' }}>{totalAll}명</td>
+                                                    {currentHalfData.map(d => {
+                                                        const totalReception = getTotalReceptionPatients(d) ?? 0;
+                                                        return <td key={d.month} className="font-bold">{formatOneDecimalPatient(totalReception, '0')}명</td>;
+                                                    })}
+                                                    <td className="font-bold" style={{ fontSize: '1.05rem' }}>{formatOneDecimalPatient(totalAll, '0')}명</td>
                                                 </tr>
                                             </tbody>
                                         </table>
@@ -328,17 +366,17 @@ const PatientAnalysis = () => {
                                                 <tr className="highlight-row">
                                                     <td className="row-header"><PlusCircle size={14} /> 총 접수 환자 수</td>
                                                     {currentHalfData.map(d => {
-                                                        const totalDailyVisit = d.avgTotalPt != null ? Number(d.avgTotalPt).toFixed(1) : '-';
-                                                        return <td key={d.month} className="font-bold">{totalDailyVisit}명</td>;
+                                                        const totalDailyVisit = getTotalReceptionPatients(d);
+                                                        return <td key={d.month} className="font-bold">{formatOneDecimalPatient(totalDailyVisit)}명</td>;
                                                     })}
                                                     <td className="font-bold" style={{ fontSize: '1.05rem' }}>
                                                         {(() => {
                                                             const values = currentHalfData
-                                                                .map(d => d.avgTotalPt)
-                                                                .filter(v => v != null && !isNaN(Number(v)));
+                                                                .map(getTotalReceptionPatients)
+                                                                .filter(v => v != null);
                                                             if (values.length === 0) return '-';
                                                             const sum = values.reduce((s, v) => s + Number(v), 0);
-                                                            return (sum / values.length).toFixed(1);
+                                                            return formatOneDecimalPatient(sum / values.length);
                                                         })()}명
                                                     </td>
                                                 </tr>

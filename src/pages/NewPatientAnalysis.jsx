@@ -106,6 +106,19 @@ const loadNewPatientData = (year) => {
     return MOCK_NEW_PATIENT_DATA[year] || MOCK_NEW_PATIENT_DATA['2025'];
 };
 
+const collectNewPatientYears = () => {
+    const years = new Set(['2025']);
+    try {
+        const savedSales = localStorage.getItem('parsed_sales_data');
+        if (savedSales) Object.keys(JSON.parse(savedSales)).forEach(year => years.add(String(year)));
+        const savedNewPatients = localStorage.getItem('new_patient_analysis_data');
+        if (savedNewPatients) Object.keys(JSON.parse(savedNewPatients)).forEach(year => years.add(String(year)));
+    } catch (e) {
+        console.error(e);
+    }
+    return Array.from(years).sort((a, b) => Number(b) - Number(a));
+};
+
 const NewPatientAnalysis = () => {
     const [selectedYear, setSelectedYear] = useState('2025');
     const [availableYears, setAvailableYears] = useState(['2025']);
@@ -118,16 +131,9 @@ const NewPatientAnalysis = () => {
     const [yearData, setYearData] = useState(() => loadNewPatientData('2025'));
 
     useEffect(() => {
-        const years = new Set(['2025']);
-        try {
-            const savedSales = localStorage.getItem('parsed_sales_data');
-            if (savedSales) Object.keys(JSON.parse(savedSales)).forEach(year => years.add(year));
-            const savedNewPatients = localStorage.getItem('new_patient_analysis_data');
-            if (savedNewPatients) Object.keys(JSON.parse(savedNewPatients)).forEach(year => years.add(year));
-        } catch (e) {
-            console.error(e);
-        }
-        setAvailableYears(Array.from(years).sort((a, b) => b - a));
+        const years = collectNewPatientYears();
+        setAvailableYears(years);
+        if (!years.includes(String(selectedYear))) setSelectedYear(years[0] || '2025');
     }, []);
 
     useEffect(() => {
@@ -135,9 +141,16 @@ const NewPatientAnalysis = () => {
     }, [selectedYear]);
 
     useEffect(() => {
-        const handleNewPatientUpdate = () => setYearData(loadNewPatientData(selectedYear));
+        const handleNewPatientUpdate = () => {
+            setAvailableYears(collectNewPatientYears());
+            setYearData(loadNewPatientData(selectedYear));
+        };
         window.addEventListener('newPatientAnalysisUpdated', handleNewPatientUpdate);
-        return () => window.removeEventListener('newPatientAnalysisUpdated', handleNewPatientUpdate);
+        window.addEventListener('storage', handleNewPatientUpdate);
+        return () => {
+            window.removeEventListener('newPatientAnalysisUpdated', handleNewPatientUpdate);
+            window.removeEventListener('storage', handleNewPatientUpdate);
+        };
     }, [selectedYear]);
 
     const currentHalfData = useMemo(() => {

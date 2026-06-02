@@ -79,8 +79,36 @@ const getFieldNumber = (item, keys) => {
     return 0;
 };
 
+const getFieldText = (item, keys, fallback = '-') => {
+    for (const key of keys) {
+        const value = String(item?.[key] ?? '').trim();
+        if (value) return value;
+    }
+    return fallback;
+};
+
 const formatWon = (value) => `${Math.round(Number(value || 0)).toLocaleString()}원`;
 const formatPercent = (value) => `${Number(value || 0).toFixed(1)}%`;
+const CONSULTANT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#64748b'];
+const REJECTED_ROWS_PER_PAGE = 10;
+
+const collectConsultationYears = (plans, overallData, consultantData, rejectedData) => {
+    const years = new Set(['2025']);
+    (plans || []).forEach(plan => {
+        const year = getPlanYear(plan);
+        if (year) years.add(String(year));
+    });
+    Object.keys(overallData || {}).forEach(year => years.add(String(year)));
+    Object.keys(consultantData || {}).forEach(year => years.add(String(year)));
+    Object.keys(rejectedData || {}).forEach(year => years.add(String(year)));
+    return Array.from(years).sort((a, b) => Number(b) - Number(a));
+};
+
+const isDoctorDiagnosisName = (value) => {
+    const text = String(value || '').trim();
+    if (!/^[가-힣]{2,5}$/.test(text)) return false;
+    return !/(상담|현황|결정|환자|진단|동의|금액|보험|치료|계획|신환|구환|전체|부분|최종|총)/.test(text);
+};
 
 const ConsultationAnalysis = () => {
     const [selectedYear, setSelectedYear] = useState('2025');
@@ -89,23 +117,30 @@ const ConsultationAnalysis = () => {
     const [half, setHalf] = useState('all');
     const [subTab, setSubTab] = useState('overall');
     const [selectedMonth, setSelectedMonth] = useState('1월');
+    const [rejectedPage, setRejectedPage] = useState(1);
     const [refreshKey, setRefreshKey] = useState(0);
 
     const treatmentPlans = useMemo(() => safeJson('treatment_plan_data', []), [refreshKey]);
+    const consultationOverallData = useMemo(() => safeJson('consultation_overall_data', {}), [refreshKey]);
+    const consultationConsultantData = useMemo(() => safeJson('consultation_consultant_data', {}), [refreshKey]);
+    const consultationRejectedData = useMemo(() => safeJson('consultation_rejected_data', {}), [refreshKey]);
 
     useEffect(() => {
-        const years = new Set(['2025']);
-        treatmentPlans.forEach(plan => {
-            const year = getPlanYear(plan);
-            if (year) years.add(String(year));
-        });
-        setAvailableYears(Array.from(years).sort((a, b) => Number(b) - Number(a)));
-    }, [treatmentPlans]);
+        const years = collectConsultationYears(treatmentPlans, consultationOverallData, consultationConsultantData, consultationRejectedData);
+        setAvailableYears(years);
+        if (!years.includes(String(selectedYear))) {
+            setSelectedYear(years[0] || '2025');
+        }
+    }, [treatmentPlans, consultationOverallData, consultationConsultantData, consultationRejectedData, selectedYear]);
 
     useEffect(() => {
         const handleUpdate = () => setRefreshKey(prev => prev + 1);
         window.addEventListener('storage', handleUpdate);
-        return () => window.removeEventListener('storage', handleUpdate);
+        window.addEventListener('consultationAnalysisUpdated', handleUpdate);
+        return () => {
+            window.removeEventListener('storage', handleUpdate);
+            window.removeEventListener('consultationAnalysisUpdated', handleUpdate);
+        };
     }, []);
 
     const periodMonths = useMemo(() => {
@@ -119,6 +154,10 @@ const ConsultationAnalysis = () => {
             setSelectedMonth(periodMonths[0] || '1월');
         }
     }, [periodMonths, selectedMonth]);
+
+    useEffect(() => {
+        setRejectedPage(1);
+    }, [selectedYear, selectedMonth]);
 
     const filteredPlans = useMemo(() => {
         return treatmentPlans.filter(plan => {
@@ -180,11 +219,64 @@ const ConsultationAnalysis = () => {
         };
     };
 
-    const monthSummary = useMemo(() => buildSummary(selectedMonthPlans), [selectedMonthPlans]);
+    const buildSummaryFromOverallRecord = (record) => ({
+        totalConsultations: Number(record?.totalConsultations || 0),
+        agreedCount: Number(record?.agreedCount || 0),
+        partialCount: Number(record?.partialCount || 0),
+        rejectedCount: Number(record?.rejectedCount || 0),
+        consultationAmount: Number(record?.consultationAmount || 0),
+        diagnosisAmount: Number(record?.diagnosisAmount || 0),
+        rejectedAmount: Number(record?.rejectedAmount || 0),
+        agreedAmount: Number(record?.agreedAmount || 0),
+        paidAmount: Number(record?.paidAmount || 0),
+        newPatients: Number(record?.newPatients || 0),
+        oldPatients: Number(record?.oldPatients || 0),
+        totalPatients: Number(record?.totalPatients || 0),
+        insuranceDiagnosis: Number(record?.insuranceDiagnosis || 0),
+        insuranceAgreement: Number(record?.insuranceAgreement || 0),
+        implantDecision: Number(record?.implantDecision || 0),
+        dentureDecision: Number(record?.dentureDecision || 0),
+        doctorDiagnoses: Array.isArray(record?.doctorDiagnoses) ? record.doctorDiagnoses : [],
+        planChange: Number(record?.planChange || 0),
+        patientAgreementRate: Number(record?.patientAgreementRate || 0),
+        partialAgreementRate: Number(record?.partialAgreementRate || 0),
+        diagnosisAgreementRate: Number(record?.diagnosisAgreementRate || 0),
+        consultationAgreementRate: Number(record?.consultationAgreementRate || 0),
+        collectionRate: 0,
+    });
+
+    const getOverallSummary = (month) => {
+        const yearBucket = consultationOverallData?.[selectedYear] || {};
+        const record = yearBucket?.[month];
+        return record ? buildSummaryFromOverallRecord(record) : null;
+    };
+
+    const getConsultantSummary = (month) => {
+        const yearBucket = consultationConsultantData?.[selectedYear] || {};
+        return yearBucket?.[month] || null;
+    };
+
+    const getRejectedSummary = (month) => {
+        const yearBucket = consultationRejectedData?.[selectedYear] || {};
+        return yearBucket?.[month] || null;
+    };
+
+    const monthSummary = useMemo(() => {
+        return getOverallSummary(selectedMonth) || buildSummary(selectedMonthPlans);
+    }, [consultationOverallData, selectedYear, selectedMonth, selectedMonthPlans]);
+    const doctorDiagnosisRows = useMemo(() => {
+        return (monthSummary.doctorDiagnoses || [])
+            .filter(doctor => isDoctorDiagnosisName(doctor.name) && Number(doctor.count || 0) > 0)
+            .map(doctor => ({
+                name: String(doctor.name).trim(),
+                count: Number(doctor.count || 0),
+                agreedAmount: Number(doctor.agreedAmount || doctor.amount || 0),
+            }));
+    }, [monthSummary]);
     const periodLabel = half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
 
     const consultationTrendData = periodMonths.map(month => {
-        const summary = buildSummary(treatmentPlans.filter(plan => getPlanYear(plan) === String(selectedYear) && getPlanMonth(plan) === month));
+        const summary = getOverallSummary(month) || buildSummary(treatmentPlans.filter(plan => getPlanYear(plan) === String(selectedYear) && getPlanMonth(plan) === month));
         return {
             month,
             최종동의금액: summary.agreedAmount,
@@ -244,6 +336,25 @@ const ConsultationAnalysis = () => {
     };
 
     const consultantRows = useMemo(() => {
+        const stored = getConsultantSummary(selectedMonth);
+        if (stored?.rows?.length) {
+            return stored.rows
+                .map(row => ({
+                    name: String(row.name || '').trim() || '미입력',
+                    patientCount: Number(row.patientCount || 0),
+                    fullAgreed: Number(row.fullAgreed || 0),
+                    partialAgreed: Number(row.partialAgreed || 0),
+                    totalAgreed: Number(row.totalAgreed || 0),
+                    rejected: Number(row.rejected || 0),
+                    patientAgreementRate: Number(row.patientAgreementRate || 0),
+                    consultationAmount: Number(row.consultationAmount || 0),
+                    agreedAmount: Number(row.agreedAmount || 0),
+                    amountAgreementRate: Number(row.amountAgreementRate || 0),
+                }))
+                .filter(row => row.name && row.patientCount > 0)
+                .sort((a, b) => b.patientCount - a.patientCount || b.amountAgreementRate - a.amountAgreementRate);
+        }
+
         const groups = new Map();
         selectedMonthPlans.forEach(plan => {
             const name = getConsultantName(plan);
@@ -272,7 +383,221 @@ const ConsultationAnalysis = () => {
                 };
             })
             .sort((a, b) => b.patientCount - a.patientCount || b.amountAgreementRate - a.amountAgreementRate);
-    }, [selectedMonthPlans]);
+    }, [consultationConsultantData, selectedYear, selectedMonth, selectedMonthPlans]);
+
+    const consultantPeriodRows = useMemo(() => {
+        const normalizeRow = (row) => {
+            const patientCount = Number(row.patientCount || 0);
+            const fullAgreed = Number(row.fullAgreed || 0);
+            const partialAgreed = Number(row.partialAgreed || 0);
+            const totalAgreed = Number(row.totalAgreed || fullAgreed + partialAgreed);
+            const consultationAmount = Number(row.consultationAmount || 0);
+            const agreedAmount = Number(row.agreedAmount || 0);
+            return {
+                name: String(row.name || '').trim() || '미입력',
+                patientCount,
+                fullAgreed,
+                partialAgreed,
+                totalAgreed,
+                rejected: Number(row.rejected || Math.max(patientCount - totalAgreed, 0)),
+                consultationAmount,
+                agreedAmount,
+            };
+        };
+
+        const rowsForMonth = (month) => {
+            const stored = getConsultantSummary(month);
+            if (stored?.rows?.length) return stored.rows.map(normalizeRow);
+
+            const monthPlans = treatmentPlans.filter(plan => getPlanYear(plan) === String(selectedYear) && getPlanMonth(plan) === month);
+            const groups = new Map();
+            monthPlans.forEach(plan => {
+                const name = getConsultantName(plan);
+                if (!groups.has(name)) groups.set(name, []);
+                groups.get(name).push(plan);
+            });
+
+            return Array.from(groups.entries()).map(([name, plans]) => {
+                const summary = buildSummary(plans);
+                return normalizeRow({
+                    name,
+                    patientCount: summary.totalConsultations,
+                    fullAgreed: summary.agreedCount,
+                    partialAgreed: summary.partialCount,
+                    totalAgreed: summary.agreedCount + summary.partialCount,
+                    rejected: summary.rejectedCount,
+                    consultationAmount: summary.consultationAmount,
+                    agreedAmount: summary.agreedAmount,
+                });
+            });
+        };
+
+        const groups = new Map();
+        periodMonths.forEach(month => {
+            rowsForMonth(month).forEach(row => {
+                if (!groups.has(row.name)) {
+                    groups.set(row.name, {
+                        name: row.name,
+                        patientCount: 0,
+                        fullAgreed: 0,
+                        partialAgreed: 0,
+                        totalAgreed: 0,
+                        rejected: 0,
+                        consultationAmount: 0,
+                        agreedAmount: 0,
+                    });
+                }
+                const target = groups.get(row.name);
+                target.patientCount += row.patientCount;
+                target.fullAgreed += row.fullAgreed;
+                target.partialAgreed += row.partialAgreed;
+                target.totalAgreed += row.totalAgreed;
+                target.rejected += row.rejected;
+                target.consultationAmount += row.consultationAmount;
+                target.agreedAmount += row.agreedAmount;
+            });
+        });
+
+        return Array.from(groups.values())
+            .map(row => ({
+                ...row,
+                patientAgreementRate: row.patientCount > 0 ? (row.totalAgreed / row.patientCount) * 100 : 0,
+                amountAgreementRate: row.consultationAmount > 0 ? (row.agreedAmount / row.consultationAmount) * 100 : 0,
+            }))
+            .filter(row => row.patientCount > 0 || row.consultationAmount > 0)
+            .sort((a, b) => b.patientCount - a.patientCount || b.amountAgreementRate - a.amountAgreementRate);
+    }, [consultationConsultantData, treatmentPlans, selectedYear, periodMonths]);
+
+    const consultantMonthlyChart = useMemo(() => {
+        const normalizeRow = (row) => {
+            const fullAgreed = Number(row.fullAgreed || 0);
+            const partialAgreed = Number(row.partialAgreed || 0);
+            const totalAgreed = Number(row.totalAgreed || fullAgreed + partialAgreed);
+            const consultationAmount = Number(row.consultationAmount || 0);
+            const agreedAmount = Number(row.agreedAmount || 0);
+            return {
+                name: String(row.name || '').trim() || '미입력',
+                patientCount: Number(row.patientCount || 0),
+                totalAgreed,
+                consultationAmount,
+                agreedAmount,
+                amountAgreementRate: Number(row.amountAgreementRate || 0) ||
+                    (consultationAmount > 0 ? (agreedAmount / consultationAmount) * 100 : 0),
+            };
+        };
+
+        const rowsForMonth = (month) => {
+            const stored = getConsultantSummary(month);
+            if (stored?.rows?.length) return stored.rows.map(normalizeRow);
+
+            const monthPlans = treatmentPlans.filter(plan => getPlanYear(plan) === String(selectedYear) && getPlanMonth(plan) === month);
+            const groups = new Map();
+            monthPlans.forEach(plan => {
+                const name = getConsultantName(plan);
+                if (!groups.has(name)) groups.set(name, []);
+                groups.get(name).push(plan);
+            });
+
+            return Array.from(groups.entries()).map(([name, plans]) => {
+                const summary = buildSummary(plans);
+                return normalizeRow({
+                    name,
+                    patientCount: summary.totalConsultations,
+                    totalAgreed: summary.agreedCount + summary.partialCount,
+                    consultationAmount: summary.consultationAmount,
+                    agreedAmount: summary.agreedAmount,
+                });
+            });
+        };
+
+        const consultantNames = new Set();
+        const data = periodMonths.map(month => {
+            const row = { month };
+            rowsForMonth(month)
+                .filter(item => item.patientCount > 0 || item.consultationAmount > 0)
+                .forEach(item => {
+                    consultantNames.add(item.name);
+                    row[item.name] = Number(item.amountAgreementRate.toFixed(1));
+                });
+            return row;
+        });
+
+        return {
+            data,
+            names: Array.from(consultantNames),
+        };
+    }, [consultationConsultantData, treatmentPlans, selectedYear, periodMonths]);
+
+    const rejectedRows = useMemo(() => {
+        const stored = getRejectedSummary(selectedMonth);
+        if (stored?.rows?.length) {
+            return stored.rows.map((row, index) => ({
+                id: row.id || `${selectedYear}-${selectedMonth}-${index}`,
+                doctor: String(row.doctor || '-').trim(),
+                newPatient: String(row.newPatient || '').trim(),
+                oldPatient: String(row.oldPatient || '').trim(),
+                patientName: String(row.patientName || '-').trim(),
+                visitDate: String(row.visitDate || '-').trim(),
+                consultant: String(row.consultant || '-').trim(),
+                reason: String(row.reason || '-').trim(),
+                diagnosisAmount: Number(row.diagnosisAmount || 0),
+                consultationAmount: Number(row.consultationAmount || 0),
+                agreedAmount: Number(row.agreedAmount || 0),
+                rejectedAmount: Number(row.rejectedAmount || 0),
+                note: String(row.note || '').trim(),
+            }));
+        }
+
+        return selectedMonthPlans
+            .filter(plan => isRejectedStatus(plan.status))
+            .map((plan, index) => {
+                const diagnosisAmount = getFieldNumber(plan, ['diagnosisAmount', 'diagnosisFee', '진단금액']);
+                const consultationAmount = getFieldNumber(plan, ['consultationAmount', 'counselAmount', 'contractAmount', '상담금액']);
+                const agreedAmount = getFieldNumber(plan, ['finalAgreedAmount', 'agreedAmount', '최종동의금액']);
+                const explicitRejectedAmount = getFieldNumber(plan, ['rejectedAmount', 'notAgreedAmount', '비동의금액']);
+                const rejectedAmount = explicitRejectedAmount || Math.max(consultationAmount - agreedAmount, 0);
+
+                return {
+                    id: `${getFieldText(plan, ['chartNo', 'patientName', '환자성함'], 'row')}-${index}`,
+                    doctor: getFieldText(plan, ['doctor', 'doctorName', 'diagnosisDoctor', '담당 Dr(진단)', '담당Dr', '담당의']),
+                    newPatient: getFieldNumber(plan, ['newPatientCount', 'newPatients', '신환수']) > 0 ? '1명' : getFieldText(plan, ['newPatient', '신환'], '0명'),
+                    oldPatient: getFieldNumber(plan, ['oldPatientCount', 'oldPatients', '구환수']) > 0 ? '1명' : getFieldText(plan, ['oldPatient', '구환'], '0명'),
+                    patientName: getFieldText(plan, ['patientName', 'name', '환자성함', '환자명', '성명']),
+                    visitDate: getFieldText(plan, ['visitDate', 'createdAt', 'date', '내원날짜']),
+                    consultant: getConsultantName(plan),
+                    reason: getFieldText(plan, ['rejectReason', 'rejectedReason', 'notAgreeReason', 'reason', '미동의사유'], getFieldText(plan, ['status'], '-')),
+                    diagnosisAmount,
+                    consultationAmount,
+                    agreedAmount,
+                    rejectedAmount,
+                };
+            });
+    }, [consultationRejectedData, selectedYear, selectedMonth, selectedMonthPlans]);
+
+    const rejectedTotalAmount = rejectedRows.reduce((sum, row) => sum + row.rejectedAmount, 0);
+    const rejectedNewPatientCount = rejectedRows.filter(row => String(row.newPatient || '').trim()).length;
+    const rejectedOldPatientCount = rejectedRows.filter(row => String(row.oldPatient || '').trim()).length;
+    const rejectedTotalPages = Math.max(1, Math.ceil(rejectedRows.length / REJECTED_ROWS_PER_PAGE));
+    const currentRejectedPage = Math.min(rejectedPage, rejectedTotalPages);
+    const pagedRejectedRows = rejectedRows.slice(
+        (currentRejectedPage - 1) * REJECTED_ROWS_PER_PAGE,
+        currentRejectedPage * REJECTED_ROWS_PER_PAGE
+    );
+    const rejectedTableCellStyle = {
+        textAlign: 'center',
+        verticalAlign: 'middle',
+        padding: '0.85rem 0.75rem',
+        lineHeight: 1.35,
+        whiteSpace: 'nowrap',
+    };
+    const consultantTableCellStyle = {
+        textAlign: 'center',
+        verticalAlign: 'middle',
+        padding: '0.9rem 0.75rem',
+        lineHeight: 1.35,
+        minHeight: 64,
+        whiteSpace: 'nowrap',
+    };
 
     const renderOverallTab = () => (
         <div className="dashboard-stack">
@@ -397,6 +722,91 @@ const ConsultationAnalysis = () => {
                                     </div>
                                 </td>
                             </tr>
+                            <tr className="highlight-row" style={{ background: 'var(--card-bg)' }}>
+                                <td
+                                    className="row-header"
+                                    style={{
+                                        verticalAlign: 'middle',
+                                        padding: '0',
+                                        fontWeight: 800,
+                                        color: 'var(--text-primary)',
+                                        whiteSpace: 'nowrap',
+                                        background: 'var(--card-bg)',
+                                        textAlign: 'center',
+                                        height: 96,
+                                        position: 'relative',
+                                    }}
+                                >
+                                    <div style={{
+                                        position: 'absolute',
+                                        inset: 0,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        padding: '0',
+                                        textAlign: 'center',
+                                    }}>
+                                        의사별 진단수
+                                    </div>
+                                </td>
+                                <td colSpan={10} style={{ padding: '0.75rem', background: 'var(--card-bg)', verticalAlign: 'middle' }}>
+                                    {doctorDiagnosisRows.length > 0 ? (
+                                        <div
+                                            style={{
+                                                display: 'grid',
+                                                gridTemplateColumns: `repeat(${Math.max(doctorDiagnosisRows.length, 1)}, minmax(120px, 1fr))`,
+                                                gap: 8,
+                                                alignItems: 'stretch',
+                                                width: '100%',
+                                            }}
+                                        >
+                                            {doctorDiagnosisRows.map((doctor, index) => (
+                                                <div
+                                                    key={`${doctor.name}-${index}`}
+                                                    style={{
+                                                        border: '1px solid var(--border-color)',
+                                                        borderRadius: 6,
+                                                        background: 'var(--bg-color)',
+                                                        minHeight: 64,
+                                                        padding: '0.65rem 0.75rem',
+                                                        display: 'grid',
+                                                        alignContent: 'center',
+                                                        justifyItems: 'center',
+                                                        gap: 4,
+                                                    }}
+                                                >
+                                                    <span style={{ ...metricLabelStyle, fontSize: '0.82rem' }}>{doctor.name}</span>
+                                                    <span style={{ ...metricValueStyle, color: '#3b82f6', fontSize: '1rem' }}>
+                                                        {Number(doctor.count || 0).toLocaleString()}건
+                                                    </span>
+                                                    {Number(doctor.agreedAmount || 0) > 0 && (
+                                                        <span style={{ ...metricValueStyle, color: '#ef4444', fontSize: '0.92rem' }}>
+                                                            {formatWon(doctor.agreedAmount)}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div
+                                            style={{
+                                                border: '1px dashed var(--border-color)',
+                                                borderRadius: 6,
+                                                background: 'var(--bg-color)',
+                                                minHeight: 48,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                padding: '0 0.9rem',
+                                                color: 'var(--text-secondary)',
+                                                fontSize: '0.86rem',
+                                                fontWeight: 700,
+                                            }}
+                                        >
+                                            등록된 의사별 진단수가 없습니다
+                                        </div>
+                                    )}
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -517,20 +927,20 @@ const ConsultationAnalysis = () => {
                 }
             >
                 <div className="treatment-data-table-container">
-                    <table className="treatment-data-table">
+                    <table className="treatment-data-table" style={{ textAlign: 'center', tableLayout: 'fixed' }}>
                         <thead>
                             <tr>
-                                <th style={{ width: 64 }}>No</th>
-                                <th className="row-header">상담자</th>
-                                <th>환자수</th>
-                                <th>전체<br />동의수</th>
-                                <th>부분<br />동의수</th>
-                                <th>총 동의수</th>
-                                <th>미동의<br />환자수</th>
-                                <th>환자수<br />동의율</th>
-                                <th>상담금액</th>
-                                <th>동의금액</th>
-                                <th>금액대비<br />동의율</th>
+                                <th style={{ ...consultantTableCellStyle, width: 64 }}>No</th>
+                                <th style={{ ...consultantTableCellStyle, width: 180 }}>상담자</th>
+                                <th style={consultantTableCellStyle}>환자수</th>
+                                <th style={consultantTableCellStyle}>전체<br />동의수</th>
+                                <th style={consultantTableCellStyle}>부분<br />동의수</th>
+                                <th style={consultantTableCellStyle}>총 동의수</th>
+                                <th style={consultantTableCellStyle}>미동의<br />환자수</th>
+                                <th style={consultantTableCellStyle}>환자수<br />동의율</th>
+                                <th style={consultantTableCellStyle}>상담금액</th>
+                                <th style={consultantTableCellStyle}>동의금액</th>
+                                <th style={consultantTableCellStyle}>금액대비<br />동의율</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -542,21 +952,21 @@ const ConsultationAnalysis = () => {
                                 </tr>
                             ) : consultantRows.map((row, index) => (
                                 <tr key={row.name}>
-                                    <td className="font-bold">{index + 1}</td>
-                                    <td className="row-header">{row.name}</td>
-                                    <td>{row.patientCount.toLocaleString()}명</td>
-                                    <td>{row.fullAgreed.toLocaleString()}명</td>
-                                    <td>{row.partialAgreed.toLocaleString()}명</td>
-                                    <td className="font-bold">{row.totalAgreed.toLocaleString()}명</td>
-                                    <td>{row.rejected.toLocaleString()}명</td>
-                                    <td>
+                                    <td className="font-bold" style={consultantTableCellStyle}>{index + 1}</td>
+                                    <td style={{ ...consultantTableCellStyle, fontWeight: 800 }}>{row.name}</td>
+                                    <td style={consultantTableCellStyle}>{row.patientCount.toLocaleString()}명</td>
+                                    <td style={consultantTableCellStyle}>{row.fullAgreed.toLocaleString()}명</td>
+                                    <td style={consultantTableCellStyle}>{row.partialAgreed.toLocaleString()}명</td>
+                                    <td className="font-bold" style={consultantTableCellStyle}>{row.totalAgreed.toLocaleString()}명</td>
+                                    <td style={consultantTableCellStyle}>{row.rejected.toLocaleString()}명</td>
+                                    <td style={consultantTableCellStyle}>
                                         <div style={{ ...metricBoxStyle, background: '#fffbe6', minHeight: 48 }}>
                                             <span style={{ ...metricValueStyle, color: '#ef4444' }}>{formatPercent(row.patientAgreementRate)}</span>
                                         </div>
                                     </td>
-                                    <td>{formatWon(row.consultationAmount)}</td>
-                                    <td>{formatWon(row.agreedAmount)}</td>
-                                    <td>
+                                    <td style={consultantTableCellStyle}>{formatWon(row.consultationAmount)}</td>
+                                    <td style={consultantTableCellStyle}>{formatWon(row.agreedAmount)}</td>
+                                    <td style={consultantTableCellStyle}>
                                         <div style={{ ...metricBoxStyle, background: '#fffbe6', minHeight: 48 }}>
                                             <span style={{ ...metricValueStyle, color: '#ef4444' }}>{formatPercent(row.amountAgreementRate)}</span>
                                         </div>
@@ -568,27 +978,204 @@ const ConsultationAnalysis = () => {
                 </div>
             </DashboardCard>
 
-            <DashboardCard title="상담자별 금액대비 동의율" subtitle={`${selectedYear}년 ${selectedMonth} 기준`}>
+            <DashboardCard title="상담자별 금액대비 동의율" subtitle={`${selectedYear}년 ${periodLabel} 월별 기준`}>
                 <div style={{ height: 340, width: '100%' }}>
                     <ResponsiveContainer>
-                        <BarChart data={consultantRows} margin={{ top: 28, right: 24, left: 8, bottom: 0 }}>
+                        <BarChart data={consultantMonthlyChart.data} margin={{ top: 28, right: 24, left: 8, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-                            <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                            <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                             <YAxis tick={{ fontSize: 11 }} width={42} tickFormatter={(value) => `${value}%`} domain={[0, 100]} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Tooltip
                                 contentStyle={{ borderRadius: 12, fontSize: 12 }}
                                 formatter={(value, name) => [`${Number(value).toFixed(1)}%`, name]}
                             />
-                            <Bar dataKey="amountAgreementRate" name="금액대비 동의율" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={52}>
-                                <LabelList
-                                    dataKey="amountAgreementRate"
-                                    position="top"
-                                    formatter={(value) => `${Number(value).toFixed(1)}%`}
-                                    style={{ fontSize: 12, fill: '#10b981', fontWeight: 800 }}
+                            {consultantMonthlyChart.names.map((name, index) => (
+                                <Bar
+                                    key={name}
+                                    dataKey={name}
+                                    name={name}
+                                    fill={CONSULTANT_COLORS[index % CONSULTANT_COLORS.length]}
+                                    radius={[4, 4, 0, 0]}
+                                    maxBarSize={42}
                                 />
-                            </Bar>
+                            ))}
                         </BarChart>
                     </ResponsiveContainer>
+                </div>
+            </DashboardCard>
+        </div>
+    );
+
+    const renderRejectedTableSection = (title, rows, offset) => (
+        <div>
+            <h4 style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.55rem' }}>
+                <span className="rank-badge">{title}</span>
+            </h4>
+            <div className="treatment-data-table-container">
+                <table className="treatment-data-table" style={{ textAlign: 'center', minWidth: 1180 }}>
+                    <thead>
+                        <tr>
+                            <th style={{ ...rejectedTableCellStyle, width: 48 }}>No</th>
+                            <th style={rejectedTableCellStyle}>담당 Dr(진단)</th>
+                            <th style={rejectedTableCellStyle}>신환</th>
+                            <th style={rejectedTableCellStyle}>구환</th>
+                            <th style={rejectedTableCellStyle}>환자성함</th>
+                            <th style={rejectedTableCellStyle}>내원날짜</th>
+                            <th style={rejectedTableCellStyle}>상담자</th>
+                            <th style={rejectedTableCellStyle}>미동의사유</th>
+                            <th style={rejectedTableCellStyle}>진단금액</th>
+                            <th style={rejectedTableCellStyle}>상담금액</th>
+                            <th style={rejectedTableCellStyle}>최종동의금액</th>
+                            <th style={rejectedTableCellStyle}>비동의금액</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.length === 0 ? (
+                            <tr>
+                                <td colSpan={12} style={{ padding: '2rem', color: 'var(--text-secondary)', fontWeight: 700 }}>
+                                    표시할 미동의 환자 데이터가 없습니다.
+                                </td>
+                            </tr>
+                        ) : rows.map((row, index) => (
+                            <tr key={`${title}-${row.id}`}>
+                                <td className="font-bold" style={rejectedTableCellStyle}>
+                                    {(currentRejectedPage - 1) * REJECTED_ROWS_PER_PAGE + offset + index + 1}
+                                </td>
+                                <td style={rejectedTableCellStyle}>{row.doctor}</td>
+                                <td style={rejectedTableCellStyle}>{row.newPatient}</td>
+                                <td style={rejectedTableCellStyle}>{row.oldPatient}</td>
+                                <td style={{ ...rejectedTableCellStyle, fontWeight: 800 }}>{row.patientName}</td>
+                                <td style={rejectedTableCellStyle}>{row.visitDate}</td>
+                                <td style={rejectedTableCellStyle}>{row.consultant}</td>
+                                <td style={rejectedTableCellStyle}>{row.reason}</td>
+                                <td style={rejectedTableCellStyle}>{formatWon(row.diagnosisAmount)}</td>
+                                <td style={rejectedTableCellStyle}>{formatWon(row.consultationAmount)}</td>
+                                <td style={rejectedTableCellStyle}>{formatWon(row.agreedAmount)}</td>
+                                <td className="font-bold" style={{ ...rejectedTableCellStyle, color: '#ef4444' }}>
+                                    {formatWon(row.rejectedAmount)}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+
+    const renderRejectedTab = () => (
+        <div className="dashboard-stack">
+            <div className="patient-kpi-row">
+                {[
+                    { label: '비동의금액 합계', value: formatWon(rejectedTotalAmount), sub: `${selectedYear}년 ${selectedMonth} 기준`, color: '#ef4444', icon: UserX },
+                    { label: '신환 수', value: `${rejectedNewPatientCount.toLocaleString()}명`, sub: '미동의 환자 기준', color: '#3b82f6', icon: UserCheck },
+                    { label: '구환 수', value: `${rejectedOldPatientCount.toLocaleString()}명`, sub: '미동의 환자 기준', color: '#64748b', icon: Users },
+                ].map(item => {
+                    const Icon = item.icon;
+                    return (
+                        <div key={item.label} className="patient-kpi-card" style={{ borderTop: `4px solid ${item.color}`, minHeight: 112 }}>
+                            <span className="kpi-label"><Icon size={15} /> {item.label}</span>
+                            <span className="kpi-value" style={{ color: item.color, fontSize: '1.55rem' }}>{item.value}</span>
+                            <span className="kpi-sub">{item.sub}</span>
+                        </div>
+                    );
+                })}
+            </div>
+
+            <DashboardCard
+                title={`미동의 환자 현황 [${selectedYear.slice(2)}년 ${selectedMonth}]`}
+                subtitle="선택 월 기준 미동의 환자 상세"
+                headerRight={
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700 }}>조회 월</span>
+                        <select
+                            value={selectedMonth}
+                            onChange={(e) => setSelectedMonth(e.target.value)}
+                            style={{
+                                height: 38,
+                                border: '1px solid var(--border-color)',
+                                borderRadius: 8,
+                                padding: '0 0.75rem',
+                                background: 'var(--card-bg)',
+                                color: 'var(--text-primary)',
+                                fontWeight: 700,
+                                outline: 'none',
+                            }}
+                        >
+                            {periodMonths.map(month => <option key={month} value={month}>{month}</option>)}
+                        </select>
+                    </div>
+                }
+            >
+                {renderRejectedTableSection(
+                    `${(currentRejectedPage - 1) * REJECTED_ROWS_PER_PAGE + 1} ~ ${Math.min(currentRejectedPage * REJECTED_ROWS_PER_PAGE, rejectedRows.length)}`,
+                    pagedRejectedRows,
+                    0
+                )}
+
+                {rejectedRows.length > REJECTED_ROWS_PER_PAGE && (
+                    <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <button
+                            className="pagination-btn"
+                            disabled={currentRejectedPage === 1}
+                            onClick={() => setRejectedPage(1)}
+                        >
+                            처음
+                        </button>
+                        <button
+                            className="pagination-btn"
+                            disabled={currentRejectedPage === 1}
+                            onClick={() => setRejectedPage(prev => Math.max(1, prev - 1))}
+                        >
+                            이전
+                        </button>
+                        {Array.from({ length: rejectedTotalPages }, (_, index) => index + 1).map(page => (
+                            <button
+                                key={page}
+                                className={`pagination-number ${currentRejectedPage === page ? 'active' : ''}`}
+                                onClick={() => setRejectedPage(page)}
+                            >
+                                {page}
+                            </button>
+                        ))}
+                        <button
+                            className="pagination-btn"
+                            disabled={currentRejectedPage === rejectedTotalPages}
+                            onClick={() => setRejectedPage(prev => Math.min(rejectedTotalPages, prev + 1))}
+                        >
+                            다음
+                        </button>
+                        <button
+                            className="pagination-btn"
+                            disabled={currentRejectedPage === rejectedTotalPages}
+                            onClick={() => setRejectedPage(rejectedTotalPages)}
+                        >
+                            마지막
+                        </button>
+                    </div>
+                )}
+
+                <div
+                    style={{
+                        marginTop: '1rem',
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                    }}
+                >
+                    <div
+                        style={{
+                            minWidth: 220,
+                            border: '1px solid var(--border-color)',
+                            borderRadius: 6,
+                            background: 'var(--bg-color)',
+                            padding: '0.85rem 1rem',
+                            textAlign: 'center',
+                            fontWeight: 800,
+                        }}
+                    >
+                        <div style={{ color: 'var(--text-primary)', fontSize: '0.85rem', marginBottom: 4 }}>비동의금액 합계</div>
+                        <div style={{ color: '#ef4444' }}>{formatWon(rejectedTotalAmount)}</div>
+                    </div>
                 </div>
             </DashboardCard>
         </div>
@@ -662,7 +1249,7 @@ const ConsultationAnalysis = () => {
 
             {subTab === 'overall' && renderOverallTab()}
             {subTab === 'consultant' && renderConsultantTab()}
-            {subTab === 'rejected' && renderPlaceholderTab('미동의 환자 현황', '미동의 환자 추적')}
+            {subTab === 'rejected' && renderRejectedTab()}
         </div>
     );
 };

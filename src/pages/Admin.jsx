@@ -34,6 +34,8 @@ const cancelBtnStyle = {
 const YEARS  = ['2023', '2024', '2025', '2026'];
 const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
 const NEW_PATIENT_STORAGE_KEY = 'new_patient_analysis_data';
+const CONSULTATION_CONSULTANT_STORAGE_KEY = 'consultation_consultant_data';
+const CONSULTATION_REJECTED_STORAGE_KEY = 'consultation_rejected_data';
 const AGE_RANGES = ['0대', '10대', '20대', '30대', '40대', '50대', '60대', '70대+'];
 const OCR_FIELDS = [
     { key: 'workDays', label: '진료일수',        unit: '일' },
@@ -43,6 +45,28 @@ const OCR_FIELDS = [
     { key: 'total',    label: '총 접수 환자 수 (자동)', unit: '명', readOnly: true },
     { key: 'avgNewPt', label: '신환 일평균',      unit: '명' },
     { key: 'avgOldPt', label: '구환 일평균 (자동)', unit: '명', readOnly: true },
+];
+
+const CONSULTATION_OCR_FIELDS = [
+    { key: 'totalConsultations', label: '전체상담건수 (보험제외)', unit: '건' },
+    { key: 'agreedCount', label: '전체동의 환자수', unit: '명' },
+    { key: 'partialCount', label: '부분동의 환자수', unit: '명' },
+    { key: 'patientAgreementRate', label: '환자 전체동의율', unit: '%' },
+    { key: 'partialAgreementRate', label: '환자 부분동의율', unit: '%' },
+    { key: 'newPatients', label: '신환수', unit: '명' },
+    { key: 'oldPatients', label: '구환수', unit: '명' },
+    { key: 'totalPatients', label: '총 환자수', unit: '명' },
+    { key: 'diagnosisAmount', label: '진단금액', unit: '원' },
+    { key: 'consultationAmount', label: '상담금액', unit: '원' },
+    { key: 'rejectedAmount', label: '비동의금액', unit: '원' },
+    { key: 'agreedAmount', label: '최종동의금액', unit: '원' },
+    { key: 'diagnosisAgreementRate', label: '진단금액 대비 동의율', unit: '%' },
+    { key: 'consultationAgreementRate', label: '상담금액 대비 동의율', unit: '%' },
+    { key: 'insuranceDiagnosis', label: '보험진단', unit: '건' },
+    { key: 'insuranceAgreement', label: '보험동의', unit: '건' },
+    { key: 'planChange', label: '치료계획변동', unit: '건' },
+    { key: 'implantDecision', label: '보험 결정 임플', unit: '건' },
+    { key: 'dentureDecision', label: '보험 결정 틀니', unit: '건' },
 ];
 
 const parseNumber = (val) => {
@@ -696,6 +720,7 @@ const Admin = () => {
     const [uploadLog, setUploadLog]       = useState([]);
     const [isDragOver, setIsDragOver]     = useState(false);
     const [pendingNewPatientUploads, setPendingNewPatientUploads] = useState([]);
+    const [pendingConsultationBundle, setPendingConsultationBundle] = useState(null);
 
     // OCR 모달
     const [ocrModal, setOcrModal]   = useState(null);
@@ -737,6 +762,121 @@ const Admin = () => {
         }
     };
 
+    const handleApproveConsultationBundle = () => {
+        if (!pendingConsultationBundle) return;
+        try {
+            const { fileName, overall, consultant, rejected } = pendingConsultationBundle;
+            const cleanedDoctorDiagnoses = (overall.doctorDiagnoses || [])
+                .map(item => ({
+                    name: String(item.name || '').trim(),
+                    count: Number(item.count || 0),
+                    agreedAmount: Number(item.agreedAmount || 0),
+                }))
+                .filter(item => item.name && item.count > 0);
+            const normalizedOverall = {
+                ...normalizeConsultationOverallParsed({
+                ...overall,
+                rejectedCount: Math.max(Number(overall.totalConsultations || 0) - Number(overall.agreedCount || 0) - Number(overall.partialCount || 0), 0),
+                doctorDiagnoses: cleanedDoctorDiagnoses,
+                }),
+                doctorDiagnoses: cleanedDoctorDiagnoses,
+            };
+            validateConsultationOverallParsed(normalizedOverall);
+            const normalizedConsultant = {
+                ...consultant,
+                rows: (consultant.rows || [])
+                    .map(row => ({
+                        ...row,
+                        name: String(row.name || '').trim(),
+                        patientCount: Number(row.patientCount || 0),
+                        fullAgreed: Number(row.fullAgreed || 0),
+                        partialAgreed: Number(row.partialAgreed || 0),
+                        totalAgreed: Number(row.totalAgreed || 0),
+                        rejected: Number(row.rejected || 0),
+                        patientAgreementRate: Number(row.patientAgreementRate || 0),
+                        consultationAmount: Number(row.consultationAmount || 0),
+                        agreedAmount: Number(row.agreedAmount || 0),
+                        amountAgreementRate: Number(row.amountAgreementRate || 0),
+                    }))
+                    .filter(row => row.name && row.patientCount > 0),
+            };
+            const normalizedRejected = {
+                ...rejected,
+                rows: (rejected.rows || [])
+                    .map(row => ({
+                        ...row,
+                        doctor: String(row.doctor || '').trim() || '-',
+                        patientName: String(row.patientName || '').trim(),
+                        visitDate: String(row.visitDate || '').trim(),
+                        consultant: String(row.consultant || '').trim() || '-',
+                        reason: String(row.reason || '').trim() || '-',
+                        diagnosisAmount: Number(row.diagnosisAmount || 0),
+                        consultationAmount: Number(row.consultationAmount || 0),
+                        agreedAmount: Number(row.agreedAmount || 0),
+                        rejectedAmount: Number(row.rejectedAmount || 0),
+                    }))
+                    .filter(row => row.patientName),
+            };
+
+            saveConsultationOverallData(normalizedOverall);
+            saveConsultationConsultantData(normalizedConsultant);
+            saveConsultationRejectedData(normalizedRejected);
+            addLog('success', `✅ [상담분석 MD 모음] ${normalizedOverall.year}년 ${normalizedOverall.month} ${fileName} 승인 반영 완료 (의사 ${normalizedOverall.doctorDiagnoses.length}명 / 상담자 ${normalizedConsultant.rows.length}명 / 미동의 ${normalizedRejected.rows.length}명)`);
+            setPendingConsultationBundle(null);
+        } catch (err) {
+            addLog('error', `❌ [상담분석 MD 승인 저장 오류] ${err.message}`);
+        }
+    };
+
+    const updatePendingConsultationOverall = (field, value) => {
+        setPendingConsultationBundle(prev => {
+            if (!prev) return prev;
+            const overall = normalizeConsultationOverallParsed({
+                ...prev.overall,
+                [field]: value === '' ? '' : Number(value),
+            });
+            return { ...prev, overall };
+        });
+    };
+
+    const updatePendingConsultationDoctor = (index, field, value) => {
+        setPendingConsultationBundle(prev => {
+            if (!prev) return prev;
+            const doctorDiagnoses = [...(prev.overall.doctorDiagnoses || [])];
+            doctorDiagnoses[index] = {
+                ...(doctorDiagnoses[index] || { name: '', count: 0, agreedAmount: 0 }),
+                [field]: field === 'name' ? value : Number(value || 0),
+            };
+            return { ...prev, overall: { ...prev.overall, doctorDiagnoses } };
+        });
+    };
+
+    const updatePendingConsultantRow = (index, field, value) => {
+        setPendingConsultationBundle(prev => {
+            if (!prev) return prev;
+            const rows = [...(prev.consultant.rows || [])];
+            rows[index] = {
+                ...rows[index],
+                [field]: field === 'name' ? value : Number(value || 0),
+            };
+            return { ...prev, consultant: { ...prev.consultant, rows } };
+        });
+    };
+
+    const updatePendingRejectedRow = (index, field, value) => {
+        setPendingConsultationBundle(prev => {
+            if (!prev) return prev;
+            const rows = [...(prev.rejected.rows || [])];
+            rows[index] = {
+                ...rows[index],
+                [field]: ['diagnosisAmount', 'consultationAmount', 'agreedAmount', 'rejectedAmount'].includes(field)
+                    ? Number(value || 0)
+                    : value,
+            };
+            return { ...prev, rejected: { ...prev.rejected, rows } };
+        });
+    };
+
     const handleUnifiedUpload = async (files) => {
         const uploadFiles = Array.from(files || []);
         if (uploadFiles.length === 0) return;
@@ -747,7 +887,50 @@ const Admin = () => {
 
         for (const file of uploadFiles) {
             const isImage = file.type.startsWith('image/');
-            if (isNewPatientAgeDistributionFile(file.name) && !isImage) {
+            const isMarkdown = /\.md$/i.test(file.name) || file.type === 'text/markdown';
+            if (isMarkdown && isConsultationBundleMarkdownFile(file.name)) {
+                try {
+                    const text = await file.text();
+                    const parsed = parseConsultationBundleMarkdown(text, file.name);
+                    setPendingConsultationBundle({
+                        id: `${file.name}-${Date.now()}`,
+                        fileName: file.name,
+                        overall: parsed.overall,
+                        consultant: parsed.consultant,
+                        rejected: parsed.rejected,
+                    });
+                    addLog('success', `✅ [상담분석 MD 미리보기] ${parsed.overall.year}년 ${parsed.overall.month} 파싱 완료 - 확인/수정 후 승인하면 반영됩니다.`);
+                } catch (err) {
+                    addLog('error', `❌ [상담분석 MD 모음 파싱 오류] ${file.name}: ${err.message}`);
+                }
+            } else if (isMarkdown && isConsultationRejectedMarkdownFile(file.name)) {
+                try {
+                    const text = await file.text();
+                    const parsed = parseConsultationRejectedMarkdown(text, file.name);
+                    saveConsultationRejectedData(parsed);
+                    addLog('success', `✅ [상담분석/미동의 환자 현황] ${parsed.year}년 ${parsed.month} MD 반영 완료 (${parsed.rows.length}명)`);
+                } catch (err) {
+                    addLog('error', `❌ [상담분석/미동의 환자 현황 MD 파싱 오류] ${file.name}: ${err.message}`);
+                }
+            } else if (isMarkdown && isConsultationConsultantMarkdownFile(file.name)) {
+                try {
+                    const text = await file.text();
+                    const parsed = parseConsultationConsultantMarkdown(text, file.name);
+                    saveConsultationConsultantData(parsed);
+                    addLog('success', `✅ [상담분석/상담자별 동의율] ${parsed.year}년 ${parsed.month} MD 반영 완료 (${parsed.rows.length}명)`);
+                } catch (err) {
+                    addLog('error', `❌ [상담분석/상담자별 동의율 MD 파싱 오류] ${file.name}: ${err.message}`);
+                }
+            } else if (isMarkdown && isConsultationOverallMarkdownFile(file.name)) {
+                try {
+                    const text = await file.text();
+                    const parsed = parseConsultationOverallMarkdown(text, file.name);
+                    saveConsultationOverallData(parsed);
+                    addLog('success', `✅ [상담분석/전체동의율] ${parsed.year}년 ${parsed.month} MD 반영 완료`);
+                } catch (err) {
+                    addLog('error', `❌ [상담분석/전체동의율 MD 파싱 오류] ${file.name}: ${err.message}`);
+                }
+            } else if (isNewPatientAgeDistributionFile(file.name) && !isImage) {
                 try {
                     const parsed = await parseNewPatientAgeExcel(file);
                     saveNewPatientAgeDistribution(parsed);
@@ -889,8 +1072,12 @@ const Admin = () => {
                         }
                         const currentYearData = salesDataMap[yearFromFile];
 
+                        if (isConsultationOverallFile(fileName)) {
+                            addLog('warning', `⚠️ [상담분석/전체동의율] ${fileName}: 사진 파일로 업로드하면 OCR로 항목별 값을 반영합니다.`);
+                            resolve();
+                        }
                         // 동의환자/치료비용계획
-                        if (fileName.includes('치료비용') || fileName.includes('동의') || fileName.includes('치료비')) {
+                        else if (fileName.includes('치료비용') || fileName.includes('동의') || fileName.includes('치료비')) {
                             const ci = { patientName: -1, chartNo: -1, createdAt: -1, status: -1, payStatus: -1, contractAmount: -1, paidAmount: -1 };
                             let headerIdx = -1;
                             for (let i = 0; i < Math.min(20, rawData.length); i++) {
@@ -1449,6 +1636,1526 @@ const Admin = () => {
         return name.includes('월간장부');
     };
 
+    const isConsultationOverallFile = (filename) => {
+        const name = filename.replace(/\s/g, '');
+        return name.includes('전체동의율');
+    };
+
+    const isConsultationOverallMarkdownFile = (filename) => {
+        const name = filename.replace(/\s/g, '');
+        return /\.md$/i.test(filename) && (
+            name.includes('전체상담현황') ||
+            name.includes('전체_상담현황') ||
+            name.includes('전체동의율')
+        );
+    };
+
+    const isConsultationConsultantMarkdownFile = (filename) => {
+        const name = filename.replace(/\s/g, '');
+        return /\.md$/i.test(filename) &&
+            name.includes('상담자별') &&
+            (name.includes('동의율') || name.includes('상담건수') || name.includes('전체상담'));
+    };
+
+    const isConsultationRejectedMarkdownFile = (filename) => {
+        const name = filename.replace(/\s/g, '');
+        return /\.md$/i.test(filename) && name.includes('미동의환자');
+    };
+
+    const isConsultationBundleMarkdownFile = (filename) => {
+        const name = filename.replace(/\s/g, '');
+        const fixedName = name.replace(/_/g, '');
+        return /\.md$/i.test(filename) && (
+            /^\d{4}년\d{1,2}월상담현황통합정리\.md$/i.test(fixedName) ||
+            ((name.includes('상담현황') || name.includes('통합상담현황')) && (
+            name.includes('모음') ||
+            name.includes('md파일') ||
+            name.includes('md정리') ||
+            name.includes('정리') ||
+            name.includes('통합')
+            ))
+        );
+    };
+
+    const normalizeOcrKey = (value) => String(value || '')
+        .toLowerCase()
+        .replace(/\s+/g, '')
+        .replace(/[()[\]{}<>·ㆍ,.:;|/\\_-]/g, '')
+        .replace(/보험제외/g, '')
+        .replace(/환자/g, '')
+        .replace(/금액/g, '금액')
+        .replace(/진담/g, '진단')
+        .replace(/임플란트/g, '임플')
+        .replace(/틀리/g, '틀니');
+
+    const extractConsultationYearMonth = (filename, text = '') => {
+        const sourceFromName = String(filename || '');
+        const source = `${sourceFromName} ${text || ''}`;
+        const nameYearMatch = sourceFromName.match(/(\d{2,4})\s*년/);
+        const nameMonthMatch = sourceFromName.match(/(\d{1,2})\s*월/);
+        const yearMatch = nameYearMatch || source.match(/(\d{2,4})\s*년/);
+        const monthMatch = nameMonthMatch || source.match(/(\d{1,2})\s*월/);
+        const rawYear = yearMatch ? Number(yearMatch[1]) : 2025;
+        const year = rawYear < 100 ? String(2000 + rawYear) : String(rawYear);
+        const month = monthMatch ? `${Number(monthMatch[1])}월` : '1월';
+        return { year, month };
+    };
+
+    const parseConsultationOverallText = (text, filename, words = [], imageSize = null) => {
+        const yearMonth = extractConsultationYearMonth(filename, text);
+        const source = String(text || '').replace(/\r/g, '\n');
+        const compact = source
+            .replace(/,/g, '')
+            .replace(/\s+/g, '')
+            .replace(/\d{2,4}년\d{1,2}월/g, '');
+
+        const parseValue = (raw) => {
+            const match = String(raw || '').match(/-?\d[\d,]*(?:\.\d+)?/);
+            return match ? parseFloat(match[0].replace(/,/g, '')) : null;
+        };
+
+        const parseValueInRect = (rect) => {
+            if (!Array.isArray(words) || words.length === 0 || !imageSize?.width || !imageSize?.height) return null;
+            const x0 = rect.x0 * imageSize.width;
+            const x1 = rect.x1 * imageSize.width;
+            const y0 = rect.y0 * imageSize.height;
+            const y1 = rect.y1 * imageSize.height;
+            const texts = words
+                .map(word => {
+                    const bbox = word.bbox || word;
+                    const wx0 = Number(bbox.x0 ?? bbox.left ?? 0);
+                    const wx1 = Number(bbox.x1 ?? bbox.right ?? wx0);
+                    const wy0 = Number(bbox.y0 ?? bbox.top ?? 0);
+                    const wy1 = Number(bbox.y1 ?? bbox.bottom ?? wy0);
+                    const cx = (wx0 + wx1) / 2;
+                    const cy = (wy0 + wy1) / 2;
+                    return { text: String(word.text || '').trim(), cx, cy, x: wx0, y: wy0 };
+                })
+                .filter(word => word.text && word.cx >= x0 && word.cx <= x1 && word.cy >= y0 && word.cy <= y1)
+                .sort((a, b) => a.y - b.y || a.x - b.x)
+                .map(word => word.text);
+            if (texts.length === 0) return null;
+            const joined = texts.join(' ');
+            const matches = joined.match(/-?\d[\d,]*(?:\.\d+)?%?/g) || [];
+            if (matches.length === 0) return null;
+            return parseValue(matches[matches.length - 1]);
+        };
+
+        const parseTextInRect = (rect) => {
+            if (!Array.isArray(words) || words.length === 0 || !imageSize?.width || !imageSize?.height) return '';
+            const x0 = rect.x0 * imageSize.width;
+            const x1 = rect.x1 * imageSize.width;
+            const y0 = rect.y0 * imageSize.height;
+            const y1 = rect.y1 * imageSize.height;
+            return words
+                .map(word => {
+                    const bbox = word.bbox || word;
+                    const wx0 = Number(bbox.x0 ?? bbox.left ?? 0);
+                    const wx1 = Number(bbox.x1 ?? bbox.right ?? wx0);
+                    const wy0 = Number(bbox.y0 ?? bbox.top ?? 0);
+                    const wy1 = Number(bbox.y1 ?? bbox.bottom ?? wy0);
+                    const cx = (wx0 + wx1) / 2;
+                    const cy = (wy0 + wy1) / 2;
+                    return { text: String(word.text || '').trim(), cx, cy, x: wx0, y: wy0 };
+                })
+                .filter(word => word.text && word.cx >= x0 && word.cx <= x1 && word.cy >= y0 && word.cy <= y1)
+                .sort((a, b) => a.y - b.y || a.x - b.x)
+                .map(word => word.text)
+                .join(' ')
+                .trim();
+        };
+
+        const cleanDoctorName = (value) => String(value || '')
+            .replace(/[^\p{Script=Hangul}]/gu, '')
+            .trim();
+
+        const parseDoctorDiagnosesByPosition = () => {
+            if (!Array.isArray(words) || words.length === 0 || !imageSize?.width || !imageSize?.height) return [];
+            const pairs = [
+                [{ x0: 0.16, x1: 0.24, y0: 0.84, y1: 0.94 }, { x0: 0.24, x1: 0.315, y0: 0.84, y1: 0.94 }],
+                [{ x0: 0.325, x1: 0.405, y0: 0.84, y1: 0.94 }, { x0: 0.41, x1: 0.505, y0: 0.84, y1: 0.94 }],
+                [{ x0: 0.515, x1: 0.60, y0: 0.84, y1: 0.94 }, { x0: 0.60, x1: 0.675, y0: 0.84, y1: 0.94 }],
+                [{ x0: 0.675, x1: 0.745, y0: 0.84, y1: 0.94 }, { x0: 0.745, x1: 0.815, y0: 0.84, y1: 0.94 }],
+            ];
+
+            return pairs
+                .map(([nameRect, countRect]) => ({
+                    name: cleanDoctorName(parseTextInRect(nameRect)),
+                    count: parseValueInRect(countRect) || 0,
+                }))
+                .filter(item => item.name && item.count > 0);
+        };
+
+        const parseDoctorDiagnosesFromText = () => {
+            const lines = source.split(/\n+/).map(line => line.trim()).filter(Boolean);
+            const startIndex = lines.findIndex(line => normalizeOcrKey(line).includes('의사별진단수'));
+            const target = startIndex >= 0 ? lines.slice(startIndex, startIndex + 4).join(' ') : source;
+            const tokens = target
+                .replace(/의사별\s*진단수/g, ' ')
+                .match(/[\p{L}.]+|-?\d[\d,]*/gu) || [];
+            const doctors = [];
+            for (let i = 0; i < tokens.length - 1; i++) {
+                const name = tokens[i].trim();
+                const count = parseValue(tokens[i + 1]);
+                if (name && count !== null && !/^\d/.test(name) && !normalizeOcrKey(name).includes('의사별진단수')) {
+                    doctors.push({ name, count });
+                    i += 1;
+                }
+            }
+            return doctors.filter(item => item.count > 0);
+        };
+
+        const parseByPosition = () => {
+            const rects = {
+                totalConsultations: { x0: 0.02, x1: 0.158, y0: 0.51, y1: 0.83 },
+                agreedCount: { x0: 0.158, x1: 0.232, y0: 0.51, y1: 0.625 },
+                partialCount: { x0: 0.232, x1: 0.315, y0: 0.51, y1: 0.625 },
+                newPatients: { x0: 0.315, x1: 0.359, y0: 0.51, y1: 0.625 },
+                oldPatients: { x0: 0.359, x1: 0.402, y0: 0.51, y1: 0.625 },
+                diagnosisAmount: { x0: 0.402, x1: 0.51, y0: 0.51, y1: 0.625 },
+                consultationAmount: { x0: 0.51, x1: 0.601, y0: 0.51, y1: 0.625 },
+                rejectedAmount: { x0: 0.601, x1: 0.736, y0: 0.51, y1: 0.625 },
+                insuranceDiagnosis: { x0: 0.736, x1: 0.813, y0: 0.51, y1: 0.625 },
+                insuranceAgreement: { x0: 0.813, x1: 0.893, y0: 0.51, y1: 0.625 },
+                planChange: { x0: 0.893, x1: 0.974, y0: 0.51, y1: 0.83 },
+                patientAgreementRate: { x0: 0.158, x1: 0.232, y0: 0.73, y1: 0.835 },
+                partialAgreementRate: { x0: 0.232, x1: 0.315, y0: 0.73, y1: 0.835 },
+                totalPatients: { x0: 0.315, x1: 0.402, y0: 0.73, y1: 0.835 },
+                agreedAmount: { x0: 0.402, x1: 0.51, y0: 0.73, y1: 0.835 },
+                diagnosisAgreementRate: { x0: 0.51, x1: 0.601, y0: 0.73, y1: 0.835 },
+                consultationAgreementRate: { x0: 0.601, x1: 0.736, y0: 0.73, y1: 0.835 },
+                implantDecision: { x0: 0.736, x1: 0.813, y0: 0.73, y1: 0.835 },
+                dentureDecision: { x0: 0.813, x1: 0.893, y0: 0.73, y1: 0.835 },
+            };
+            const parsed = {};
+            Object.entries(rects).forEach(([key, rect]) => {
+                const value = parseValueInRect(rect);
+                if (value !== null) parsed[key] = value;
+            });
+            return Object.keys(parsed).length >= 8 ? parsed : {};
+        };
+
+        // This form is more reliable when parsed by item order than by OCR word coordinates.
+        // Coordinates are still used only for the doctor-diagnosis row below.
+        const positional = parseByPosition();
+
+        const findValueByLabels = (labels, maxGap = 42) => {
+            const normalizedLabels = labels.map(normalizeOcrKey);
+            const normalizedCompact = normalizeOcrKey(compact).replace(/,/g, '');
+            for (const label of normalizedLabels) {
+                const match = normalizedCompact.match(new RegExp(`${label}[^0-9-]{0,${maxGap}}(-?\\d+(?:\\.\\d+)?)`));
+                if (match) return parseFloat(match[1]);
+            }
+
+            const lines = source.split(/\n+/).map(line => line.trim()).filter(Boolean);
+            for (let i = 0; i < lines.length; i++) {
+                const lineKey = normalizeOcrKey(lines[i]);
+                if (!normalizedLabels.some(label => lineKey.includes(label))) continue;
+
+                const sameLineValue = parseValue(lines[i].replace(/[^\d,.-]+$/, ''));
+                if (sameLineValue !== null && !/\d{2,4}\s*년|\d{1,2}\s*월/.test(lines[i])) return sameLineValue;
+
+                for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+                    const nextValue = parseValue(lines[j]);
+                    if (nextValue !== null) return nextValue;
+                }
+            }
+            return null;
+        };
+
+        const orderedText = source.replace(/\d{2,4}\s*년\s*\d{1,2}\s*월/g, '');
+        const orderedNumbers = (orderedText.match(/-?\d[\d,]*(?:\.\d+)?%?/g) || [])
+            .map(v => parseFloat(v.replace(/,/g, '').replace('%', '')))
+            .filter(v => Number.isFinite(v));
+        const at = (index) => orderedNumbers[index] ?? 0;
+
+        const totalConsultations = positional.totalConsultations ?? findValueByLabels(['전체상담건수보험제외', '전체상담건수', '전체 상담 건수']) ?? at(0);
+        const agreedCount = positional.agreedCount ?? findValueByLabels(['전체동의환자수', '전체동의 환자수']) ?? at(1);
+        const partialCount = positional.partialCount ?? findValueByLabels(['부분동의환자수', '부분동의 환자수']) ?? at(2);
+        const newPatients = positional.newPatients ?? findValueByLabels(['신환수']) ?? at(3);
+        const oldPatients = positional.oldPatients ?? findValueByLabels(['구환수']) ?? at(4);
+        const diagnosisAmount = positional.diagnosisAmount ?? findValueByLabels(['진단금액', '진담금액']) ?? at(5);
+        const consultationAmount = positional.consultationAmount ?? findValueByLabels(['상담금액']) ?? at(6);
+        const rejectedAmount = positional.rejectedAmount ?? findValueByLabels(['비동의금액', '비동의 금액']) ?? at(7);
+        const insuranceDiagnosis = positional.insuranceDiagnosis ?? findValueByLabels(['보험진단']) ?? at(8);
+        const insuranceAgreement = positional.insuranceAgreement ?? findValueByLabels(['보험동의']) ?? at(9);
+        const planChange = positional.planChange ?? findValueByLabels(['치료계획변동', '치료 계획 변동']) ?? at(10);
+        const patientAgreementRate = positional.patientAgreementRate ?? findValueByLabels(['환자전체동의율', '환자 전체동의율']) ?? at(11);
+        const partialAgreementRate = positional.partialAgreementRate ?? findValueByLabels(['환자부분동의율', '환자 부분동의율']) ?? at(12);
+        const totalPatients = positional.totalPatients ?? findValueByLabels(['총환자수', '총 환자수']) ?? at(13);
+        const agreedAmount = positional.agreedAmount ?? findValueByLabels(['최종동의금액', '최종 동의금액']) ?? at(14);
+        const diagnosisAgreementRate = positional.diagnosisAgreementRate ?? findValueByLabels(['진단금액대비동의율', '진단금액 대비 동의율']) ?? at(15);
+        const consultationAgreementRate = positional.consultationAgreementRate ?? findValueByLabels(['상담금액대비동의율', '상담금액 대비 동의율']) ?? at(16);
+        const implantDecision = positional.implantDecision ?? findValueByLabels(['보험임플결정', '보험 임플결정', '보험임플란트결정']) ?? at(17);
+        const dentureDecision = positional.dentureDecision ?? findValueByLabels(['보험틀니결정', '보험 틀니결정']) ?? at(18);
+        const doctorDiagnoses = parseDoctorDiagnosesByPosition();
+        const fallbackDoctorDiagnoses = doctorDiagnoses.length > 0 ? doctorDiagnoses : parseDoctorDiagnosesFromText();
+
+        return {
+            year: yearMonth.year,
+            month: yearMonth.month,
+            totalConsultations,
+            agreedCount,
+            partialCount,
+            rejectedCount: Math.max(totalConsultations - agreedCount - partialCount, 0),
+            newPatients,
+            oldPatients,
+            totalPatients: totalPatients || newPatients + oldPatients || totalConsultations,
+            diagnosisAmount,
+            consultationAmount,
+            rejectedAmount,
+            agreedAmount,
+            insuranceDiagnosis,
+            insuranceAgreement,
+            planChange,
+            implantDecision,
+            dentureDecision,
+            doctorDiagnoses: fallbackDoctorDiagnoses,
+            patientAgreementRate: patientAgreementRate || (totalConsultations ? (agreedCount / totalConsultations) * 100 : 0),
+            partialAgreementRate: partialAgreementRate || (totalConsultations ? (partialCount / totalConsultations) * 100 : 0),
+            diagnosisAgreementRate: diagnosisAgreementRate || (diagnosisAmount ? (agreedAmount / diagnosisAmount) * 100 : 0),
+            consultationAgreementRate: consultationAgreementRate || (consultationAmount ? (agreedAmount / consultationAmount) * 100 : 0),
+        };
+    };
+
+    const saveConsultationOverallData = (parsed) => {
+        const saved = JSON.parse(localStorage.getItem('consultation_overall_data') || '{}');
+        if (!saved[parsed.year]) saved[parsed.year] = {};
+        saved[parsed.year][parsed.month] = parsed;
+        localStorage.setItem('consultation_overall_data', JSON.stringify(saved));
+        window.dispatchEvent(new StorageEvent('storage', { key: 'consultation_overall_data' }));
+        window.dispatchEvent(new CustomEvent('consultationAnalysisUpdated', {
+            detail: { year: parsed.year, month: parsed.month }
+        }));
+    };
+
+    const normalizeConsultantColumn = (value) => String(value || '')
+        .replace(/\s+/g, '')
+        .replace(/[()[\]{}<>.,:;|/\\_\-]/g, '')
+        .toLowerCase();
+
+    const splitMarkdownTableLine = (line) => {
+        const text = String(line || '').trim();
+        if (!text) return [];
+        if (text.includes('|')) {
+            return text.split('|').map(item => item.trim()).filter(Boolean);
+        }
+        if (text.includes('\t')) {
+            return text.split(/\t+/).map(item => item.trim()).filter(Boolean);
+        }
+        return text.split(/\s{2,}/).map(item => item.trim()).filter(Boolean);
+    };
+
+    const splitMarkdownTableLineKeepingEmpty = (line) => {
+        const text = String(line || '').replace(/\r/g, '');
+        if (!text.trim()) return [];
+        if (text.includes('\t')) {
+            return text.split('\t').map(item => item.trim());
+        }
+        if (text.includes('|')) {
+            return text.replace(/^\|/, '').replace(/\|$/, '').split('|').map(item => item.trim());
+        }
+        return text.trim().split(/\s{2,}/).map(item => item.trim());
+    };
+
+    const parseConsultationConsultantMarkdown = (text, filename) => {
+        const yearMonth = extractConsultationYearMonth(filename, text);
+        const lines = String(text || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+        const tableLines = lines
+            .map(splitMarkdownTableLine)
+            .filter(parts => parts.length >= 4)
+            .filter(parts => !parts.every(part => /^:?-{2,}:?$/.test(part)));
+
+        const headerIndex = tableLines.findIndex(parts => {
+            const joined = parts.map(normalizeConsultantColumn).join('|');
+            return joined.includes('상담자') && joined.includes('환자수') && joined.includes('동의');
+        });
+        if (headerIndex === -1) {
+            throw new Error('상담자별 동의율 표 헤더를 찾을 수 없습니다.');
+        }
+
+        const headers = tableLines[headerIndex].map(normalizeConsultantColumn);
+        const findIndex = (candidates, fallback) => {
+            const normalized = candidates.map(normalizeConsultantColumn);
+            const index = headers.findIndex(header => normalized.some(candidate => header === candidate || header.includes(candidate)));
+            return index >= 0 ? index : fallback;
+        };
+
+        const indices = {
+            name: findIndex(['상담자'], 1),
+            patientCount: findIndex(['환자수'], 2),
+            fullAgreed: findIndex(['전체동의수'], 3),
+            partialAgreed: findIndex(['부분동의수'], 4),
+            totalAgreed: findIndex(['총동의수'], 5),
+            rejected: findIndex(['미동의환자수'], 6),
+            patientAgreementRate: findIndex(['환자수동의율'], 7),
+            consultationAmount: findIndex(['상담금액'], 8),
+            agreedAmount: findIndex(['동의금액'], 9),
+            amountAgreementRate: findIndex(['금액대비동의율'], 10),
+        };
+
+        const rows = [];
+        tableLines.slice(headerIndex + 1).forEach(parts => {
+            const name = String(parts[indices.name] || '').trim();
+            if (!name || normalizeConsultantColumn(name).includes('상담자')) return;
+            const patientCount = parseNumber(parts[indices.patientCount]);
+            if (patientCount <= 0 && parseNumber(parts[indices.totalAgreed]) <= 0) return;
+            const fullAgreed = parseNumber(parts[indices.fullAgreed]);
+            const partialAgreed = parseNumber(parts[indices.partialAgreed]);
+            const totalAgreed = parseNumber(parts[indices.totalAgreed]) || fullAgreed + partialAgreed;
+            const rejected = parseNumber(parts[indices.rejected]) || Math.max(patientCount - totalAgreed, 0);
+            const consultationAmount = parseNumber(parts[indices.consultationAmount]);
+            const agreedAmount = parseNumber(parts[indices.agreedAmount]);
+            const patientAgreementRate = parseNumber(parts[indices.patientAgreementRate]) ||
+                (patientCount > 0 ? (totalAgreed / patientCount) * 100 : 0);
+            const amountAgreementRate = parseNumber(parts[indices.amountAgreementRate]) ||
+                (consultationAmount > 0 ? (agreedAmount / consultationAmount) * 100 : 0);
+
+            rows.push({
+                name,
+                patientCount,
+                fullAgreed,
+                partialAgreed,
+                totalAgreed,
+                rejected,
+                patientAgreementRate,
+                consultationAmount,
+                agreedAmount,
+                amountAgreementRate,
+            });
+        });
+
+        if (rows.length === 0) {
+            throw new Error('상담자별 데이터 행을 찾을 수 없습니다.');
+        }
+
+        return {
+            year: yearMonth.year,
+            month: yearMonth.month,
+            rows: rows.sort((a, b) => b.patientCount - a.patientCount || b.amountAgreementRate - a.amountAgreementRate),
+        };
+    };
+
+    const saveConsultationConsultantData = (parsed) => {
+        const saved = JSON.parse(localStorage.getItem(CONSULTATION_CONSULTANT_STORAGE_KEY) || '{}');
+        if (!saved[parsed.year]) saved[parsed.year] = {};
+        saved[parsed.year][parsed.month] = parsed;
+        localStorage.setItem(CONSULTATION_CONSULTANT_STORAGE_KEY, JSON.stringify(saved));
+        window.dispatchEvent(new StorageEvent('storage', { key: CONSULTATION_CONSULTANT_STORAGE_KEY }));
+        window.dispatchEvent(new CustomEvent('consultationAnalysisUpdated', {
+            detail: { year: parsed.year, month: parsed.month }
+        }));
+    };
+
+    const extractRejectedYearMonth = (filename, text = '') => {
+        const source = `${filename || ''} ${text || ''}`;
+        const dotted = source.match(/(\d{2,4})\s*[.\-/]\s*(\d{1,2})\s*[.\-/]\s*\d{1,2}/);
+        if (dotted) {
+            const rawYear = Number(dotted[1]);
+            return {
+                year: rawYear < 100 ? String(2000 + rawYear) : String(rawYear),
+                month: `${Number(dotted[2])}월`,
+            };
+        }
+
+        const yearMonth = source.match(/(\d{2,4})\s*년\s*(\d{1,2})\s*월/);
+        if (yearMonth) {
+            const rawYear = Number(yearMonth[1]);
+            return {
+                year: rawYear < 100 ? String(2000 + rawYear) : String(rawYear),
+                month: `${Number(yearMonth[2])}월`,
+            };
+        }
+
+        const monthOnly = source.match(/(\d{1,2})\s*월/);
+        const fallback = extractConsultationYearMonth(filename, text);
+        return {
+            year: fallback.year,
+            month: monthOnly ? `${Number(monthOnly[1])}월` : fallback.month,
+        };
+    };
+
+    const parseConsultationRejectedMarkdown = (text, filename) => {
+        const yearMonth = extractRejectedYearMonth(filename, text);
+        const lines = String(text || '').split(/\r?\n/).filter(line => line.trim());
+        const tableLines = lines
+            .map(splitMarkdownTableLineKeepingEmpty)
+            .filter(parts => parts.length >= 8)
+            .filter(parts => !parts.every(part => /^:?-{2,}:?$/.test(part)));
+
+        let headerIndex = tableLines.findIndex(parts => {
+            const joined = parts.map(normalizeConsultantColumn).join('|');
+            return joined.includes('담당dr') &&
+                (joined.includes('이름') || joined.includes('환자성함')) &&
+                joined.includes('미동의사유');
+        });
+        let dataStartIndex = headerIndex + 1;
+        if (headerIndex === -1) {
+            const firstDataIndex = tableLines.findIndex(parts => parts.length >= 17 && parseNumber(parts[0]) > 0);
+            if (firstDataIndex >= 0) {
+                dataStartIndex = firstDataIndex;
+            } else if (tableLines.length > 0) {
+                headerIndex = 0;
+                dataStartIndex = 1;
+            }
+        }
+        if (headerIndex === -1 && dataStartIndex === 0) {
+            throw new Error('미동의 환자 관리 표 헤더를 찾을 수 없습니다.');
+        }
+
+        const headers = headerIndex >= 0 ? tableLines[headerIndex].map(normalizeConsultantColumn) : [];
+        const findIndex = (candidates, fallback) => {
+            const normalized = candidates.map(normalizeConsultantColumn);
+            const index = headers.findIndex(header => normalized.some(candidate => header === candidate || header.includes(candidate)));
+            return index >= 0 ? index : fallback;
+        };
+        const indices = {
+            doctor: findIndex(['담당dr진단', '담당dr'], 1),
+            newPatient: findIndex(['신'], 2),
+            oldPatient: findIndex(['구'], 3),
+            patientName: findIndex(['이름', '환자성함'], 4),
+            visitDate: findIndex(['내원날짜'], 5),
+            consultant: findIndex(['상담자'], 6),
+            reason: findIndex(['미동의사유'], 16),
+            diagnosisAmount: findIndex(['금액진단금액', '진단금액'], 17),
+            consultationAmount: findIndex(['금액상담금액', '상담금액'], 18),
+            agreedAmount: findIndex(['금액최종동의금액', '최종동의금액'], 19),
+            rejectedAmount: findIndex(['금액비동의금액', '비동의금액'], 20),
+            note: findIndex(['비고'], 24),
+        };
+
+        const mark = (value) => /o|0|ㅇ|○|●|1/i.test(String(value || '').trim()) ? 'O' : '';
+        const rows = tableLines.slice(dataStartIndex)
+            .map((parts, index) => {
+                const patientName = String(parts[indices.patientName] || '').trim();
+                const doctor = String(parts[indices.doctor] || '').trim() || '-';
+                if (!patientName) return null;
+                const rejectedAmount = parseNumber(parts[indices.rejectedAmount]);
+                const consultationAmount = parseNumber(parts[indices.consultationAmount]);
+                const agreedAmount = parseNumber(parts[indices.agreedAmount]);
+                return {
+                    id: `${yearMonth.year}-${yearMonth.month}-${parts[0] || index}`,
+                    doctor,
+                    newPatient: mark(parts[indices.newPatient]),
+                    oldPatient: mark(parts[indices.oldPatient]),
+                    patientName,
+                    visitDate: String(parts[indices.visitDate] || '').trim(),
+                    consultant: String(parts[indices.consultant] || '').trim() || '-',
+                    reason: String(parts[indices.reason] || '').trim() || '-',
+                    diagnosisAmount: parseNumber(parts[indices.diagnosisAmount]),
+                    consultationAmount,
+                    agreedAmount,
+                    rejectedAmount: rejectedAmount || Math.max(consultationAmount - agreedAmount, 0),
+                    note: String(parts[indices.note] || '').trim(),
+                };
+            })
+            .filter(Boolean);
+
+        if (rows.length === 0) {
+            throw new Error('미동의 환자 데이터 행을 찾을 수 없습니다.');
+        }
+
+        return {
+            year: yearMonth.year,
+            month: yearMonth.month,
+            rows,
+        };
+    };
+
+    const saveConsultationRejectedData = (parsed) => {
+        const saved = JSON.parse(localStorage.getItem(CONSULTATION_REJECTED_STORAGE_KEY) || '{}');
+        if (!saved[parsed.year]) saved[parsed.year] = {};
+        saved[parsed.year][parsed.month] = parsed;
+        localStorage.setItem(CONSULTATION_REJECTED_STORAGE_KEY, JSON.stringify(saved));
+        window.dispatchEvent(new StorageEvent('storage', { key: CONSULTATION_REJECTED_STORAGE_KEY }));
+        window.dispatchEvent(new CustomEvent('consultationAnalysisUpdated', {
+            detail: { year: parsed.year, month: parsed.month }
+        }));
+    };
+
+    const extractConsultationBundleBlocks = (text) => {
+        const source = String(text || '');
+        const sections = {};
+        const headingPattern = /^#\s+(.+)$/gm;
+        const headings = [];
+        let match;
+        while ((match = headingPattern.exec(source)) !== null) {
+            headings.push({ title: match[1].trim(), start: match.index, contentStart: headingPattern.lastIndex });
+        }
+
+        headings.forEach((heading, index) => {
+            const end = headings[index + 1]?.start ?? source.length;
+            const chunk = source.slice(heading.contentStart, end).trim();
+            const codeMatch = chunk.match(/```(?:tsv|txt|md)?\s*([\s\S]*?)```/i);
+            const body = (codeMatch ? codeMatch[1] : chunk).trim();
+            const key = heading.title.replace(/\s/g, '');
+            if (key.includes('전체_상담현황') || key.includes('전체상담현황') || key.includes('전체동의율')) {
+                sections.overall = { filename: heading.title, body };
+            } else if (key.includes('상담자별')) {
+                sections.consultant = { filename: heading.title, body };
+            } else if (key.includes('상담내역') || key.includes('미동의환자')) {
+                sections.rejected = { filename: heading.title, body };
+            }
+        });
+
+        if (!sections.overall || !sections.consultant || !sections.rejected) {
+            const lines = source.split(/\r?\n/);
+            const markers = [];
+            lines.forEach((line, index) => {
+                const key = line.replace(/^#+\s*/, '').replace(/\s/g, '');
+                if (key.includes('전체상담현황') || key.includes('전체_상담현황') || key.includes('전체동의율')) {
+                    markers.push({ type: 'overall', title: line.trim(), index });
+                } else if (key.includes('상담자별')) {
+                    markers.push({ type: 'consultant', title: line.trim(), index });
+                } else if (key.includes('상담내역') || key.includes('미동의환자')) {
+                    markers.push({ type: 'rejected', title: line.trim(), index });
+                }
+            });
+
+            markers.forEach((marker, index) => {
+                if (sections[marker.type]) return;
+                const end = markers[index + 1]?.index ?? lines.length;
+                const body = lines.slice(marker.index + 1, end).join('\n').trim();
+                if (body) sections[marker.type] = { filename: marker.title, body };
+            });
+
+            if (!sections.consultant) {
+                const consultantHeaderIndex = lines.findIndex(line => {
+                    const key = line.replace(/\s/g, '');
+                    return key.includes('No') && key.includes('상담자') && key.includes('환자수') && key.includes('금액대비동의율');
+                });
+                if (consultantHeaderIndex !== -1) {
+                    const nextRejected = lines.findIndex((line, index) => {
+                        if (index <= consultantHeaderIndex) return false;
+                        const key = line.replace(/^#+\s*/, '').replace(/\s/g, '');
+                        return key.includes('상담내역') || key.includes('미동의환자');
+                    });
+                    const titleIndex = Math.max(0, consultantHeaderIndex - 2);
+                    const title = lines.slice(titleIndex, consultantHeaderIndex).find(line => line.trim()) || '상담자별 동의율';
+                    const end = nextRejected === -1 ? lines.length : nextRejected;
+                    sections.consultant = {
+                        filename: title.trim(),
+                        body: lines.slice(consultantHeaderIndex, end).join('\n').trim(),
+                    };
+                }
+            }
+        }
+
+        return sections;
+    };
+
+    const parseConsultationBundleMarkdown = (text, filename) => {
+        const sections = extractConsultationBundleBlocks(text);
+        if (!sections.overall) throw new Error('전체동의율 섹션을 찾을 수 없습니다.');
+        if (!sections.consultant) throw new Error('상담자별 동의율 섹션을 찾을 수 없습니다.');
+        if (!sections.rejected) throw new Error('미동의 환자 현황 섹션을 찾을 수 없습니다.');
+
+        const fallbackName = filename || '상담현황_md_파일_모음.md';
+        const overallSourceName = `${fallbackName} ${sections.overall.filename || ''}`.trim();
+        const consultantSourceName = `${fallbackName} ${sections.consultant.filename || ''}`.trim();
+        const overall = parseConsultationOverallMarkdown(sections.overall.body, overallSourceName);
+        const bundleDoctorDiagnoses = extractDoctorDiagnosesFromMarkdown(text);
+        if ((!overall.doctorDiagnoses || overall.doctorDiagnoses.length === 0) && bundleDoctorDiagnoses.length > 0) {
+            overall.doctorDiagnoses = bundleDoctorDiagnoses;
+        }
+        const consultant = parseConsultationConsultantMarkdown(sections.consultant.body, consultantSourceName);
+        const rejectedTitle = sections.rejected.filename || fallbackName;
+        const rejectedFilename = /\d{2,4}\s*년/.test(rejectedTitle)
+            ? rejectedTitle
+            : `${overall.year}년 ${rejectedTitle}`;
+        const rejected = parseConsultationRejectedMarkdown(sections.rejected.body, rejectedFilename);
+        return { overall, consultant, rejected };
+    };
+
+    const parseConsultationOverallExcel = (rows, fileName, parseNum) => {
+        const yearMonth = extractConsultationYearMonth(fileName);
+        const normalizeLabel = (value) => String(value || '')
+            .replace(/\s+/g, '')
+            .replace(/[()[\]{}<>·ㆍ,.:;|/\\_-]/g, '')
+            .replace(/보험제외/g, '')
+            .replace(/진담/g, '진단')
+            .replace(/임플란트/g, '임플');
+
+        const isDoctorName = (value) => {
+            const text = String(value || '').trim();
+            if (!/^[가-힣]{2,5}$/.test(text)) return false;
+            return !/(상담|현황|결정|환자|진단|동의|금액|보험|치료|계획|신환|구환|전체|부분|최종|총)/.test(text);
+        };
+
+        const cells = [];
+        rows.forEach((row, r) => {
+            (row || []).forEach((cell, c) => {
+                if (cell !== null && cell !== undefined && String(cell).trim() !== '') {
+                    cells.push({ r, c, text: String(cell).trim(), raw: cell, key: normalizeLabel(cell) });
+                }
+            });
+        });
+
+        const valueNear = (labels, options = {}) => {
+            const keys = labels.map(normalizeLabel);
+            const labelCell = cells.find(cell => keys.some(key => cell.key.includes(key) || key.includes(cell.key)));
+            if (!labelCell) return 0;
+            const sameRow = cells
+                .filter(cell => cell.r === labelCell.r && cell.c > labelCell.c)
+                .sort((a, b) => a.c - b.c)
+                .map(cell => parseNum(cell.raw))
+                .find(value => value !== 0 || String(value) === '0');
+            if (sameRow !== undefined) return sameRow;
+
+            const belowLimit = options.belowLimit ?? 4;
+            for (let offset = 1; offset <= belowLimit; offset++) {
+                const row = rows[labelCell.r + offset] || [];
+                const value = parseNum(row[labelCell.c]);
+                if (value !== 0 || String(row[labelCell.c] ?? '').trim() === '0') return value;
+            }
+            return 0;
+        };
+
+        const cellValue = (row, col) => parseNum(rows[row]?.[col]);
+        const textValue = (row, col) => String(rows[row]?.[col] || '').trim();
+
+        const totalConsultations = valueNear(['전체상담건수보험제외', '전체상담건수']) || cellValue(4, 0);
+        const agreedCount = valueNear(['전체동의환자수']) || cellValue(4, 1);
+        const partialCount = valueNear(['부분동의환자수']) || cellValue(4, 2);
+        const newPatients = valueNear(['신환수']) || cellValue(4, 3);
+        const oldPatients = valueNear(['구환수']) || cellValue(4, 4);
+        const diagnosisAmount = valueNear(['진단금액']) || cellValue(4, 5);
+        const consultationAmount = valueNear(['상담금액']) || cellValue(4, 6);
+        const rejectedAmount = valueNear(['비동의금액']) || cellValue(4, 7);
+        const insuranceDiagnosis = valueNear(['보험진단']) || cellValue(4, 8);
+        const insuranceAgreement = valueNear(['보험동의']) || cellValue(4, 9);
+        const planChange = valueNear(['치료계획변동']) || cellValue(5, 10) || cellValue(6, 10);
+        const patientAgreementRate = valueNear(['환자전체동의율']) || cellValue(6, 1);
+        const partialAgreementRate = valueNear(['환자부분동의율']) || cellValue(6, 2);
+        const totalPatients = valueNear(['총환자수']) || cellValue(6, 3);
+        const agreedAmount = valueNear(['최종동의금액']) || cellValue(6, 5);
+        const diagnosisAgreementRate = valueNear(['진단금액대비동의율']) || cellValue(6, 6);
+        const consultationAgreementRate = valueNear(['상담금액대비동의율']) || cellValue(6, 7);
+        const implantDecision = valueNear(['보험임플결정']) || cellValue(6, 8);
+        const dentureDecision = valueNear(['보험틀니결정']) || cellValue(6, 9);
+
+        const doctorRowIndex = rows.findIndex(row => (row || []).some(cell => normalizeLabel(cell).includes('의사별진단수')));
+        const doctorDiagnoses = [];
+        if (doctorRowIndex !== -1) {
+            const row = rows[doctorRowIndex] || [];
+            const nextRow = rows[doctorRowIndex + 1] || [];
+            const hasAmountHeader = row.some(cell => normalizeLabel(cell).includes('동의금액')) ||
+                nextRow.some(cell => normalizeLabel(cell).includes('동의금액'));
+            for (let c = 0; c < row.length - 1; c++) {
+                const name = String(row[c] || '').trim();
+                const count = parseNum(row[c + 1]);
+                const agreedAmount = hasAmountHeader ? parseNum(row[c + 2]) : 0;
+                if (!isDoctorName(name) || count <= 0) continue;
+                doctorDiagnoses.push({ name, count, agreedAmount });
+                c += hasAmountHeader ? 2 : 1;
+            }
+        }
+
+        return {
+            year: yearMonth.year,
+            month: yearMonth.month,
+            totalConsultations,
+            agreedCount,
+            partialCount,
+            rejectedCount: Math.max(totalConsultations - agreedCount - partialCount, 0),
+            newPatients,
+            oldPatients,
+            totalPatients: totalPatients || newPatients + oldPatients || totalConsultations,
+            diagnosisAmount,
+            consultationAmount,
+            rejectedAmount,
+            agreedAmount,
+            insuranceDiagnosis,
+            insuranceAgreement,
+            planChange,
+            implantDecision,
+            dentureDecision,
+            doctorDiagnoses,
+            patientAgreementRate: patientAgreementRate || (totalConsultations ? (agreedCount / totalConsultations) * 100 : 0),
+            partialAgreementRate: partialAgreementRate || (totalConsultations ? (partialCount / totalConsultations) * 100 : 0),
+            diagnosisAgreementRate: diagnosisAgreementRate || (diagnosisAmount ? (agreedAmount / diagnosisAmount) * 100 : 0),
+            consultationAgreementRate: consultationAgreementRate || (consultationAmount ? (agreedAmount / consultationAmount) * 100 : 0),
+        };
+    };
+
+    const getImageSizeFromDataUrl = (dataUrl) => new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve({ width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+        img.onerror = () => resolve(null);
+        img.src = dataUrl;
+    });
+
+    const loadImageFromDataUrl = (dataUrl) => new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('이미지를 불러올 수 없습니다.'));
+        img.src = dataUrl;
+    });
+
+    const parseOcrNumber = (text, { percent = false } = {}) => {
+        const normalized = String(text || '')
+            .replace(/[Oo]/g, '0')
+            .replace(/[Il|]/g, '1')
+            .replace(/[ＳS]/g, '5')
+            .replace(/[ＢB]/g, '8');
+        const matches = normalized.match(/\d[\d,.\s]*/g) || [];
+        if (matches.length === 0) return 0;
+
+        const best = matches
+            .map(match => match.trim())
+            .sort((a, b) => b.replace(/\D/g, '').length - a.replace(/\D/g, '').length)[0];
+
+        if (percent) {
+            const cleaned = best.replace(/\s/g, '').replace(',', '.');
+            const parsed = parseFloat(cleaned);
+            return Number.isFinite(parsed) ? parsed : 0;
+        }
+
+        const digits = best.replace(/\D/g, '');
+        return digits ? Number(digits) : 0;
+    };
+
+    const detectTableBounds = (image) => {
+        const canvas = document.createElement('canvas');
+        const width = image.naturalWidth || image.width;
+        const height = image.naturalHeight || image.height;
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(image, 0, 0);
+        const { data } = ctx.getImageData(0, 0, width, height);
+        let minX = width;
+        let minY = height;
+        let maxX = 0;
+        let maxY = 0;
+
+        for (let y = 0; y < height; y += 2) {
+            for (let x = 0; x < width; x += 2) {
+                const index = (y * width + x) * 4;
+                const r = data[index];
+                const g = data[index + 1];
+                const b = data[index + 2];
+                const a = data[index + 3];
+                if (a < 120) continue;
+                if (r < 75 && g < 75 && b < 75) {
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    maxX = Math.max(maxX, x);
+                    maxY = Math.max(maxY, y);
+                }
+            }
+        }
+
+        if (minX >= maxX || minY >= maxY) {
+            return { left: 0, top: 0, width, height };
+        }
+
+        const padding = 2;
+        return {
+            left: Math.max(0, minX - padding),
+            top: Math.max(0, minY - padding),
+            width: Math.min(width - minX, maxX - minX + padding * 2),
+            height: Math.min(height - minY, maxY - minY + padding * 2),
+        };
+    };
+
+    const cropConsultationCell = (image, table, rect, {
+        scale = 5,
+        threshold = true,
+        insetXRatio = 0.08,
+        insetYRatio = 0.16,
+    } = {}) => {
+        const imageWidth = image.naturalWidth || image.width;
+        const imageHeight = image.naturalHeight || image.height;
+        const sxRaw = table.left + rect.x0 * table.width;
+        const syRaw = table.top + rect.y0 * table.height;
+        const swRaw = (rect.x1 - rect.x0) * table.width;
+        const shRaw = (rect.y1 - rect.y0) * table.height;
+        const insetX = Math.max(0, swRaw * insetXRatio);
+        const insetY = Math.max(0, shRaw * insetYRatio);
+        const sx = Math.max(0, sxRaw + insetX);
+        const sy = Math.max(0, syRaw + insetY);
+        const sw = Math.min(imageWidth - sx, Math.max(1, swRaw - insetX * 2));
+        const sh = Math.min(imageHeight - sy, Math.max(1, shRaw - insetY * 2));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(sw * scale));
+        canvas.height = Math.max(1, Math.round(sh * scale));
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+        if (threshold) {
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const pixels = imageData.data;
+            for (let i = 0; i < pixels.length; i += 4) {
+                const r = pixels[i];
+                const g = pixels[i + 1];
+                const b = pixels[i + 2];
+                const luminance = r * 0.299 + g * 0.587 + b * 0.114;
+                const isText = luminance < 178 || (r > 150 && g < 100 && b < 100);
+                const value = isText ? 0 : 255;
+                pixels[i] = value;
+                pixels[i + 1] = value;
+                pixels[i + 2] = value;
+                pixels[i + 3] = 255;
+            }
+            ctx.putImageData(imageData, 0, 0);
+        }
+
+        return canvas.toDataURL('image/png');
+    };
+
+    const groupTableLines = (lineHits) => {
+        const groups = [];
+        let current = [];
+        let previous = null;
+        lineHits.forEach(hit => {
+            if (previous === null || hit.position <= previous + 1) {
+                current.push(hit);
+            } else {
+                groups.push(current);
+                current = [hit];
+            }
+            previous = hit.position;
+        });
+        if (current.length > 0) groups.push(current);
+        return groups.map(group => ({
+            position: group.reduce((sum, item) => sum + item.position, 0) / group.length,
+            count: Math.max(...group.map(item => item.count)),
+        }));
+    };
+
+    const detectConsultationTableGrid = (image, table) => {
+        const width = image.naturalWidth || image.width;
+        const height = image.naturalHeight || image.height;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(image, 0, 0);
+        const { data } = ctx.getImageData(0, 0, width, height);
+        const isBlack = (x, y) => {
+            const index = (y * width + x) * 4;
+            return data[index] < 75 && data[index + 1] < 75 && data[index + 2] < 75 && data[index + 3] > 120;
+        };
+
+        const xHits = [];
+        const yStart = Math.max(0, Math.round(table.top));
+        const yEnd = Math.min(height - 1, Math.round(table.top + table.height));
+        for (let x = Math.max(0, Math.round(table.left)); x <= Math.min(width - 1, Math.round(table.left + table.width)); x++) {
+            let count = 0;
+            for (let y = yStart; y <= yEnd; y++) {
+                if (isBlack(x, y)) count++;
+            }
+            if (count > table.height * 0.24) xHits.push({ position: x, count });
+        }
+
+        const yHits = [];
+        const xStart = Math.max(0, Math.round(table.left));
+        const xEnd = Math.min(width - 1, Math.round(table.left + table.width));
+        for (let y = yStart; y <= yEnd; y++) {
+            let count = 0;
+            for (let x = xStart; x <= xEnd; x++) {
+                if (isBlack(x, y)) count++;
+            }
+            if (count > table.width * 0.52) yHits.push({ position: y, count });
+        }
+
+        const normalize = (value, start, size) => Math.min(1, Math.max(0, (value - start) / size));
+        const cols = groupTableLines(xHits)
+            .map(line => normalize(line.position, table.left, table.width))
+            .filter(value => value >= 0 && value <= 1)
+            .sort((a, b) => a - b);
+        const rows = groupTableLines(yHits)
+            .map(line => normalize(line.position, table.top, table.height))
+            .filter(value => value >= 0 && value <= 1)
+            .sort((a, b) => a - b);
+
+        const fallbackCols = [0, 0.145, 0.224, 0.31, 0.355, 0.401, 0.514, 0.608, 0.751, 0.83, 0.914, 1];
+        const fallbackRows = [0, 0.353, 0.51, 0.637, 0.762, 0.881, 1];
+        return {
+            cols: cols.length >= 12 ? cols.slice(0, 12) : fallbackCols,
+            rows: rows.length >= 7 ? rows.slice(0, 7) : fallbackRows,
+        };
+    };
+
+    const normalizeConsultationLabel = (value) => String(value || '')
+        .replace(/[\r\n\t]+/g, '')
+        .replace(/\s+/g, '')
+        .replace(/[()[\]{}<>·ㆍ,.:;|/\\_\-]/g, '')
+        .replace(/진담/g, '진단')
+        .replace(/진팀/g, '진단')
+        .replace(/부문/g, '부분')
+        .replace(/부분동익/g, '부분동의')
+        .replace(/부분동의환자/g, '부분동의환자수')
+        .replace(/전채/g, '전체')
+        .replace(/전체동익/g, '전체동의')
+        .replace(/전체동의환자/g, '전체동의환자수')
+        .replace(/상담금액대버/g, '상담금액대비')
+        .replace(/진단금액대버/g, '진단금액대비')
+        .replace(/상담급액/g, '상담금액')
+        .replace(/진단급액/g, '진단금액')
+        .replace(/보험진댄/g, '보험진단')
+        .replace(/보험동익/g, '보험동의')
+        .replace(/치료계획번동/g, '치료계획변동')
+        .replace(/임플란트/g, '임플')
+        .replace(/임플결정/g, '임플결정')
+        .replace(/틀리/g, '틀니')
+        .replace(/툴니/g, '틀니');
+
+    const matchConsultationOverallLabel = (label) => {
+        const key = normalizeConsultationLabel(label);
+        const checks = [
+            ['totalConsultations', ['전체상담건수', '전체상담건수보험제외', '전체상담건']],
+            ['agreedCount', ['전체동의환자수']],
+            ['partialCount', ['부분동의환자수']],
+            ['newPatients', ['신환수']],
+            ['oldPatients', ['구환수']],
+            ['diagnosisAgreementRate', ['진단금액대비동의율']],
+            ['consultationAgreementRate', ['상담금액대비동의율']],
+            ['diagnosisAmount', ['진단금액']],
+            ['consultationAmount', ['상담금액']],
+            ['rejectedAmount', ['비동의금액']],
+            ['insuranceDiagnosis', ['보험진단', '교정진단']],
+            ['insuranceAgreement', ['보험동의', '교정동의']],
+            ['planChange', ['치료계획변동', '치료계획변동건수']],
+            ['patientAgreementRate', ['환자전체동의율', '전체동의율']],
+            ['partialAgreementRate', ['환자부분동의율', '부분동의율']],
+            ['totalPatients', ['총환자수']],
+            ['agreedAmount', ['최종동의금액']],
+            ['implantDecision', ['보험임플결정']],
+            ['dentureDecision', ['보험틀니결정']],
+        ];
+        return checks.find(([, labels]) => labels.some(item => key.includes(item)))?.[0] || null;
+    };
+
+    const extractDoctorDiagnosesFromMarkdown = (sourceText) => {
+        const rows = [];
+        let inDoctorSection = false;
+        const pushDoctorRow = (line, parts = []) => {
+            const compactMatch = String(line || '').match(/([가-힣]{2,5})\s+([\d,]+)(?:\s+([\d,]+))?/);
+            const name = String(parts[0] || compactMatch?.[1] || '').replace(/[^\p{Script=Hangul}]/gu, '').trim();
+            const count = parseNumber(parts[1] ?? compactMatch?.[2]);
+            const agreedAmount = parseNumber(parts[2] ?? compactMatch?.[3]);
+            if (/^[가-힣]{2,5}$/.test(name) && count > 0 && !rows.some(row => row.name === name)) {
+                rows.push({ name, count, agreedAmount });
+            }
+        };
+
+        String(sourceText || '').split(/\r?\n/).forEach(rawLine => {
+            const line = rawLine.trim();
+            if (!line) return;
+
+            const key = normalizeConsultationLabel(line);
+            if (
+                key.includes('의사별진단') ||
+                (key.includes('의사별') && key.includes('진단')) ||
+                (key.includes('의사') && key.includes('진단수') && key.includes('동의금액'))
+            ) {
+                inDoctorSection = true;
+                return;
+            }
+            if (!inDoctorSection) return;
+            if (key.includes('상담자별') || key.includes('상담내역') || key.includes('미동의환자')) {
+                inDoctorSection = false;
+                return;
+            }
+
+            const parts = line
+                .split(/\t+|\s{2,}|\|/)
+                .map(item => item.trim())
+                .filter(Boolean);
+            const joinedKey = normalizeConsultationLabel(parts.join(''));
+            if (!parts.length || joinedKey.includes('이름') || joinedKey.includes('건수')) return;
+
+            pushDoctorRow(line, parts);
+        });
+
+        if (rows.length === 0) {
+            String(sourceText || '').split(/\r?\n/).forEach(rawLine => {
+                const line = rawLine.trim();
+                if (!/^[가-힣]{2,5}\s+[\d,]+(?:\s+[\d,]+)?\s*$/.test(line)) return;
+                pushDoctorRow(line);
+            });
+        }
+
+        return rows;
+    };
+
+    const applyConsultationOverallMarkdownTables = (parsed, sourceText) => {
+        String(sourceText || '').split(/\r?\n/).forEach(rawLine => {
+            const line = rawLine.trim();
+            if (!line.includes('|')) return;
+            const parts = splitMarkdownTableLineKeepingEmpty(line)
+                .map(item => item.replace(/\*\*/g, '').trim())
+                .filter(Boolean);
+            if (parts.length < 2) return;
+            if (parts.every(part => /^:?-{2,}:?$/.test(part))) return;
+            const key = matchConsultationOverallLabel(parts[0]);
+            if (!key) return;
+            parsed[key] = parseNumber(parts.slice(1).join(' '));
+        });
+        return parsed;
+    };
+
+    const parseConsultationOverallMarkdown = (text, filename) => {
+        const yearMonth = extractConsultationYearMonth(filename, text);
+        const parsed = {
+            year: yearMonth.year,
+            month: yearMonth.month,
+            totalConsultations: 0,
+            agreedCount: 0,
+            partialCount: 0,
+            rejectedCount: 0,
+            newPatients: 0,
+            oldPatients: 0,
+            totalPatients: 0,
+            diagnosisAmount: 0,
+            consultationAmount: 0,
+            rejectedAmount: 0,
+            agreedAmount: 0,
+            insuranceDiagnosis: 0,
+            insuranceAgreement: 0,
+            planChange: 0,
+            implantDecision: 0,
+            dentureDecision: 0,
+            patientAgreementRate: 0,
+            partialAgreementRate: 0,
+            diagnosisAgreementRate: 0,
+            consultationAgreementRate: 0,
+            doctorDiagnoses: [],
+        };
+
+        let inDoctorSection = false;
+        String(text || '').split(/\r?\n/).forEach(rawLine => {
+            const line = rawLine.trim();
+            if (!line) return;
+
+            const parts = line
+                .split(/\t+|\s{2,}|\|/)
+                .map(item => item.trim())
+                .filter(Boolean);
+            if (parts.length === 0) return;
+
+            const first = parts[0];
+            const firstKey = normalizeConsultationLabel(first);
+            if (firstKey.includes('의사별진단수')) {
+                inDoctorSection = true;
+                return;
+            }
+            if (firstKey === '항목' || firstKey === '값' || firstKey === '이름' || firstKey === '건수') return;
+
+            if (inDoctorSection) {
+                const rowKey = normalizeConsultationLabel(parts.join(''));
+                if (rowKey.includes('이름') || rowKey.includes('의사') || rowKey.includes('건수')) return;
+                const compactMatch = line.match(/([가-힣]{2,5})\s+([\d,]+)(?:\s+([\d,]+))?/);
+                const name = String(parts[0] || compactMatch?.[1] || '').replace(/[^\p{Script=Hangul}]/gu, '').trim();
+                const count = parseNumber(parts[1] ?? compactMatch?.[2]);
+                const agreedAmount = parseNumber(parts[2] ?? compactMatch?.[3]);
+                if (/^[가-힣]{2,5}$/.test(name) && count > 0) {
+                    parsed.doctorDiagnoses.push({ name, count, agreedAmount });
+                }
+                return;
+            }
+
+            if (parts.length < 2) return;
+            const key = matchConsultationOverallLabel(parts[0]);
+            if (!key) return;
+            parsed[key] = parseNumber(parts.slice(1).join(' '));
+        });
+
+        applyConsultationOverallMarkdownTables(parsed, text);
+
+        if (parsed.doctorDiagnoses.length === 0) {
+            parsed.doctorDiagnoses = extractDoctorDiagnosesFromMarkdown(text);
+        }
+
+        parsed.rejectedCount = Math.max(parsed.totalConsultations - parsed.agreedCount - parsed.partialCount, 0);
+        const normalized = normalizeConsultationOverallParsed(parsed);
+        validateConsultationOverallParsed(normalized);
+        return normalized;
+    };
+
+    const validateConsultationOverallParsed = (parsed) => {
+        const errors = [];
+        const countFields = [
+            ['전체상담건수', parsed.totalConsultations],
+            ['전체동의 환자수', parsed.agreedCount],
+            ['부분동의 환자수', parsed.partialCount],
+            ['신환수', parsed.newPatients],
+            ['구환수', parsed.oldPatients],
+            ['총 환자수', parsed.totalPatients],
+            ['보험진단', parsed.insuranceDiagnosis],
+            ['보험동의', parsed.insuranceAgreement],
+            ['치료계획변동', parsed.planChange],
+            ['보험 임플결정', parsed.implantDecision],
+            ['보험 틀니결정', parsed.dentureDecision],
+        ];
+        countFields.forEach(([label, value]) => {
+            if (!Number.isFinite(value) || value < 0 || value > 10000) {
+                errors.push(`${label} 값이 비정상입니다(${value || 0}).`);
+            }
+        });
+
+        const rateFields = [
+            ['환자 전체동의율', parsed.patientAgreementRate],
+            ['환자 부분동의율', parsed.partialAgreementRate],
+            ['진단금액 대비 동의율', parsed.diagnosisAgreementRate],
+            ['상담금액 대비 동의율', parsed.consultationAgreementRate],
+        ];
+        rateFields.forEach(([label, value]) => {
+            if (!Number.isFinite(value) || value < 0 || value > 100) {
+                errors.push(`${label} 값이 비정상입니다(${value || 0}%).`);
+            }
+        });
+
+        if (parsed.diagnosisAmount > 0 && parsed.diagnosisAmount < 1000000) {
+            errors.push(`진단금액이 너무 작습니다(${parsed.diagnosisAmount.toLocaleString()}원).`);
+        }
+        if (parsed.consultationAmount > 0 && parsed.consultationAmount < 1000000) {
+            errors.push(`상담금액이 너무 작습니다(${parsed.consultationAmount.toLocaleString()}원).`);
+        }
+        if (parsed.agreedAmount > 0 && parsed.agreedAmount < 1000000) {
+            errors.push(`최종동의금액이 너무 작습니다(${parsed.agreedAmount.toLocaleString()}원).`);
+        }
+        if (errors.length > 0) {
+            throw new Error(`OCR 값 검증 실패: ${errors.slice(0, 3).join(' ')}`);
+        }
+    };
+
+    const normalizeConsultationOverallParsed = (parsed) => {
+        const normalized = { ...parsed };
+        const roundRate = (value) => Number.isFinite(value) ? Math.round(value) : 0;
+        CONSULTATION_OCR_FIELDS.forEach(({ key }) => {
+            if (normalized[key] === '' || normalized[key] == null) return;
+            const value = Number(normalized[key]);
+            normalized[key] = Number.isFinite(value) ? value : 0;
+        });
+
+        if (normalized.newPatients >= 0 && normalized.oldPatients >= 0) {
+            const calculatedTotalPatients = normalized.newPatients + normalized.oldPatients;
+            if (
+                calculatedTotalPatients > 0 &&
+                (!Number.isFinite(normalized.totalPatients) ||
+                    normalized.totalPatients <= 0 ||
+                    normalized.totalPatients > 10000)
+            ) {
+                normalized.totalPatients = calculatedTotalPatients;
+            }
+        }
+
+        if (
+            normalized.totalConsultations > 0 &&
+            (!Number.isFinite(normalized.patientAgreementRate) || normalized.patientAgreementRate <= 0 || normalized.patientAgreementRate > 100)
+        ) {
+            normalized.patientAgreementRate = roundRate((normalized.agreedCount / normalized.totalConsultations) * 100);
+        }
+        if (
+            normalized.totalConsultations > 0 &&
+            (!Number.isFinite(normalized.partialAgreementRate) || normalized.partialAgreementRate <= 0 || normalized.partialAgreementRate > 100)
+        ) {
+            normalized.partialAgreementRate = roundRate((normalized.partialCount / normalized.totalConsultations) * 100);
+        }
+
+        if (
+            normalized.diagnosisAmount > 0 &&
+            normalized.agreedAmount > 0 &&
+            (!Number.isFinite(normalized.diagnosisAgreementRate) || normalized.diagnosisAgreementRate <= 0 || normalized.diagnosisAgreementRate > 100)
+        ) {
+            normalized.diagnosisAgreementRate = roundRate((normalized.agreedAmount / normalized.diagnosisAmount) * 100);
+        }
+
+        if (
+            normalized.consultationAmount > 0 &&
+            normalized.agreedAmount > 0 &&
+            (!Number.isFinite(normalized.consultationAgreementRate) || normalized.consultationAgreementRate <= 0 || normalized.consultationAgreementRate > 100)
+        ) {
+            normalized.consultationAgreementRate = roundRate((normalized.agreedAmount / normalized.consultationAmount) * 100);
+        }
+
+        return normalized;
+    };
+
+    const parseConsultationOverallImageByCells = async (dataUrl, filename, { validate = true } = {}) => {
+        const image = await loadImageFromDataUrl(dataUrl);
+        const table = detectTableBounds(image);
+        const grid = detectConsultationTableGrid(image, table);
+        const cols = grid.cols;
+        const rows = grid.rows;
+        const cell = (c0, c1, r0, r1) => ({ x0: cols[c0], x1: cols[c1], y0: rows[r0], y1: rows[r1] });
+        const labeledCells = [
+            { fallbackKey: 'totalConsultations', labelRect: cell(0, 1, 1, 2), valueRect: cell(0, 1, 2, 5) },
+            { fallbackKey: 'agreedCount', labelRect: cell(1, 2, 1, 2), valueRect: cell(1, 2, 2, 3) },
+            { fallbackKey: 'partialCount', labelRect: cell(2, 3, 1, 2), valueRect: cell(2, 3, 2, 3) },
+            { fallbackKey: 'newPatients', labelRect: cell(3, 4, 1, 2), valueRect: cell(3, 4, 2, 3) },
+            { fallbackKey: 'oldPatients', labelRect: cell(4, 5, 1, 2), valueRect: cell(4, 5, 2, 3) },
+            { fallbackKey: 'diagnosisAmount', labelRect: cell(5, 6, 1, 2), valueRect: cell(5, 6, 2, 3) },
+            { fallbackKey: 'consultationAmount', labelRect: cell(6, 7, 1, 2), valueRect: cell(6, 7, 2, 3) },
+            { fallbackKey: 'rejectedAmount', labelRect: cell(7, 8, 1, 2), valueRect: cell(7, 8, 2, 3) },
+            { fallbackKey: 'insuranceDiagnosis', labelRect: cell(8, 9, 1, 2), valueRect: cell(8, 9, 2, 3) },
+            { fallbackKey: 'insuranceAgreement', labelRect: cell(9, 10, 1, 2), valueRect: cell(9, 10, 2, 3) },
+            { fallbackKey: 'planChange', labelRect: cell(10, 11, 1, 2), valueRect: cell(10, 11, 2, 5) },
+            { fallbackKey: 'patientAgreementRate', labelRect: cell(1, 2, 3, 4), valueRect: cell(1, 2, 4, 5) },
+            { fallbackKey: 'partialAgreementRate', labelRect: cell(2, 3, 3, 4), valueRect: cell(2, 3, 4, 5) },
+            { fallbackKey: 'totalPatients', labelRect: cell(3, 5, 3, 4), valueRect: cell(3, 5, 4, 5) },
+            { fallbackKey: 'agreedAmount', labelRect: cell(5, 6, 3, 4), valueRect: cell(5, 6, 4, 5) },
+            { fallbackKey: 'diagnosisAgreementRate', labelRect: cell(6, 7, 3, 4), valueRect: cell(6, 7, 4, 5) },
+            { fallbackKey: 'consultationAgreementRate', labelRect: cell(7, 8, 3, 4), valueRect: cell(7, 8, 4, 5) },
+            { fallbackKey: 'implantDecision', labelRect: cell(8, 9, 3, 4), valueRect: cell(8, 9, 4, 5) },
+            { fallbackKey: 'dentureDecision', labelRect: cell(9, 10, 3, 4), valueRect: cell(9, 10, 4, 5) },
+        ];
+        const doctorCells = [
+            [cell(1, 2, 5, 6), cell(2, 3, 5, 6)],
+            [cell(3, 5, 5, 6), cell(5, 6, 5, 6)],
+            [cell(6, 7, 5, 6), cell(7, 8, 5, 6)],
+            [cell(8, 9, 5, 6), cell(9, 10, 5, 6)],
+        ];
+
+        const worker = await Tesseract.createWorker('kor+eng');
+        const yearMonth = extractConsultationYearMonth(filename);
+        const parsed = { year: yearMonth.year, month: yearMonth.month };
+        const rawCells = {};
+        const countKeys = new Set([
+            'totalConsultations',
+            'agreedCount',
+            'partialCount',
+            'newPatients',
+            'oldPatients',
+            'totalPatients',
+            'insuranceDiagnosis',
+            'insuranceAgreement',
+            'planChange',
+            'implantDecision',
+            'dentureDecision',
+            'doctorCount',
+        ]);
+        const rateKeys = new Set([
+            'patientAgreementRate',
+            'partialAgreementRate',
+            'diagnosisAgreementRate',
+            'consultationAgreementRate',
+        ]);
+        const amountKeys = new Set([
+            'diagnosisAmount',
+            'consultationAmount',
+            'rejectedAmount',
+            'agreedAmount',
+        ]);
+        let fullImageWords = [];
+
+        const getFullOcrTextInRect = (rect) => {
+            if (!Array.isArray(fullImageWords) || fullImageWords.length === 0) return '';
+            const left = table.left + rect.x0 * table.width;
+            const right = table.left + rect.x1 * table.width;
+            const top = table.top + rect.y0 * table.height;
+            const bottom = table.top + rect.y1 * table.height;
+            return fullImageWords
+                .map(word => {
+                    const bbox = word.bbox || word;
+                    const x0 = Number(bbox.x0 ?? bbox.left ?? 0);
+                    const x1 = Number(bbox.x1 ?? bbox.right ?? x0);
+                    const y0 = Number(bbox.y0 ?? bbox.top ?? 0);
+                    const y1 = Number(bbox.y1 ?? bbox.bottom ?? y0);
+                    const cx = (x0 + x1) / 2;
+                    const cy = (y0 + y1) / 2;
+                    const overlapX = Math.max(0, Math.min(x1, right) - Math.max(x0, left));
+                    const overlapY = Math.max(0, Math.min(y1, bottom) - Math.max(y0, top));
+                    const overlapArea = overlapX * overlapY;
+                    const wordArea = Math.max(1, (x1 - x0) * (y1 - y0));
+                    return {
+                        text: String(word.text || '').trim(),
+                        x: x0,
+                        y: y0,
+                        cx,
+                        cy,
+                        inside: cx >= left && cx <= right && cy >= top && cy <= bottom,
+                        overlapRatio: overlapArea / wordArea,
+                    };
+                })
+                .filter(word => word.text && (word.inside || word.overlapRatio > 0.45))
+                .sort((a, b) => a.y - b.y || a.x - b.x)
+                .map(word => word.text)
+                .join(' ')
+                .trim();
+        };
+
+        const recognizeNumberCell = async (key, rect) => {
+            const variants = [
+                { scale: 7, threshold: true, insetXRatio: 0.02, insetYRatio: 0.08 },
+                { scale: 7, threshold: false, insetXRatio: 0.02, insetYRatio: 0.08 },
+                { scale: 8, threshold: true, insetXRatio: 0, insetYRatio: 0.04 },
+            ];
+            const candidates = [];
+            const fullText = getFullOcrTextInRect(rect);
+            if (fullText) {
+                const isPercent = rateKeys.has(key);
+                candidates.push({ value: parseOcrNumber(fullText, { percent: isPercent }), text: `full:${fullText}` });
+            }
+            for (const variant of variants) {
+                const crop = cropConsultationCell(image, table, rect, variant);
+                const { data } = await worker.recognize(crop);
+                const isPercent = rateKeys.has(key);
+                const value = parseOcrNumber(data.text, { percent: isPercent });
+                candidates.push({ value, text: data.text });
+            }
+
+            rawCells[key] = candidates.map(item => item.text).join(' | ');
+            const values = candidates
+                .map(item => item.value)
+                .filter(value => Number.isFinite(value) && value >= 0);
+            if (values.length === 0) return 0;
+
+            if (amountKeys.has(key)) {
+                return Math.max(...values);
+            }
+            if (countKeys.has(key)) {
+                const plausible = values.filter(value => value <= 10000);
+                return plausible.length ? Math.max(...plausible) : values[0];
+            }
+            if (rateKeys.has(key)) {
+                const plausible = values.filter(value => value <= 100);
+                return plausible.length ? Math.max(...plausible) : values[0];
+            }
+            return values[0];
+        };
+
+        const parseDoctorDiagnosesFromRowText = (text) => {
+            const tokens = (String(text || '').match(/[\p{Script=Hangul}]+|\d+/gu) || [])
+                .map(token => token.trim())
+                .filter(Boolean)
+                .filter(token => !['의사별', '진단수', '상담현황', '틀니결정'].includes(token));
+            const rows = [];
+            for (let i = 0; i < tokens.length - 1; i++) {
+                const name = tokens[i].replace(/[^\p{Script=Hangul}]/gu, '');
+                const count = parseOcrNumber(tokens[i + 1]);
+                if (/^[가-힣]{2,5}$/.test(name) && count > 0 && count < 10000) {
+                    rows.push({ name, count });
+                    i += 1;
+                }
+            }
+            return rows;
+        };
+
+        try {
+            await worker.setParameters({
+                tessedit_pageseg_mode: Tesseract.PSM.AUTO,
+                tessedit_char_whitelist: '',
+                preserve_interword_spaces: '1',
+                user_defined_dpi: '300',
+            });
+            const { data: fullData } = await worker.recognize(dataUrl);
+            fullImageWords = fullData.words || [];
+
+            await worker.setParameters({
+                tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
+                tessedit_char_whitelist: '',
+                preserve_interword_spaces: '1',
+                user_defined_dpi: '300',
+            });
+
+            const matchedCells = [];
+            for (const item of labeledCells) {
+                const fullLabelText = getFullOcrTextInRect(item.labelRect);
+                const labelCrop = cropConsultationCell(image, table, item.labelRect, {
+                    scale: 5,
+                    threshold: false,
+                    insetXRatio: 0.01,
+                    insetYRatio: 0.03,
+                });
+                const { data } = await worker.recognize(labelCrop);
+                const matchedKey = matchConsultationOverallLabel(`${fullLabelText} ${data.text}`);
+                rawCells[`${item.fallbackKey}Label`] = `${fullLabelText} | ${data.text}`;
+                matchedCells.push({
+                    key: matchedKey || item.fallbackKey,
+                    valueRect: item.valueRect,
+                });
+            }
+
+            await worker.setParameters({
+                tessedit_pageseg_mode: Tesseract.PSM.SINGLE_WORD,
+                tessedit_char_whitelist: '0123456789,%.',
+                user_defined_dpi: '300',
+            });
+
+            for (const item of matchedCells) {
+                parsed[item.key] = await recognizeNumberCell(item.key, item.valueRect);
+            }
+
+            await worker.setParameters({
+                tessedit_pageseg_mode: Tesseract.PSM.SINGLE_WORD,
+                tessedit_char_whitelist: '',
+                user_defined_dpi: '300',
+            });
+
+            parsed.doctorDiagnoses = [];
+            for (const [nameRect, countRect] of doctorCells) {
+                const fullNameText = getFullOcrTextInRect(nameRect).replace(/[^\p{Script=Hangul}]/gu, '').trim();
+                const nameVariants = [
+                    { scale: 7, threshold: false, insetXRatio: 0.01, insetYRatio: 0.04 },
+                    { scale: 7, threshold: true, insetXRatio: 0.01, insetYRatio: 0.04 },
+                    { scale: 8, threshold: false, insetXRatio: 0, insetYRatio: 0 },
+                ];
+                let name = fullNameText;
+                for (const variant of nameVariants) {
+                    const nameCrop = cropConsultationCell(image, table, nameRect, variant);
+                    const { data: nameData } = await worker.recognize(nameCrop);
+                    const candidate = String(nameData.text || '').replace(/[^\p{Script=Hangul}]/gu, '').trim();
+                    if (candidate.length > name.length) name = candidate;
+                }
+                if (!name) continue;
+
+                await worker.setParameters({
+                    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_WORD,
+                    tessedit_char_whitelist: '0123456789',
+                    user_defined_dpi: '300',
+                });
+                const count = await recognizeNumberCell('doctorCount', countRect);
+                if (count > 0) parsed.doctorDiagnoses.push({ name, count });
+
+                await worker.setParameters({
+                    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_WORD,
+                    tessedit_char_whitelist: '',
+                    user_defined_dpi: '300',
+                });
+            }
+
+            if (parsed.doctorDiagnoses.length < 2) {
+                await worker.setParameters({
+                    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
+                    tessedit_char_whitelist: '',
+                    preserve_interword_spaces: '1',
+                    user_defined_dpi: '300',
+                });
+                const doctorRowRect = cell(0, 11, 5, 6);
+                const fullDoctorRowText = getFullOcrTextInRect(doctorRowRect);
+                const rowCrop = cropConsultationCell(image, table, doctorRowRect, {
+                    scale: 7,
+                    threshold: false,
+                    insetXRatio: 0.01,
+                    insetYRatio: 0.02,
+                });
+                const { data: rowData } = await worker.recognize(rowCrop);
+                const rowDoctors = parseDoctorDiagnosesFromRowText(`${fullDoctorRowText} ${rowData.text}`);
+                rawCells.doctorRow = `${fullDoctorRowText} | ${rowData.text}`;
+                if (rowDoctors.length > parsed.doctorDiagnoses.length) {
+                    parsed.doctorDiagnoses = rowDoctors;
+                }
+            }
+        } finally {
+            await worker.terminate();
+        }
+
+        parsed.rejectedCount = Math.max(parsed.totalConsultations - parsed.agreedCount - parsed.partialCount, 0);
+        parsed.totalPatients = parsed.totalPatients || parsed.newPatients + parsed.oldPatients || parsed.totalConsultations;
+
+        const normalized = normalizeConsultationOverallParsed(parsed);
+        if (validate) validateConsultationOverallParsed(normalized);
+        return { parsed: normalized, rawCells };
+    };
+
     const handleImageUpload = async (files) => {
         const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
         if (imageFiles.length === 0) return;
@@ -1460,8 +3167,42 @@ const Admin = () => {
                 reader.readAsDataURL(file);
             });
 
+            if (isConsultationOverallFile(file.name)) {
+                setOcrProcessingFile(file.name);
+                const yearMonth = extractConsultationYearMonth(file.name);
+                setOcrModal({
+                    type: 'consultationOverall',
+                    file,
+                    previewUrl: dataUrl,
+                    ocrProgress: 0,
+                    yearMonth,
+                    yearMonthDetected: !!yearMonth,
+                    parsedData: {},
+                    doctorDiagnoses: [],
+                    rawCells: {},
+                    status: 'loading',
+                });
+                try {
+                    const { parsed, rawCells } = await parseConsultationOverallImageByCells(dataUrl, file.name, { validate: false });
+                    setOcrModal(prev => prev ? {
+                        ...prev,
+                        status: 'done',
+                        ocrProgress: 100,
+                        yearMonth: { year: parsed.year, month: parsed.month },
+                        parsedData: parsed,
+                        doctorDiagnoses: parsed.doctorDiagnoses || [],
+                        rawCells,
+                    } : prev);
+                    addLog('success', `✅ [상담분석/전체동의율] ${parsed.year}년 ${parsed.month} OCR 분석 완료 — 확인 후 저장해 주세요.`);
+                } catch (err) {
+                    setOcrModal(prev => prev ? { ...prev, status: 'done', ocrProgress: 100 } : prev);
+                    addLog('error', `❌ [상담분석/전체동의율 OCR 오류] ${file.name}: ${err.message}`);
+                } finally {
+                    setOcrProcessingFile('');
+                }
+            }
             // 월간장부이면 OCR 실행
-            if (isLedgerFile(file.name)) {
+            else if (isLedgerFile(file.name)) {
                 const ym = extractYearMonthFromFileName(file.name);
                 setOcrModal({
                     file, previewUrl: dataUrl, ocrProgress: 0,
@@ -1516,6 +3257,18 @@ const Admin = () => {
     const handleOcrFieldChange = (field, val) => {
         setOcrModal(prev => {
             if (!prev) return prev;
+            if (prev.type === 'consultationOverall') {
+                const parsedData = {
+                    ...prev.parsedData,
+                    [field]: val === '' ? '' : Number(val),
+                };
+                const normalized = normalizeConsultationOverallParsed({
+                    ...parsedData,
+                    year: prev.yearMonth?.year,
+                    month: prev.yearMonth?.month,
+                });
+                return { ...prev, parsedData: normalized };
+            }
             const updated = { ...prev, parsedData: { ...prev.parsedData, [field]: val } };
             const newPt   = parseFloat(updated.parsedData.newPt);
             const oldPt   = parseFloat(updated.parsedData.oldPt);
@@ -1531,10 +3284,47 @@ const Admin = () => {
         });
     };
 
+    const handleConsultationDoctorChange = (index, field, value) => {
+        setOcrModal(prev => {
+            if (!prev || prev.type !== 'consultationOverall') return prev;
+            const rows = [...(prev.doctorDiagnoses || [])];
+            rows[index] = {
+                ...(rows[index] || { name: '', count: 0, agreedAmount: 0 }),
+                [field]: field === 'count' || field === 'agreedAmount' ? Number(value || 0) : value,
+            };
+            return { ...prev, doctorDiagnoses: rows };
+        });
+    };
+
     // OCR 저장
     const handleOcrSave = () => {
         if (!ocrModal) return;
         const { yearMonth, parsedData } = ocrModal;
+
+        if (ocrModal.type === 'consultationOverall') {
+            try {
+                const parsed = normalizeConsultationOverallParsed({
+                    ...parsedData,
+                    year: yearMonth.year,
+                    month: yearMonth.month,
+                    rejectedCount: Math.max(Number(parsedData.totalConsultations || 0) - Number(parsedData.agreedCount || 0) - Number(parsedData.partialCount || 0), 0),
+                    doctorDiagnoses: (ocrModal.doctorDiagnoses || [])
+                        .map(item => ({
+                            name: String(item.name || '').trim(),
+                            count: Number(item.count || 0),
+                            agreedAmount: Number(item.agreedAmount || 0),
+                        }))
+                        .filter(item => item.name && item.count > 0),
+                });
+                validateConsultationOverallParsed(parsed);
+                saveConsultationOverallData(parsed);
+                addLog('success', `✅ [상담분석/전체동의율] ${yearMonth.year}년 ${yearMonth.month} 저장 완료`);
+                setOcrModal(null);
+            } catch (err) {
+                addLog('error', `❌ [상담분석/전체동의율 저장 오류] ${err.message}`);
+            }
+            return;
+        }
 
         // OCR이 못 읽은 필드는 null, 읽은 필드만 저장
         const safeNum = (v) => {
@@ -1546,6 +3336,7 @@ const Admin = () => {
             workDays: safeNum(parsedData.workDays),
             newPt:    safeNum(parsedData.newPt),
             oldPt:    safeNum(parsedData.oldPt),
+            totalVisits: safeNum(parsedData.totalVisits),
             total:    safeNum(parsedData.total),
             avgNewPt: safeNum(parsedData.avgNewPt),
             avgOldPt: safeNum(parsedData.avgOldPt),
@@ -1554,7 +3345,7 @@ const Admin = () => {
         saveLedgerData(yearMonth.year, yearMonth.month, data);
         addLog('success',
             `✅ [환자분석] ${yearMonth.year}년 ${yearMonth.month} 월간장부 저장 완료 ` +
-            `(진료일수: ${data.workDays ?? '-'}일 / 신환: ${data.newPt ?? '-'}명 / 구환: ${data.oldPt ?? '-'}명 / 총접수: ${data.total ?? '-'}명)`
+            `(진료일수: ${data.workDays ?? '-'}일 / 신환: ${data.newPt ?? '-'}명 / 구환: ${data.oldPt ?? '-'}명 / 총내원횟수: ${data.totalVisits ?? '-'}회 / 총접수: ${data.total ?? '-'}명)`
         );
         setOcrModal(null);
 
@@ -1584,6 +3375,198 @@ const Admin = () => {
                         <div className="admin-loading-file">{ocrProcessingFile}</div>
                         <div className="admin-loading-bar">
                             <div className="admin-loading-bar-fill" />
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {pendingConsultationBundle && (
+                <div style={{
+                    position: 'fixed', inset: 0,
+                    background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    zIndex: 1000, padding: '1rem',
+                }}>
+                    <div style={{
+                        background: 'var(--card-bg)', borderRadius: '1.2rem',
+                        boxShadow: '0 24px 60px rgba(0,0,0,0.3)',
+                        width: '100%', maxWidth: '1180px',
+                        maxHeight: '90vh', overflowY: 'auto', padding: '2rem',
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '1.2rem' }}>
+                            <div>
+                                <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                    상담현황 MD 파싱 결과
+                                </h2>
+                                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                                    {pendingConsultationBundle.fileName} · 확인/수정 후 승인하면 상담분석에 반영됩니다.
+                                </p>
+                            </div>
+                            <button onClick={() => setPendingConsultationBundle(null)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                                <X size={22} />
+                            </button>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)' }}>대상 연월</span>
+                            <select
+                                value={pendingConsultationBundle.overall.year || '2026'}
+                                onChange={e => setPendingConsultationBundle(prev => prev ? {
+                                    ...prev,
+                                    overall: { ...prev.overall, year: e.target.value },
+                                    consultant: { ...prev.consultant, year: e.target.value },
+                                    rejected: { ...prev.rejected, year: e.target.value },
+                                } : prev)}
+                                style={selectStyle}
+                            >
+                                {YEARS.map(y => <option key={y} value={y}>{y}년</option>)}
+                            </select>
+                            <select
+                                value={pendingConsultationBundle.overall.month || '1월'}
+                                onChange={e => setPendingConsultationBundle(prev => prev ? {
+                                    ...prev,
+                                    overall: { ...prev.overall, month: e.target.value },
+                                    consultant: { ...prev.consultant, month: e.target.value },
+                                    rejected: { ...prev.rejected, month: e.target.value },
+                                } : prev)}
+                                style={selectStyle}
+                            >
+                                {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+                            </select>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                의사 {pendingConsultationBundle.overall.doctorDiagnoses?.length || 0}명 · 상담자 {pendingConsultationBundle.consultant.rows?.length || 0}명 · 미동의 {pendingConsultationBundle.rejected.rows?.length || 0}명
+                            </span>
+                        </div>
+
+                        <div style={{ marginBottom: '1rem', padding: '0.8rem 1rem', borderRadius: '0.7rem', background: 'rgba(59,130,246,0.08)', color: 'var(--text-primary)', fontSize: '0.88rem', lineHeight: 1.6 }}>
+                            아래 값은 아직 저장되지 않았습니다. 숫자나 이름을 수정한 뒤 <strong>승인 후 반영</strong>을 누르면 상담분석에 입력됩니다.
+                        </div>
+
+                        <section style={{ marginTop: '1rem' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.75rem' }}>전체 동의율</h3>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
+                                {CONSULTATION_OCR_FIELDS.map(({ key, label, unit }) => (
+                                    <label key={key} style={{ display: 'grid', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                                        {label}
+                                        <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'center' }}>
+                                            <input
+                                                type="number"
+                                                value={pendingConsultationBundle.overall[key] ?? ''}
+                                                onChange={e => updatePendingConsultationOverall(key, e.target.value)}
+                                                style={inputStyle}
+                                            />
+                                            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{unit}</span>
+                                        </div>
+                                    </label>
+                                ))}
+                            </div>
+                        </section>
+
+                        <section style={{ marginTop: '1.4rem' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.75rem' }}>의사별 진단수 / 동의금액</h3>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.75rem' }}>
+                                {[...(pendingConsultationBundle.overall.doctorDiagnoses || []), { name: '', count: '', agreedAmount: '' }]
+                                    .slice(0, Math.max((pendingConsultationBundle.overall.doctorDiagnoses || []).length + 1, 4))
+                                    .map((doctor, index) => (
+                                        <div key={index} style={{ border: '1px solid var(--border-color)', borderRadius: '0.65rem', background: 'var(--bg-color)', padding: '0.75rem', display: 'grid', gap: '0.55rem', minWidth: 0, overflow: 'hidden' }}>
+                                            <input
+                                                type="text"
+                                                value={doctor.name || ''}
+                                                onChange={e => updatePendingConsultationDoctor(index, 'name', e.target.value)}
+                                                style={{ ...inputStyle, width: '100%', minWidth: 0, boxSizing: 'border-box' }}
+                                                placeholder="의사 이름"
+                                            />
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 0.7fr) minmax(0, 1.3fr)', gap: '0.5rem', minWidth: 0 }}>
+                                                <input
+                                                    type="number"
+                                                    value={doctor.count ?? ''}
+                                                    onChange={e => updatePendingConsultationDoctor(index, 'count', e.target.value)}
+                                                    style={{ ...inputStyle, width: '100%', minWidth: 0, boxSizing: 'border-box' }}
+                                                    placeholder="진단수"
+                                                />
+                                                <input
+                                                    type="number"
+                                                    value={doctor.agreedAmount ?? ''}
+                                                    onChange={e => updatePendingConsultationDoctor(index, 'agreedAmount', e.target.value)}
+                                                    style={{ ...inputStyle, width: '100%', minWidth: 0, boxSizing: 'border-box' }}
+                                                    placeholder="동의금액"
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                            </div>
+                        </section>
+
+                        <section style={{ marginTop: '1.4rem' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.75rem' }}>상담자별 동의율</h3>
+                            <div className="table-responsive" style={{ maxHeight: 280, overflowY: 'auto' }}>
+                                <table className="admin-table">
+                                    <thead>
+                                        <tr>
+                                            <th>상담자</th>
+                                            <th>환자수</th>
+                                            <th>총 동의수</th>
+                                            <th>미동의</th>
+                                            <th>상담금액</th>
+                                            <th>동의금액</th>
+                                            <th>금액대비 동의율</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {(pendingConsultationBundle.consultant.rows || []).map((row, index) => (
+                                            <tr key={`${row.name}-${index}`}>
+                                                <td><input value={row.name || ''} onChange={e => updatePendingConsultantRow(index, 'name', e.target.value)} style={inputStyle} /></td>
+                                                <td><input type="number" value={row.patientCount ?? ''} onChange={e => updatePendingConsultantRow(index, 'patientCount', e.target.value)} style={inputStyle} /></td>
+                                                <td><input type="number" value={row.totalAgreed ?? ''} onChange={e => updatePendingConsultantRow(index, 'totalAgreed', e.target.value)} style={inputStyle} /></td>
+                                                <td><input type="number" value={row.rejected ?? ''} onChange={e => updatePendingConsultantRow(index, 'rejected', e.target.value)} style={inputStyle} /></td>
+                                                <td><input type="number" value={row.consultationAmount ?? ''} onChange={e => updatePendingConsultantRow(index, 'consultationAmount', e.target.value)} style={inputStyle} /></td>
+                                                <td><input type="number" value={row.agreedAmount ?? ''} onChange={e => updatePendingConsultantRow(index, 'agreedAmount', e.target.value)} style={inputStyle} /></td>
+                                                <td><input type="number" value={row.amountAgreementRate ?? ''} onChange={e => updatePendingConsultantRow(index, 'amountAgreementRate', e.target.value)} style={inputStyle} /></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        <section style={{ marginTop: '1.4rem' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.75rem' }}>미동의 환자 현황</h3>
+                            <div className="table-responsive" style={{ maxHeight: 320, overflowY: 'auto' }}>
+                                <table className="admin-table">
+                                    <thead>
+                                        <tr>
+                                            <th>담당 Dr</th>
+                                            <th>신환</th>
+                                            <th>구환</th>
+                                            <th>환자성함</th>
+                                            <th>내원날짜</th>
+                                            <th>상담자</th>
+                                            <th>미동의사유</th>
+                                            <th>비동의금액</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {(pendingConsultationBundle.rejected.rows || []).map((row, index) => (
+                                            <tr key={`${row.patientName}-${index}`}>
+                                                <td><input value={row.doctor || ''} onChange={e => updatePendingRejectedRow(index, 'doctor', e.target.value)} style={inputStyle} /></td>
+                                                <td><input value={row.newPatient || ''} onChange={e => updatePendingRejectedRow(index, 'newPatient', e.target.value)} style={inputStyle} /></td>
+                                                <td><input value={row.oldPatient || ''} onChange={e => updatePendingRejectedRow(index, 'oldPatient', e.target.value)} style={inputStyle} /></td>
+                                                <td><input value={row.patientName || ''} onChange={e => updatePendingRejectedRow(index, 'patientName', e.target.value)} style={inputStyle} /></td>
+                                                <td><input value={row.visitDate || ''} onChange={e => updatePendingRejectedRow(index, 'visitDate', e.target.value)} style={inputStyle} /></td>
+                                                <td><input value={row.consultant || ''} onChange={e => updatePendingRejectedRow(index, 'consultant', e.target.value)} style={inputStyle} /></td>
+                                                <td><input value={row.reason || ''} onChange={e => updatePendingRejectedRow(index, 'reason', e.target.value)} style={inputStyle} /></td>
+                                                <td><input type="number" value={row.rejectedAmount ?? ''} onChange={e => updatePendingRejectedRow(index, 'rejectedAmount', e.target.value)} style={inputStyle} /></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
+                            <button onClick={() => setPendingConsultationBundle(null)} style={cancelBtnStyle}>취소</button>
+                            <button onClick={handleApproveConsultationBundle} style={saveBtnStyle}>승인 후 반영</button>
                         </div>
                     </div>
                 </div>
@@ -1745,7 +3728,7 @@ const Admin = () => {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                             <div>
                                 <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                    📄 월간장부 OCR 분석 결과
+                                    📄 {ocrModal.type === 'consultationOverall' ? '전체동의율 OCR 분석 결과' : '월간장부 OCR 분석 결과'}
                                 </h2>
                                 <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>{ocrModal.file.name}</p>
                             </div>
@@ -1794,11 +3777,11 @@ const Admin = () => {
                         {/* 미리보기 + 수치 편집 */}
                         <div style={{ display: 'flex', gap: '1.5rem' }}>
                             <div style={{ flexShrink: 0, width: '220px' }}>
-                                <img src={ocrModal.previewUrl} alt="월간장부"
+                                <img src={ocrModal.previewUrl} alt={ocrModal.type === 'consultationOverall' ? '전체동의율' : '월간장부'}
                                     style={{ width: '100%', borderRadius: '0.6rem', border: '1px solid var(--border-color)', objectFit: 'contain', maxHeight: '300px' }} />
                             </div>
                             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                {OCR_FIELDS.map(({ key, label, unit, readOnly }) => {
+                                {(ocrModal.type === 'consultationOverall' ? CONSULTATION_OCR_FIELDS : OCR_FIELDS).map(({ key, label, unit, readOnly }) => {
                                     const isEmpty = !readOnly && (ocrModal.parsedData[key] === '' || ocrModal.parsedData[key] == null);
                                     return (
                                         <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -1820,12 +3803,51 @@ const Admin = () => {
                                         </div>
                                     );
                                 })}
+                                {ocrModal.type === 'consultationOverall' && (
+                                    <div style={{ marginTop: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
+                                        <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.6rem' }}>
+                                            의사별 진단수
+                                        </div>
+                                        {[0, 1, 2, 3].map(index => {
+                                            const doctor = (ocrModal.doctorDiagnoses || [])[index] || { name: '', count: '', agreedAmount: '' };
+                                            return (
+                                                <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.55rem' }}>
+                                                    <input
+                                                        type="text"
+                                                        value={doctor.name || ''}
+                                                        onChange={e => handleConsultationDoctorChange(index, 'name', e.target.value)}
+                                                        style={{ ...inputStyle, flex: '1 1 0' }}
+                                                        placeholder="의사 이름"
+                                                    />
+                                                    <input
+                                                        type="number"
+                                                        value={doctor.count ?? ''}
+                                                        onChange={e => handleConsultationDoctorChange(index, 'count', e.target.value)}
+                                                        style={{ ...inputStyle, flex: '0 0 110px' }}
+                                                        placeholder="진단수"
+                                                    />
+                                                    <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>건</span>
+                                                    <input
+                                                        type="number"
+                                                        value={doctor.agreedAmount ?? ''}
+                                                        onChange={e => handleConsultationDoctorChange(index, 'agreedAmount', e.target.value)}
+                                                        style={{ ...inputStyle, flex: '0 0 150px' }}
+                                                        placeholder="동의금액"
+                                                    />
+                                                    <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>원</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
                         {/* 빈 값 경고 */}
                         {(() => {
-                            const keyFields = ['workDays', 'newPt', 'oldPt', 'totalVisits'];
+                            const keyFields = ocrModal.type === 'consultationOverall'
+                                ? ['totalConsultations', 'agreedCount', 'partialCount', 'newPatients', 'oldPatients', 'totalPatients', 'diagnosisAmount', 'consultationAmount', 'agreedAmount']
+                                : ['workDays', 'newPt', 'oldPt', 'totalVisits'];
                             const emptyCount = keyFields.filter(k => ocrModal.parsedData[k] === '' || ocrModal.parsedData[k] == null).length;
                             if (emptyCount === 0) return null;
                             return (
@@ -1847,7 +3869,7 @@ const Admin = () => {
                             <button onClick={handleOcrSave}
                                 disabled={ocrModal.status === 'loading'}
                                 style={{ ...saveBtnStyle, opacity: ocrModal.status === 'loading' ? 0.5 : 1, cursor: ocrModal.status === 'loading' ? 'not-allowed' : 'pointer' }}>
-                                환자분석에 저장
+                                {ocrModal.type === 'consultationOverall' ? '상담분석에 저장' : '환자분석에 저장'}
                             </button>
                         </div>
 
@@ -1900,16 +3922,16 @@ const Admin = () => {
                     >
                         <FileSpreadsheet size={48} className="upload-icon" />
                         <h3>파일을 여기로 드래그하거나 클릭하여 업로드하세요</h3>
-                        <p>.xlsx, .xls, .csv, .jpg, .jpeg, .png, .gif, .webp 지원</p>
+                        <p>.xlsx, .xls, .csv, .md, .jpg, .jpeg, .png, .gif, .webp 지원</p>
                         <p style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                            💡 엑셀/사진 업로드를 한 곳에서 처리합니다.
+                            💡 엑셀/MD/사진 업로드를 한 곳에서 처리합니다.
                         </p>
                         <input
                             type="file"
                             multiple
                             ref={fileInputRef}
                             onChange={(e) => { handleUnifiedUpload(e.target.files); e.target.value = ''; }}
-                            accept=".xlsx,.xls,.csv,image/*"
+                            accept=".xlsx,.xls,.csv,.md,text/markdown,image/*"
                             style={{ display: 'none' }}
                         />
                     </div>
