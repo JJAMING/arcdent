@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Users, Upload, FileSpreadsheet, CheckCircle, XCircle, X } from 'lucide-react';
+import { Users, Upload, FileSpreadsheet, CheckCircle, XCircle, X, FileDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Tesseract from 'tesseract.js';
 import { parseImplantExcel } from '../utils/implantExcelParser';
@@ -33,6 +33,61 @@ const cancelBtnStyle = {
 
 const YEARS  = ['2023', '2024', '2025', '2026'];
 const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+const REPORT_CATEGORIES = [
+    { key: 'home', label: 'HOME 종합 대시보드' },
+    { key: 'sales', label: '매출분석' },
+    { key: 'treatment', label: '진료분석' },
+    { key: 'patient', label: '환자분석' },
+    { key: 'newPatient', label: '신환분석' },
+    { key: 'consultation', label: '상담분석' },
+    { key: 'insurance', label: '보험청구분석' },
+];
+const REPORT_SUBTABS = {
+    home: [{ key: 'all', label: '종합 대시보드' }],
+    sales: [
+        { key: 'all', label: '전체 탭' },
+        { key: 'revenue', label: '총매출현황' },
+        { key: 'topPatients', label: '진료비 상위' },
+        { key: 'newPatientRevenue', label: '신환수익비교' },
+        { key: 'doctorRevenue', label: '매출분석(의사)' },
+    ],
+    treatment: [
+        { key: 'all', label: '전체 탭' },
+        { key: 'implant', label: '임플란트' },
+        { key: 'insuranceImplant', label: '보험 임플란트' },
+        { key: 'insuranceDenture', label: '보험 틀니' },
+    ],
+    patient: [
+        { key: 'all', label: '전체 탭' },
+        { key: 'newOld', label: '총 환자수(신환/구환)' },
+        { key: 'doctorPatients', label: '총 환자수(의사)' },
+        { key: 'labRequests', label: '기공물 의뢰 현황' },
+    ],
+    newPatient: [
+        { key: 'all', label: '전체 탭' },
+        { key: 'path', label: '신환 내원경로 현황' },
+        { key: 'treatmentRate', label: '내원 경로별 치료 이행율' },
+        { key: 'age', label: '연령별 신환 현황' },
+        { key: 'unitPrice', label: '내원 경로별 객단가' },
+    ],
+    consultation: [
+        { key: 'all', label: '전체 탭' },
+        { key: 'overall', label: '전체 동의율' },
+        { key: 'consultant', label: '상담자별 동의율' },
+        { key: 'rejected', label: '미동의 환자 현황' },
+    ],
+    insurance: [
+        { key: 'all', label: '전체 탭' },
+        { key: 'claim', label: '보험청구액 통계' },
+        { key: 'fee', label: '보험수가별 통계' },
+    ],
+};
+const REPORT_PERIODS = [
+    { key: 'all', label: '전체보기' },
+    { key: 'first', label: '상반기' },
+    { key: 'second', label: '하반기' },
+    { key: 'month', label: '월별' },
+];
 const NEW_PATIENT_STORAGE_KEY = 'new_patient_analysis_data';
 const CONSULTATION_CONSULTANT_STORAGE_KEY = 'consultation_consultant_data';
 const CONSULTATION_REJECTED_STORAGE_KEY = 'consultation_rejected_data';
@@ -721,6 +776,13 @@ const Admin = () => {
     const [isDragOver, setIsDragOver]     = useState(false);
     const [pendingNewPatientUploads, setPendingNewPatientUploads] = useState([]);
     const [pendingConsultationBundle, setPendingConsultationBundle] = useState(null);
+    const [reportMode, setReportMode] = useState('single');
+    const [reportCategory, setReportCategory] = useState('home');
+    const [reportSubTab, setReportSubTab] = useState('all');
+    const [reportBundleCategories, setReportBundleCategories] = useState(['home', 'sales', 'patient', 'newPatient', 'consultation']);
+    const [reportYear, setReportYear] = useState('2025');
+    const [reportPeriod, setReportPeriod] = useState('all');
+    const [reportMonth, setReportMonth] = useState('1월');
 
     // OCR 모달
     const [ocrModal, setOcrModal]   = useState(null);
@@ -733,6 +795,470 @@ const Admin = () => {
 
     const addLog = (type, msg) => {
         setUploadLog(prev => [...prev, { type, msg, id: Date.now() }]);
+    };
+
+    const getReportYears = () => {
+        const years = new Set(YEARS);
+        [
+            'parsed_sales_data',
+            'patient_ledger_data',
+            NEW_PATIENT_STORAGE_KEY,
+            'treatment_performance_data',
+            'insurance_claim_data',
+            'insurance_fee_stats_data',
+            'consultation_overall_data',
+            CONSULTATION_CONSULTANT_STORAGE_KEY,
+            CONSULTATION_REJECTED_STORAGE_KEY,
+        ].forEach(key => {
+            try {
+                const parsed = JSON.parse(localStorage.getItem(key) || '{}');
+                Object.keys(parsed || {}).forEach(year => years.add(String(year)));
+            } catch (e) { /* ignore */ }
+        });
+        return Array.from(years).sort((a, b) => Number(b) - Number(a));
+    };
+
+    const reportMonths = reportPeriod === 'month'
+        ? [reportMonth]
+        : reportPeriod === 'first'
+            ? MONTHS.slice(0, 6)
+            : reportPeriod === 'second'
+                ? MONTHS.slice(6)
+                : MONTHS;
+
+    const reportPeriodLabel = reportPeriod === 'month'
+        ? reportMonth
+        : REPORT_PERIODS.find(item => item.key === reportPeriod)?.label || '전체보기';
+    const reportSubTabs = REPORT_SUBTABS[reportCategory] || [{ key: 'all', label: '전체 탭' }];
+    const reportSubTabLabel = reportSubTabs.find(item => item.key === reportSubTab)?.label || reportSubTabs[0]?.label || '전체 탭';
+
+    const readReportStore = (key, fallback = {}) => {
+        try {
+            return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback));
+        } catch (e) {
+            return fallback;
+        }
+    };
+
+    const normalizeReportRows = (store, year, emptyRow = {}) => {
+        const yearData = store?.[year];
+        return MONTHS.map(month => {
+            const found = Array.isArray(yearData)
+                ? yearData.find(row => row.month === month)
+                : yearData?.[month];
+            return { month, ...emptyRow, ...(found || {}) };
+        }).filter(row => reportMonths.includes(row.month));
+    };
+
+    const reportNumber = (value, digits = 0) => {
+        const number = Number(value || 0);
+        return number.toLocaleString('ko-KR', { maximumFractionDigits: digits });
+    };
+    const reportWon = (value) => `${Math.round(Number(value || 0)).toLocaleString('ko-KR')}원`;
+    const reportPercent = (value) => `${Number(value || 0).toFixed(1)}%`;
+    const reportSum = (rows, key) => rows.reduce((acc, row) => acc + Number(row?.[key] || 0), 0);
+    const escapeReportHtml = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+
+    const reportTable = (headers, rows) => `
+        <table>
+            <thead><tr>${headers.map(header => `<th>${escapeReportHtml(header)}</th>`).join('')}</tr></thead>
+            <tbody>
+                ${rows.length > 0
+                    ? rows.map(row => `<tr>${row.map(cell => `<td>${escapeReportHtml(cell)}</td>`).join('')}</tr>`).join('')
+                    : `<tr><td colspan="${headers.length}">데이터가 없습니다.</td></tr>`}
+            </tbody>
+        </table>
+    `;
+
+    const reportCards = (items) => `
+        <div class="cards">
+            ${items.map(item => `
+                <div class="card">
+                    <span>${escapeReportHtml(item.label)}</span>
+                    <strong>${escapeReportHtml(item.value)}</strong>
+                    <small>${escapeReportHtml(item.sub || '')}</small>
+                </div>
+            `).join('')}
+        </div>
+    `;
+
+    const buildReportSections = (category, year, tab = 'all') => {
+        const includeTab = (key) => tab === 'all' || tab === key;
+        const salesRows = normalizeReportRows(readReportStore('parsed_sales_data'), year, {
+            total: 0, netSales: 0, insurance: 0, newPatient: 0, newPatientSales: 0,
+        });
+        const ledgerRows = normalizeReportRows(readReportStore('patient_ledger_data'), year, {
+            workDays: 0, newPt: 0, oldPt: 0, totalVisits: 0, total: 0,
+        });
+        const treatmentRows = normalizeReportRows(readReportStore('treatment_performance_data'), year, {
+            surg1: 0, implantTotal: 0, insImp: 0, insDent: 0,
+        });
+        const newPatientRows = normalizeReportRows(readReportStore(NEW_PATIENT_STORAGE_KEY), year, {
+            sources: {}, sourceRevenue: {}, sourceAvgFee: {},
+        });
+        const consultationRows = normalizeReportRows(readReportStore('consultation_overall_data'), year, {
+            totalConsultations: 0, agreedCount: 0, partialCount: 0, agreedAmount: 0,
+            diagnosisAmount: 0, consultationAmount: 0, consultationAgreementRate: 0,
+        });
+        const consultantRows = normalizeReportRows(readReportStore(CONSULTATION_CONSULTANT_STORAGE_KEY), year, { rows: [] });
+        const rejectedRows = normalizeReportRows(readReportStore(CONSULTATION_REJECTED_STORAGE_KEY), year, { rows: [] });
+        const claimRows = normalizeReportRows(readReportStore('insurance_claim_data'), year, { health: 0, medicalAid: 0, amount: 0 });
+        const feeRows = normalizeReportRows(readReportStore('insurance_fee_stats_data'), year, { fees: [] });
+        const topPatientStore = readReportStore('top_patients_raw_data', []);
+        const topPatients = (Array.isArray(topPatientStore) ? topPatientStore : [])
+            .filter(item => {
+                const itemYear = String(item.year || item.연도 || year);
+                const itemMonth = item.month || item.월 || item.createdMonth || '';
+                return itemYear === String(year) && (reportPeriod !== 'month' || !itemMonth || itemMonth === reportMonth);
+            })
+            .slice(0, 30);
+
+        const salesCards = [
+            { label: '총매출', value: reportWon(reportSum(salesRows, 'total')), sub: reportPeriodLabel },
+            { label: '순매출', value: reportWon(reportSum(salesRows, 'netSales')), sub: '현금+카드+기타' },
+            { label: '보험청구', value: reportWon(reportSum(salesRows, 'insurance')), sub: '공단부담/청구액' },
+        ];
+
+        if (category === 'home') {
+            const totalPatients = ledgerRows.reduce((acc, row) => acc + Number(row.total || row.totalVisits || 0), 0);
+            const newPatients = ledgerRows.reduce((acc, row, index) => acc + Number(row.newPt || salesRows[index]?.newPatient || 0), 0);
+            const consultationAmount = reportSum(consultationRows, 'consultationAmount');
+            const agreedAmount = reportSum(consultationRows, 'agreedAmount');
+            const consultationRate = consultationAmount > 0 ? (agreedAmount / consultationAmount) * 100 : 0;
+            return `
+                ${reportCards([...salesCards,
+                    { label: '총 접수 환자 수', value: `${reportNumber(totalPatients, 1)}명`, sub: reportPeriodLabel },
+                    { label: '신환 수', value: `${reportNumber(newPatients)}명`, sub: reportPeriodLabel },
+                    { label: '상담 동의율', value: reportPercent(consultationRate), sub: '상담금액 대비' },
+                ])}
+                <h2>월별 핵심 지표</h2>
+                ${reportTable(['월', '총매출', '순매출', '보험청구', '신환수'], salesRows.map((row, index) => [
+                    row.month, reportWon(row.total), reportWon(row.netSales), reportWon(row.insurance), `${reportNumber(ledgerRows[index]?.newPt || row.newPatient)}명`,
+                ]))}
+            `;
+        }
+
+        if (category === 'sales') {
+            const doctorTotals = {};
+            salesRows.forEach(row => {
+                Object.entries(row.doctorData || {}).forEach(([name, data]) => {
+                    doctorTotals[name] = doctorTotals[name] || { pure: 0, insurance: 0, total: 0 };
+                    doctorTotals[name].pure += Number(data.pure || 0);
+                    doctorTotals[name].insurance += Number(data.insurance || 0);
+                    doctorTotals[name].total += Number(data.pure || 0) + Number(data.insurance || 0);
+                });
+            });
+            return `
+                ${includeTab('revenue') ? `
+                    ${reportCards(salesCards)}
+                    <h2>총매출현황</h2>
+                    ${reportTable(['월', '총매출', '순매출', '보험청구'], salesRows.map(row => [
+                        row.month, reportWon(row.total), reportWon(row.netSales), reportWon(row.insurance),
+                    ]))}
+                ` : ''}
+                ${includeTab('topPatients') ? `
+                    <h2>진료비 상위</h2>
+                    ${reportTable(['환자명', '차트번호', '총 진료비', '수납액'], topPatients.map(item => [
+                        item.patientName || item.name || item.환자명 || '-',
+                        item.chartNo || item.chartNumber || item.차트번호 || '-',
+                        reportWon(item.totalAmount || item.totalFee || item.총진료비 || item.amount),
+                        reportWon(item.paidAmount || item.payment || item.수납액 || 0),
+                    ]))}
+                ` : ''}
+                ${includeTab('newPatientRevenue') ? `
+                    <h2>신환수익비교</h2>
+                    ${reportTable(['월', '순매출', '신환 매출', '신환 수익 비중'], salesRows.map(row => [
+                        row.month,
+                        reportWon(row.netSales),
+                        reportWon(row.newPatientSales),
+                        reportPercent(Number(row.netSales || 0) > 0 ? (Number(row.newPatientSales || 0) / Number(row.netSales || 0)) * 100 : 0),
+                    ]))}
+                ` : ''}
+                ${includeTab('doctorRevenue') ? `
+                    <h2>매출분석(의사)</h2>
+                    ${reportTable(['의사', '순수매출', '보험청구', '총매출'], Object.entries(doctorTotals).map(([name, value]) => [
+                        name, reportWon(value.pure), reportWon(value.insurance), reportWon(value.total),
+                    ]))}
+                ` : ''}
+            `;
+        }
+
+        if (category === 'treatment') {
+            return `
+                ${reportCards([
+                    ...(includeTab('implant') ? [{ label: '임플란트 총계', value: `${reportNumber(reportSum(treatmentRows, 'implantTotal'))}건`, sub: reportPeriodLabel }] : []),
+                    ...(includeTab('insuranceImplant') ? [{ label: '보험 임플란트', value: `${reportNumber(reportSum(treatmentRows, 'insImp'))}건`, sub: reportPeriodLabel }] : []),
+                    ...(includeTab('insuranceDenture') ? [{ label: '보험 틀니', value: `${reportNumber(reportSum(treatmentRows, 'insDent'))}건`, sub: reportPeriodLabel }] : []),
+                ])}
+                ${includeTab('implant') ? `
+                    <h2>임플란트</h2>
+                    ${reportTable(['월', '수술 1차', '임플란트 총계', '오스템', '덴티움', '디오', '스트라우만'], treatmentRows.map(row => [
+                        row.month, reportNumber(row.surg1), reportNumber(row.implantTotal), reportNumber(row.osstem), reportNumber(row.dentium), reportNumber(row.dio), reportNumber(row.straumann),
+                    ]))}
+                ` : ''}
+                ${includeTab('insuranceImplant') ? `
+                    <h2>보험 임플란트</h2>
+                    ${reportTable(['월', '보험 임플란트', '1단계', '2단계', '3단계'], treatmentRows.map(row => [
+                        row.month, reportNumber(row.insImp), reportNumber(row.insImpStep1), reportNumber(row.insImpStep2), reportNumber(row.insImpStep3),
+                    ]))}
+                ` : ''}
+                ${includeTab('insuranceDenture') ? `
+                    <h2>보험 틀니</h2>
+                    ${reportTable(['월', '보험 틀니', '1단계', '5단계', '6단계'], treatmentRows.map(row => [
+                        row.month, reportNumber(row.insDent), reportNumber(row.insDentStep1), reportNumber(row.insDentStep5), reportNumber(row.insDentStep6),
+                    ]))}
+                ` : ''}
+            `;
+        }
+
+        if (category === 'patient') {
+            const doctorTotals = {};
+            const labTotals = {};
+            ledgerRows.forEach(row => {
+                Object.entries(row.doctorPatients || {}).forEach(([name, value]) => {
+                    doctorTotals[name] = (doctorTotals[name] || 0) + Number(value || 0);
+                });
+                (row.labRequests || []).forEach(item => {
+                    const key = `${item.category || item.group || item.type || item.kind || '미분류'} - ${item.name || item.labType || item.item || item.type || '미분류'}`;
+                    labTotals[key] = (labTotals[key] || 0) + Number(item.count || item.value || item.teeth || 0);
+                });
+            });
+            return `
+                ${includeTab('newOld') ? `
+                    ${reportCards([
+                        { label: '신환 합계', value: `${reportNumber(reportSum(ledgerRows, 'newPt'))}명`, sub: reportPeriodLabel },
+                        { label: '구환 합계', value: `${reportNumber(reportSum(ledgerRows, 'oldPt'))}명`, sub: reportPeriodLabel },
+                        { label: '총 내원횟수', value: `${reportNumber(reportSum(ledgerRows, 'totalVisits'))}회`, sub: reportPeriodLabel },
+                    ])}
+                    <h2>총 환자수(신환/구환)</h2>
+                    ${reportTable(['월', '진료일수', '신환', '구환', '총 내원횟수', '총 접수 환자 수'], ledgerRows.map(row => [
+                        row.month, `${reportNumber(row.workDays)}일`, `${reportNumber(row.newPt)}명`, `${reportNumber(row.oldPt)}명`, `${reportNumber(row.totalVisits)}회`, `${reportNumber(row.total, 1)}명`,
+                    ]))}
+                ` : ''}
+                ${includeTab('doctorPatients') ? `
+                    <h2>총 환자수(의사)</h2>
+                    ${reportTable(['의사', '진료 환자수'], Object.entries(doctorTotals).sort((a, b) => b[1] - a[1]).map(([name, value]) => [
+                        name, `${reportNumber(value)}명`,
+                    ]))}
+                ` : ''}
+                ${includeTab('labRequests') ? `
+                    <h2>기공물 의뢰 현황</h2>
+                    ${reportTable(['구분 / 기공물 종류', '건수'], Object.entries(labTotals).sort((a, b) => b[1] - a[1]).map(([name, value]) => [
+                        name, `${reportNumber(value)}건`,
+                    ]))}
+                ` : ''}
+            `;
+        }
+
+        if (category === 'newPatient') {
+            const sourceTotals = {};
+            const treatmentRates = {};
+            const ageTotals = {};
+            const avgFeeTotals = {};
+            const avgFeeCounts = {};
+            newPatientRows.forEach(row => {
+                Object.entries(row.sources || {}).forEach(([name, value]) => {
+                    sourceTotals[name] = (sourceTotals[name] || 0) + Number(value || 0);
+                });
+                Object.entries(row.sourceInsuranceRatios || {}).forEach(([name, value]) => {
+                    const rate = Number((value?.insurance ?? value?.insuranceRate ?? value) || 0);
+                    if (rate > 0) {
+                        treatmentRates[name] = treatmentRates[name] || { sum: 0, count: 0 };
+                        treatmentRates[name].sum += rate;
+                        treatmentRates[name].count += 1;
+                    }
+                });
+                Object.entries(row.ages || {}).forEach(([name, value]) => {
+                    ageTotals[name] = (ageTotals[name] || 0) + Number(value || 0);
+                });
+                Object.entries(row.sourceAvgFee || {}).forEach(([name, value]) => {
+                    const fee = Number(value || 0);
+                    if (fee > 0) {
+                        avgFeeTotals[name] = (avgFeeTotals[name] || 0) + fee;
+                        avgFeeCounts[name] = (avgFeeCounts[name] || 0) + 1;
+                    }
+                });
+            });
+            const sourceList = Object.entries(sourceTotals).sort((a, b) => b[1] - a[1]);
+            return `
+                ${includeTab('path') ? `
+                    ${reportCards([
+                        { label: '신환 내원경로 합계', value: `${reportNumber(sourceList.reduce((acc, [, value]) => acc + value, 0))}명`, sub: reportPeriodLabel },
+                        { label: '주요 내원경로', value: sourceList[0]?.[0] || '-', sub: sourceList[0] ? `${reportNumber(sourceList[0][1])}명` : '데이터 없음' },
+                    ])}
+                    <h2>신환 내원경로 현황</h2>
+                    ${reportTable(['내원경로', '신환 수'], sourceList.map(([name, value]) => [name, `${reportNumber(value)}명`]))}
+                ` : ''}
+                ${includeTab('treatmentRate') ? `
+                    <h2>내원 경로별 치료 이행율</h2>
+                    ${reportTable(['내원경로', '보험환자 비율'], Object.entries(treatmentRates).map(([name, value]) => [
+                        name, reportPercent(value.count ? value.sum / value.count : 0),
+                    ]))}
+                ` : ''}
+                ${includeTab('age') ? `
+                    <h2>연령별 신환 현황</h2>
+                    ${reportTable(['연령대', '신환 수'], Object.entries(ageTotals).map(([name, value]) => [
+                        name, `${reportNumber(value)}명`,
+                    ]))}
+                ` : ''}
+                ${includeTab('unitPrice') ? `
+                    <h2>내원 경로별 객단가</h2>
+                    ${reportTable(['내원경로', '평균 진료비'], Object.entries(avgFeeTotals).map(([name, value]) => [
+                        name, reportWon(avgFeeCounts[name] ? value / avgFeeCounts[name] : 0),
+                    ]))}
+                ` : ''}
+            `;
+        }
+
+        if (category === 'consultation') {
+            const consultantList = consultantRows.flatMap(row => row.rows || []);
+            const rejectedList = rejectedRows.flatMap(row => row.rows || []);
+            return `
+                ${reportCards([
+                    ...(includeTab('overall') ? [
+                        { label: '최종동의금액', value: reportWon(reportSum(consultationRows, 'agreedAmount')), sub: reportPeriodLabel },
+                        { label: '상담금액 대비 동의율', value: reportPercent(reportSum(consultationRows, 'consultationAmount') ? (reportSum(consultationRows, 'agreedAmount') / reportSum(consultationRows, 'consultationAmount')) * 100 : 0), sub: reportPeriodLabel },
+                    ] : []),
+                    ...(includeTab('consultant') ? [{ label: '상담자 수', value: `${reportNumber(consultantList.length)}명`, sub: reportPeriodLabel }] : []),
+                    ...(includeTab('rejected') ? [{ label: '미동의 환자', value: `${reportNumber(rejectedList.length)}명`, sub: reportPeriodLabel }] : []),
+                ])}
+                ${includeTab('overall') ? `
+                    <h2>전체 동의율</h2>
+                    ${reportTable(['월', '전체상담건수', '전체동의', '부분동의', '진단금액', '상담금액', '최종동의금액', '상담금액 대비 동의율'], consultationRows.map(row => [
+                        row.month, `${reportNumber(row.totalConsultations)}건`, `${reportNumber(row.agreedCount)}명`, `${reportNumber(row.partialCount)}명`,
+                        reportWon(row.diagnosisAmount), reportWon(row.consultationAmount), reportWon(row.agreedAmount), reportPercent(row.consultationAgreementRate),
+                    ]))}
+                    <h2>의사별 진단수 / 동의금액</h2>
+                    ${reportTable(['의사', '진단수', '동의금액'], consultationRows.flatMap(row => (row.doctorDiagnoses || []).map(doctor => [
+                        doctor.name, `${reportNumber(doctor.count)}건`, reportWon(doctor.agreedAmount),
+                    ])))}
+                ` : ''}
+                ${includeTab('consultant') ? `
+                    <h2>상담자별 동의율</h2>
+                    ${reportTable(['상담자', '환자수', '총 동의수', '상담금액', '동의금액', '금액대비 동의율'], consultantList.map(row => [
+                        row.name, `${reportNumber(row.patientCount)}명`, `${reportNumber(row.totalAgreed)}명`, reportWon(row.consultationAmount), reportWon(row.agreedAmount), reportPercent(row.amountAgreementRate),
+                    ]))}
+                ` : ''}
+                ${includeTab('rejected') ? `
+                    <h2>미동의 환자 현황</h2>
+                    ${reportTable(['담당 Dr', '신환', '구환', '환자성함', '내원날짜', '상담자', '미동의사유', '진단금액', '상담금액', '최종동의금액', '비동의금액'], rejectedList.map(row => [
+                        row.doctor || '-', row.newPatient || '', row.oldPatient || '', row.patientName || '-', row.visitDate || '-', row.consultant || '-',
+                        row.reason || '-', reportWon(row.diagnosisAmount), reportWon(row.consultationAmount), reportWon(row.agreedAmount), reportWon(row.rejectedAmount),
+                    ]))}
+                ` : ''}
+            `;
+        }
+
+        if (category === 'insurance') {
+            const feeTotals = {};
+            feeRows.forEach(row => {
+                (row.fees || []).forEach(item => {
+                    const key = `${item.code || ''} ${item.name || item.feeName || ''}`.trim();
+                    if (!key) return;
+                    feeTotals[key] = feeTotals[key] || { patients: 0, visits: 0 };
+                    feeTotals[key].patients += Number(item.patients || 0);
+                    feeTotals[key].visits += Number(item.visits || 0);
+                });
+            });
+            const feeList = Object.entries(feeTotals).map(([name, value]) => ({ name, ...value })).sort((a, b) => b.patients - a.patients).slice(0, 20);
+            return `
+                ${includeTab('claim') ? `
+                    ${reportCards([
+                        { label: '보험청구액', value: reportWon(reportSum(claimRows, 'amount')), sub: reportPeriodLabel },
+                        { label: '건강보험', value: reportWon(reportSum(claimRows, 'health')), sub: reportPeriodLabel },
+                        { label: '의료급여', value: reportWon(reportSum(claimRows, 'medicalAid')), sub: reportPeriodLabel },
+                    ])}
+                    <h2>보험청구액 통계</h2>
+                    ${reportTable(['월', '건강보험', '의료급여', '보험청구액'], claimRows.map(row => [
+                        row.month, reportWon(row.health), reportWon(row.medicalAid), reportWon(row.amount),
+                    ]))}
+                ` : ''}
+                ${includeTab('fee') ? `
+                    <h2>보험수가별 통계 TOP 20</h2>
+                    ${reportTable(['코드 / 보험 수가명', '환자수', '진료횟수'], feeList.map(row => [
+                        row.name, `${reportNumber(row.patients)}명`, `${reportNumber(row.visits)}회`,
+                    ]))}
+                ` : ''}
+            `;
+        }
+
+        return '<p>보고서 데이터를 만들 수 없습니다.</p>';
+    };
+
+    const buildIntegratedReportSections = (year) => {
+        const selected = REPORT_CATEGORIES.filter(category => reportBundleCategories.includes(category.key));
+        return selected.map(category => `
+            <section class="report-section">
+                <h2 class="category-title">${escapeReportHtml(category.label)}</h2>
+                ${buildReportSections(category.key, year, 'all')}
+            </section>
+        `).join('');
+    };
+
+    const handleDownloadReportPdf = () => {
+        const category = REPORT_CATEGORIES.find(item => item.key === reportCategory) || REPORT_CATEGORIES[0];
+        if (reportMode === 'bundle' && reportBundleCategories.length === 0) {
+            addLog('error', '❌ [PDF 보고서] 통합 보고서에 포함할 카테고리를 1개 이상 선택해 주세요.');
+            return;
+        }
+        const title = reportMode === 'bundle'
+            ? `${reportYear}년 ${reportPeriodLabel} 통합 보고서`
+            : `${reportYear}년 ${reportPeriodLabel} ${category.label}${reportSubTab !== 'all' ? ` - ${reportSubTabLabel}` : ''}`;
+        const sections = reportMode === 'bundle'
+            ? buildIntegratedReportSections(reportYear)
+            : buildReportSections(reportCategory, reportYear, reportSubTab);
+        const popup = window.open('', '_blank', 'width=1100,height=900');
+        if (!popup) {
+            addLog('error', '❌ PDF 보고서 창을 열 수 없습니다. 팝업 차단을 해제해 주세요.');
+            return;
+        }
+        popup.document.write(`
+            <!doctype html>
+            <html lang="ko">
+            <head>
+                <meta charset="utf-8" />
+                <title>${escapeReportHtml(title)}</title>
+                <style>
+                    @page { size: A4; margin: 16mm; }
+                    * { box-sizing: border-box; }
+                    body { margin: 0; font-family: Arial, 'Malgun Gothic', sans-serif; color: #172033; background: #fff; }
+                    header { border-bottom: 2px solid #2563eb; padding-bottom: 14px; margin-bottom: 18px; }
+                    h1 { margin: 0; font-size: 24px; }
+                    h2 { margin: 24px 0 10px; font-size: 16px; }
+                    .category-title { margin-top: 0; padding: 10px 12px; border-left: 4px solid #2563eb; background: #eff6ff; font-size: 18px; }
+                    .report-section + .report-section { page-break-before: always; margin-top: 22px; }
+                    .meta { margin-top: 6px; color: #64748b; font-size: 12px; }
+                    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0 18px; }
+                    .card { border: 1px solid #dbe4f0; border-radius: 8px; padding: 12px; background: #f8fafc; }
+                    .card span { display: block; color: #64748b; font-size: 12px; font-weight: 700; }
+                    .card strong { display: block; margin-top: 6px; color: #2563eb; font-size: 18px; }
+                    .card small { display: block; margin-top: 5px; color: #64748b; }
+                    table { width: 100%; border-collapse: collapse; margin-bottom: 14px; table-layout: fixed; }
+                    th, td { border: 1px solid #dbe4f0; padding: 8px 7px; text-align: center; font-size: 11px; word-break: keep-all; }
+                    th { background: #f1f5f9; color: #475569; font-weight: 800; }
+                    td { color: #172033; }
+                    .actions { display: flex; justify-content: flex-end; gap: 8px; margin: 16px 0; }
+                    .actions button { border: 0; border-radius: 8px; padding: 10px 16px; background: #2563eb; color: white; font-weight: 800; cursor: pointer; }
+                    @media print { .actions { display: none; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+                </style>
+            </head>
+            <body>
+                <div class="actions"><button onclick="window.print()">PDF로 저장</button></div>
+                <header>
+                    <h1>${escapeReportHtml(title)}</h1>
+                    <div class="meta">생성일: ${new Date().toLocaleString('ko-KR')} / 기준: ${escapeReportHtml(reportPeriodLabel)}</div>
+                </header>
+                ${sections}
+                <script>setTimeout(() => window.print(), 400);</script>
+            </body>
+            </html>
+        `);
+        popup.document.close();
+        addLog('success', `✅ [PDF 보고서] ${title} 보고서 창을 열었습니다. 인쇄 화면에서 PDF로 저장해 주세요.`);
     };
 
     const showNewPatientPreview = (file, parsed) => {
@@ -3904,6 +4430,98 @@ const Admin = () => {
                                 )) : <tr><td colSpan="5">사용자가 없습니다.</td></tr>}
                             </tbody>
                         </table>
+                    </div>
+                </div>
+
+                {/* PDF 보고서 다운로드 */}
+                <div className="admin-card">
+                    <div className="admin-card-header">
+                        <FileDown size={24} className="admin-card-icon" />
+                        <h2>PDF 보고서 다운로드</h2>
+                    </div>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.86rem', marginBottom: '1rem' }}>
+                        카테고리별 업로드 데이터를 PDF용 보고서로 정리합니다. 새 창의 인쇄 화면에서 PDF로 저장할 수 있습니다.
+                    </p>
+                    <div style={{ display: 'grid', gap: '0.85rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: reportMode === 'single' ? '160px minmax(180px, 1fr) minmax(180px, 1fr)' : '160px minmax(360px, 1fr)', gap: '0.75rem', alignItems: 'end' }}>
+                        <label style={{ display: 'grid', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', alignSelf: 'end' }}>
+                            보고서
+                            <select value={reportMode} onChange={e => setReportMode(e.target.value)} style={selectStyle}>
+                                <option value="single">단일</option>
+                                <option value="bundle">통합</option>
+                            </select>
+                        </label>
+                        {reportMode === 'single' ? (
+                            <>
+                                <label style={{ display: 'grid', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', alignSelf: 'end' }}>
+                                    카테고리
+                                    <select value={reportCategory} onChange={e => { setReportCategory(e.target.value); setReportSubTab('all'); }} style={selectStyle}>
+                                        {REPORT_CATEGORIES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
+                                    </select>
+                                </label>
+                                <label style={{ display: 'grid', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', alignSelf: 'end' }}>
+                                    세부 탭
+                                    <select value={reportSubTab} onChange={e => setReportSubTab(e.target.value)} style={selectStyle}>
+                                        {reportSubTabs.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
+                                    </select>
+                                </label>
+                            </>
+                        ) : (
+                            <div style={{ minWidth: 360, display: 'grid', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                                포함 카테고리
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                                    gap: '0.35rem',
+                                    padding: '0.45rem 0.6rem',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: '0.4rem',
+                                    background: 'var(--card-bg)',
+                                }}>
+                                    {REPORT_CATEGORIES.map(item => (
+                                        <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.76rem', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={reportBundleCategories.includes(item.key)}
+                                                onChange={e => {
+                                                    setReportBundleCategories(prev => e.target.checked
+                                                        ? Array.from(new Set([...prev, item.key]))
+                                                        : prev.filter(key => key !== item.key)
+                                                    );
+                                                }}
+                                            />
+                                            {item.label.replace(' 종합 대시보드', '')}
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '160px 160px 120px auto', gap: '0.75rem', alignItems: 'end' }}>
+                        <label style={{ display: 'grid', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                            연도
+                            <select value={reportYear} onChange={e => setReportYear(e.target.value)} style={selectStyle}>
+                                {getReportYears().map(year => <option key={year} value={year}>{year}년</option>)}
+                            </select>
+                        </label>
+                        <label style={{ display: 'grid', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                            기간
+                            <select value={reportPeriod} onChange={e => setReportPeriod(e.target.value)} style={selectStyle}>
+                                {REPORT_PERIODS.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
+                            </select>
+                        </label>
+                        <label style={{ display: 'grid', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', opacity: reportPeriod === 'month' ? 1 : 0.45 }}>
+                            월
+                            <select value={reportMonth} onChange={e => setReportMonth(e.target.value)} disabled={reportPeriod !== 'month'} style={selectStyle}>
+                                {MONTHS.map(month => <option key={month} value={month}>{month}</option>)}
+                            </select>
+                        </label>
+                        <button onClick={handleDownloadReportPdf} style={{ ...saveBtnStyle, minWidth: 142, height: 38, padding: '0 1rem', display: 'inline-flex', alignItems: 'center', gap: '0.45rem', justifyContent: 'center', whiteSpace: 'nowrap', lineHeight: 1 }}>
+                            <FileDown size={16} />
+                            PDF 다운로드
+                        </button>
+                        </div>
                     </div>
                 </div>
 
