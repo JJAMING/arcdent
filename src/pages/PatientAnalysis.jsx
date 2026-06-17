@@ -43,6 +43,7 @@ const LAB_SERIES = [
 ];
 const CHART_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#14b8a6', '#8b5cf6', '#f97316', '#64748b', '#22c55e'];
 const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+const LAB_ROWS_PER_PAGE = 10;
 
 const createEmptyPatientData = () => MONTHS.map(month => ({
     month,
@@ -143,6 +144,7 @@ const PatientAnalysis = () => {
     const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
     const [refreshTick, setRefreshTick] = useState(0);
+    const [labPage, setLabPage] = useState(1);
 
     // lazy initializer: 마운트 즉시 localStorage 읽기
     const [patientData, setPatientData] = useState(() => buildMergedData(getCurrentYearString(), {}));
@@ -210,6 +212,10 @@ const PatientAnalysis = () => {
         if (half === 'all') return patientData;
         return half === 'first' ? patientData.slice(0, 6) : patientData.slice(6, 12);
     }, [half, patientData]);
+
+    useEffect(() => {
+        setLabPage(1);
+    }, [selectedYear, half, subTab]);
 
     const renderTabContent = () => {
         switch (subTab) {
@@ -597,6 +603,12 @@ const PatientAnalysis = () => {
                     if (categoryDiff !== 0) return categoryDiff;
                     return b.total - a.total;
                 });
+                const labTotalPages = Math.max(1, Math.ceil(detailLabRows.length / LAB_ROWS_PER_PAGE));
+                const currentLabPage = Math.min(labPage, labTotalPages);
+                const pagedDetailLabRows = detailLabRows.slice(
+                    (currentLabPage - 1) * LAB_ROWS_PER_PAGE,
+                    currentLabPage * LAB_ROWS_PER_PAGE
+                );
                 const topLabSeries = totalByLab.slice(0, 10);
                 const chartLabSeries = topLabSeries;
                 const labChartData = currentHalfData.map((d) => {
@@ -672,7 +684,7 @@ const PatientAnalysis = () => {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {detailLabRows.map(({ key, category, type, color, getValue }) => (
+                                            {pagedDetailLabRows.map(({ key, category, type, color, getValue }) => (
                                                 <tr key={key}>
                                                     <td className="row-header">
                                                         <span style={{ display:'inline-block', width:10, height:10, borderRadius:'2px', background:color, marginRight:6, verticalAlign:'middle' }} />
@@ -686,6 +698,57 @@ const PatientAnalysis = () => {
                                         </tbody>
                                     </table>
                                 </div>
+                                {detailLabRows.length > LAB_ROWS_PER_PAGE && (
+                                    <div className="pagination-container">
+                                        <button
+                                            className="pagination-btn"
+                                            disabled={currentLabPage === 1}
+                                            onClick={() => setLabPage(1)}
+                                        >
+                                            처음
+                                        </button>
+                                        <button
+                                            className="pagination-btn"
+                                            disabled={currentLabPage === 1}
+                                            onClick={() => setLabPage(prev => Math.max(1, prev - 1))}
+                                        >
+                                            이전
+                                        </button>
+
+                                        {Array.from({ length: Math.min(5, labTotalPages) }, (_, i) => {
+                                            let pageNum;
+                                            if (labTotalPages <= 5) pageNum = i + 1;
+                                            else if (currentLabPage <= 3) pageNum = i + 1;
+                                            else if (currentLabPage >= labTotalPages - 2) pageNum = labTotalPages - 4 + i;
+                                            else pageNum = currentLabPage - 2 + i;
+
+                                            return (
+                                                <button
+                                                    key={pageNum}
+                                                    className={`pagination-number ${currentLabPage === pageNum ? 'active' : ''}`}
+                                                    onClick={() => setLabPage(pageNum)}
+                                                >
+                                                    {pageNum}
+                                                </button>
+                                            );
+                                        })}
+
+                                        <button
+                                            className="pagination-btn"
+                                            disabled={currentLabPage === labTotalPages}
+                                            onClick={() => setLabPage(prev => Math.min(labTotalPages, prev + 1))}
+                                        >
+                                            다음
+                                        </button>
+                                        <button
+                                            className="pagination-btn"
+                                            disabled={currentLabPage === labTotalPages}
+                                            onClick={() => setLabPage(labTotalPages)}
+                                        >
+                                            끝
+                                        </button>
+                                    </div>
+                                )}
                             </DashboardCard>
                         </div>
                     </div>
