@@ -11,6 +11,7 @@ import Admin from './pages/Admin';
 import Login from './pages/Login';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { isSupabaseConfigured } from './lib/supabaseClient';
 import './styles/Layout.css';
 
 function AppContent() {
@@ -47,6 +48,49 @@ function AppContent() {
 }
 
 function App() {
+    if (!isSupabaseConfigured) {
+        return (
+            <ThemeProvider>
+                <div style={{
+                    minHeight: '100vh',
+                    display: 'grid',
+                    placeItems: 'center',
+                    padding: '2rem',
+                    background: 'var(--bg-color)',
+                    color: 'var(--text-primary)',
+                }}>
+                    <div style={{
+                        width: 'min(560px, 100%)',
+                        padding: '2rem',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 10,
+                        background: 'var(--card-bg)',
+                        boxShadow: 'var(--shadow)',
+                    }}>
+                        <h1 style={{ margin: '0 0 0.75rem', fontSize: '1.45rem' }}>
+                            Supabase 환경변수가 필요합니다
+                        </h1>
+                        <p style={{ margin: '0 0 1rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                            앱을 실행하려면 배포 환경 또는 .env.local에 아래 값을 등록해야 합니다.
+                        </p>
+                        <div style={{
+                            display: 'grid',
+                            gap: '0.5rem',
+                            padding: '1rem',
+                            borderRadius: 8,
+                            background: 'var(--bg-color)',
+                            fontFamily: 'monospace',
+                            fontSize: '0.92rem',
+                        }}>
+                            <span>VITE_SUPABASE_URL</span>
+                            <span>VITE_SUPABASE_ANON_KEY</span>
+                        </div>
+                    </div>
+                </div>
+            </ThemeProvider>
+        );
+    }
+
     return (
         <AuthProvider>
             <ThemeProvider>

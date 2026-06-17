@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
 
 const AuthContext = createContext();
 const ADMIN_AUTH_SESSION_KEY = 'arcdent_admin_authenticated';
@@ -46,7 +46,7 @@ export const AuthProvider = ({ children }) => {
     }, []);
 
     const loadProfile = useCallback(async (targetUser) => {
-        if (!targetUser?.id) {
+        if (!isSupabaseConfigured || !targetUser?.id) {
             clearProfileState();
             return;
         }
@@ -120,6 +120,12 @@ export const AuthProvider = ({ children }) => {
         let mounted = true;
 
         const initializeAuth = async () => {
+            if (!isSupabaseConfigured) {
+                clearAdminRuntimeState();
+                clearProfileState();
+                if (mounted) setLoading(false);
+                return;
+            }
             const { data } = await supabase.auth.getSession();
             if (!mounted) return;
             await applySession(data.session ?? null);
@@ -127,6 +133,8 @@ export const AuthProvider = ({ children }) => {
         };
 
         initializeAuth();
+
+        if (!isSupabaseConfigured) return undefined;
 
         const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
             setLoading(true);
@@ -140,6 +148,9 @@ export const AuthProvider = ({ children }) => {
     }, [applySession]);
 
     const login = async (loginId, password) => {
+        if (!isSupabaseConfigured) {
+            return { success: false, message: 'Supabase 환경변수가 설정되지 않았습니다.' };
+        }
         const email = normalizeLoginId(loginId);
         const { data, error } = await supabase.auth.signInWithPassword({
             email,
@@ -157,6 +168,9 @@ export const AuthProvider = ({ children }) => {
     };
 
     const signup = async ({ email, password, ...metadata }) => {
+        if (!isSupabaseConfigured) {
+            return { success: false, message: 'Supabase 환경변수가 설정되지 않았습니다.' };
+        }
         const { error } = await supabase.auth.signUp({
             email: normalizeLoginId(email),
             password,
@@ -175,7 +189,9 @@ export const AuthProvider = ({ children }) => {
     const logout = async () => {
         setLoading(true);
         clearAdminRuntimeState();
-        await supabase.auth.signOut();
+        if (isSupabaseConfigured) {
+            await supabase.auth.signOut();
+        }
         await applySession(null);
         setLoading(false);
     };
