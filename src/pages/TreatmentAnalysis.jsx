@@ -11,6 +11,7 @@ import {
 import DashboardCard from '../components/DashboardCard';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
+import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
 import './TreatmentAnalysis.css';
 import './SalesAnalysis.css';
 
@@ -75,12 +76,12 @@ const TreatmentAnalysis = () => {
     const activeClinicId = getActiveAnalyticsClinicId(clinicId);
     const [half, setHalf] = useState('all');
     const [subTab, setSubTab] = useState('implant');
-    const [selectedYear, setSelectedYear] = useState('2025');
-    const [availableYears, setAvailableYears] = useState(['2025']);
+    const [selectedYear, setSelectedYear] = useState(() => getCurrentYearString());
+    const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
     const [refreshTick, setRefreshTick] = useState(0);
     
-    const [perfDataMap, setPerfDataMap] = useState(() => ({ "2025": createEmptyTreatmentData() }));
+    const [perfDataMap, setPerfDataMap] = useState(() => ({ [getCurrentYearString()]: createEmptyTreatmentData() }));
     const [perfData, setPerfData] = useState(() => createEmptyTreatmentData());
 
 
@@ -88,7 +89,8 @@ const TreatmentAnalysis = () => {
         let cancelled = false;
 
         const loadTreatmentData = async () => {
-            let finalMap = { [selectedYear || '2025']: createEmptyTreatmentData() };
+            const currentYear = getCurrentYearString();
+            let finalMap = { [selectedYear || currentYear]: createEmptyTreatmentData() };
 
             try {
                 if (activeClinicId) {
@@ -105,12 +107,14 @@ const TreatmentAnalysis = () => {
                 if (cancelled) return;
 
                 const years = Object.keys(finalMap).sort((a, b) => b - a);
-                setAvailableYears(years.length > 0 ? years : ['2025']);
+                const yearOptions = getDefaultYearOptions(years);
+                setAvailableYears(yearOptions);
                 setPerfDataMap(finalMap);
 
-                const initialYear = years.includes(selectedYear) ? selectedYear : (years.includes('2025') ? '2025' : (years[0] || '2025'));
+                const initialYear = yearOptions.includes(selectedYear) ? selectedYear : currentYear;
                 setSelectedYear(initialYear);
                 if (finalMap[initialYear]) setPerfData(finalMap[initialYear]);
+                else setPerfData(createEmptyTreatmentData());
             } catch (e) {
                 console.error("Data load error:", e);
             }
@@ -129,6 +133,8 @@ const TreatmentAnalysis = () => {
         setSelectedYear(year);
         if (perfDataMap[year]) {
             setPerfData(perfDataMap[year]);
+        } else {
+            setPerfData(createEmptyTreatmentData());
         }
     };
 

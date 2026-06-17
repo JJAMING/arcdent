@@ -10,6 +10,7 @@ import {
 import DashboardCard from '../components/DashboardCard';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
+import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
 import './TreatmentAnalysis.css';
 import './SalesAnalysis.css';
 
@@ -138,13 +139,13 @@ const PatientAnalysis = () => {
 
     const [half, setHalf] = useState('all');
     const [subTab, setSubTab] = useState('newOld');
-    const [selectedYear, setSelectedYear] = useState('2025');
-    const [availableYears, setAvailableYears] = useState(['2025']);
+    const [selectedYear, setSelectedYear] = useState(() => getCurrentYearString());
+    const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
     const [refreshTick, setRefreshTick] = useState(0);
 
     // lazy initializer: 마운트 즉시 localStorage 읽기
-    const [patientData, setPatientData] = useState(() => buildMergedData('2025', {}));
+    const [patientData, setPatientData] = useState(() => buildMergedData(getCurrentYearString(), {}));
 
 
     // Supabase 우선, 없으면 localStorage 실데이터 로드
@@ -153,7 +154,7 @@ const PatientAnalysis = () => {
 
         const loadData = async () => {
             // 연도 목록 구성
-            let years = ['2025'];
+            let years = getDefaultYearOptions();
             let ledgerSource = {};
             try {
                 if (activeClinicId) {
@@ -169,7 +170,7 @@ const PatientAnalysis = () => {
                 }
 
                 const ly = Object.keys(ledgerSource);
-                years = Array.from(new Set([...years, ...ly])).sort((a, b) => b - a);
+                years = getDefaultYearOptions(ly);
             } catch (e) {
                 console.error('[PatientAnalysis] Supabase 데이터 로드 오류:', e);
             }

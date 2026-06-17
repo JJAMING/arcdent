@@ -7,6 +7,7 @@ import { parseInsuranceExcel } from '../utils/insuranceExcelParser';
 import { parseLedgerImage, parseLedgerText, extractYearMonthFromFileName } from '../utils/ledgerImageParser';
 import { supabase } from '../lib/supabaseClient';
 import { loadAnalyticsData, saveAnalyticsData } from '../utils/supabaseAnalyticsStore';
+import { getCurrentYearString, getRollingYearOptions } from '../utils/dateUtils';
 import { useAuth } from '../context/AuthContext';
 import './Admin.css';
 
@@ -33,7 +34,7 @@ const cancelBtnStyle = {
     border: '1px solid var(--border-color)', cursor: 'pointer',
 };
 
-const YEARS  = ['2023', '2024', '2025', '2026'];
+const YEARS  = getRollingYearOptions({ past: 3, future: 1 });
 const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
 const REPORT_CATEGORIES = [
     { key: 'home', label: 'HOME 종합 대시보드' },
@@ -696,7 +697,7 @@ const Admin = () => {
     const [reportCategory, setReportCategory] = useState('home');
     const [reportSubTab, setReportSubTab] = useState('all');
     const [reportBundleCategories, setReportBundleCategories] = useState(['home', 'sales', 'patient', 'newPatient', 'consultation']);
-    const [reportYear, setReportYear] = useState('2025');
+    const [reportYear, setReportYear] = useState(() => getCurrentYearString());
     const [availableReportYears, setAvailableReportYears] = useState(YEARS);
     const [reportPeriod, setReportPeriod] = useState('all');
     const [reportMonth, setReportMonth] = useState('1월');
@@ -796,7 +797,7 @@ const Admin = () => {
             ])).sort((a, b) => Number(b) - Number(a));
             setAvailableReportYears(years);
             if (!years.includes(reportYear)) {
-                setReportYear(years[0] || '2025');
+                setReportYear(years.includes(getCurrentYearString()) ? getCurrentYearString() : (years[0] || getCurrentYearString()));
             }
         };
 
@@ -1884,7 +1885,7 @@ const Admin = () => {
             { month: '12월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 },
         ];
 
-        let salesDataMap = { '2025': JSON.parse(JSON.stringify(defaultData)) };
+        let salesDataMap = { [getCurrentYearString()]: JSON.parse(JSON.stringify(defaultData)) };
         let updatedCount = 0;
 
         for (const file of files) {
@@ -1968,7 +1969,7 @@ const Admin = () => {
                             const monthOnly = text.match(/(\d{1,2})\s*월/);
                             const yearOnly = text.match(/(20\d{2}|\d{2})\s*년/);
                             return {
-                                year: yearOnly ? (yearOnly[1].length === 2 ? `20${yearOnly[1]}` : yearOnly[1]) : '2025',
+                                year: yearOnly ? (yearOnly[1].length === 2 ? `20${yearOnly[1]}` : yearOnly[1]) : getCurrentYearString(),
                                 month: monthOnly ? `${Number(monthOnly[1])}월` : null,
                             };
                         };
@@ -2740,7 +2741,7 @@ const Admin = () => {
         const nameMonthMatch = sourceFromName.match(/(\d{1,2})\s*월/);
         const yearMatch = nameYearMatch || source.match(/(\d{2,4})\s*년/);
         const monthMatch = nameMonthMatch || source.match(/(\d{1,2})\s*월/);
-        const rawYear = yearMatch ? Number(yearMatch[1]) : 2025;
+        const rawYear = yearMatch ? Number(yearMatch[1]) : Number(getCurrentYearString());
         const year = rawYear < 100 ? String(2000 + rawYear) : String(rawYear);
         const month = monthMatch ? `${Number(monthMatch[1])}월` : '1월';
         return { year, month };
@@ -4236,7 +4237,7 @@ const Admin = () => {
                 const ym = extractYearMonthFromFileName(file.name);
                 setOcrModal({
                     file, previewUrl: dataUrl, ocrProgress: 0,
-                    yearMonth: ym || { year: '2025', month: '1월' },
+                    yearMonth: ym || { year: getCurrentYearString(), month: '1월' },
                     yearMonthDetected: !!ym,
                     parsedData: { workDays: '', newPt: '', oldPt: '', totalVisits: '', total: '', avgNewPt: '', avgOldPt: '' },
                     rawText: '', status: 'loading',
@@ -4843,7 +4844,7 @@ const Admin = () => {
                                     ⚠️ 파일명에서 연월 감지 실패 — 직접 선택해 주세요.
                                 </span>
                             )}
-                            <select value={ocrModal.yearMonth?.year || '2025'}
+                            <select value={ocrModal.yearMonth?.year || getCurrentYearString()}
                                 onChange={e => setOcrModal(prev => prev ? { ...prev, yearMonth: { ...prev.yearMonth, year: e.target.value } } : prev)}
                                 style={selectStyle}>
                                 {YEARS.map(y => <option key={y} value={y}>{y}년</option>)}

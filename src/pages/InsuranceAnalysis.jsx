@@ -7,6 +7,7 @@ import { Calendar, ChevronDown, ListChecks, ShieldCheck, WalletCards } from 'luc
 import DashboardCard from '../components/DashboardCard';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
+import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
 import './SalesAnalysis.css';
 import './TreatmentAnalysis.css';
 
@@ -122,8 +123,8 @@ const FEE_ROWS_PER_PAGE = 20;
 const InsuranceAnalysis = () => {
     const { clinicId } = useAuth();
     const activeClinicId = getActiveAnalyticsClinicId(clinicId);
-    const [selectedYear, setSelectedYear] = useState('2025');
-    const [availableYears, setAvailableYears] = useState(['2025']);
+    const [selectedYear, setSelectedYear] = useState(() => getCurrentYearString());
+    const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
     const [half, setHalf] = useState('all');
     const [subTab, setSubTab] = useState('claim');
@@ -135,7 +136,7 @@ const InsuranceAnalysis = () => {
     const [supabaseFeeMap, setSupabaseFeeMap] = useState(null);
 
     const refreshYears = (claimMap = supabaseClaimMap, feeMap = supabaseFeeMap, includeLocal = !activeClinicId) => {
-        const years = new Set(['2025']);
+        const years = new Set(getDefaultYearOptions());
         try {
             // Supabase 전환 후 로컬 캐시는 연도 산정에 사용하지 않습니다.
             Object.keys(claimMap || {}).forEach(year => years.add(year));

@@ -13,6 +13,7 @@ import {
 import DashboardCard from '../components/DashboardCard';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
+import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
 import './SalesAnalysis.css';
 
 // --- MOCK DATA (100% Matching Structure) ---
@@ -48,7 +49,7 @@ const createEmptySalesData = () => SALES_MONTHS.map(month => ({
 }));
 
 const readLocalSalesMap = () => {
-  return { '2025': createEmptySalesData() };
+  return { [getCurrentYearString()]: createEmptySalesData() };
 };
 
 const buildSalesMapFromSupabaseRows = (rows = []) => {
@@ -125,11 +126,11 @@ const SalesAnalysis = () => {
   const activeClinicId = getActiveAnalyticsClinicId(clinicId);
   const [half, setHalf] = useState('all'); // 기본: 전체
   const [subTab, setSubTab] = useState('total'); // 기본탭: 총 매출 현황
-  const [selectedYear, setSelectedYear] = useState('2025');
-  const [availableYears, setAvailableYears] = useState(['2025']);
+  const [selectedYear, setSelectedYear] = useState(() => getCurrentYearString());
+  const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
   const [isYearOpen, setIsYearOpen] = useState(false);
   
-  const [salesDataMap, setSalesDataMap] = useState(() => ({ "2025": createEmptySalesData() }));
+  const [salesDataMap, setSalesDataMap] = useState(() => ({ [getCurrentYearString()]: createEmptySalesData() }));
   const [salesData, setSalesData] = useState(() => createEmptySalesData());
   const [agreedPatients, setAgreedPatients] = useState([]);
   const [comment, setComment] = useState('상반기 매출이 전년 대비 15% 성장하였습니다. 특히 4월과 6월 임플란트 패키지 프로모션으로 인한 순매출 증대가 두드러집니다. 하반기에는 리콜 환자 관리를 통한 재내원율 향상이 주요 과제입니다.');
@@ -146,7 +147,8 @@ const SalesAnalysis = () => {
     let loadedAgreedFromSupabase = false;
     let loadedTopFromSupabase = false;
     try {
-        let finalMap = { [selectedYear || '2025']: createEmptySalesData() };
+        const currentYear = getCurrentYearString();
+        let finalMap = { [selectedYear || currentYear]: createEmptySalesData() };
 
         if (activeClinicId) {
           const [
@@ -193,13 +195,15 @@ const SalesAnalysis = () => {
         if (cancelled) return;
         
         const years = Object.keys(finalMap).sort((a, b) => b - a);
-        setAvailableYears(years.length > 0 ? years : ['2025']);
+        const yearOptions = getDefaultYearOptions(years);
+        setAvailableYears(yearOptions);
         setSalesDataMap(finalMap);
         
         // 현재 선택된 연도의 데이터로 초기화
-        const initialYear = years.includes(selectedYear) ? selectedYear : (years.includes('2025') ? '2025' : (years[0] || '2025'));
+        const initialYear = yearOptions.includes(selectedYear) ? selectedYear : currentYear;
         setSelectedYear(initialYear);
         if (finalMap[initialYear]) setSalesData(finalMap[initialYear]);
+        else setSalesData(createEmptySalesData());
       } catch (e) { console.error(e); }
 
     // 2. 동의환자 데이터 로드
@@ -236,6 +240,8 @@ const SalesAnalysis = () => {
     setAgreedPage(1); // 페이지 초기화
     if (salesDataMap[year]) {
       setSalesData(salesDataMap[year]);
+    } else {
+      setSalesData(createEmptySalesData());
     }
   };
 
@@ -258,8 +264,7 @@ const SalesAnalysis = () => {
     const targetY = normalizeYear(selectedYear);
     return (agreedPatients || []).filter(p => {
       const pYear = normalizeYear(p.year || (p.createdAt ? p.createdAt.split('-')[0] : ''));
-      // 연도 정보가 아예 없는 레거시 데이터는 기본적으로 2025년으로 간주하거나, 2026년에서는 숨김 처리
-      const finalPYear = pYear || '2025'; 
+      const finalPYear = pYear || getCurrentYearString(); 
       return finalPYear === targetY;
     });
   }, [agreedPatients, selectedYear]);
@@ -268,8 +273,7 @@ const SalesAnalysis = () => {
     const targetY = normalizeYear(selectedYear);
     return (topPatientsRaw || []).filter(p => {
       const pYear = normalizeYear(p.year || (p.createdAt ? p.createdAt.split('-')[0] : ''));
-      // year 정보가 없는 레거시 데이터는 2025년으로 간주하여 2026년 노출 방지
-      const finalPYear = pYear || '2025';
+      const finalPYear = pYear || getCurrentYearString();
       return finalPYear === targetY;
     });
   }, [topPatientsRaw, selectedYear]);

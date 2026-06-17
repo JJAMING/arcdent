@@ -7,6 +7,7 @@ import { Calendar, ChevronDown, ClipboardCheck, MapPin, Users, WalletCards } fro
 import DashboardCard from '../components/DashboardCard';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
+import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
 import './SalesAnalysis.css';
 import './TreatmentAnalysis.css';
 
@@ -157,7 +158,7 @@ const buildNewPatientMapFromSupabaseRows = (pathRows = [], ageRows = []) => {
 };
 
 const collectNewPatientYears = (supabaseMap = null, includeLocal = true) => {
-    const years = new Set(['2025']);
+    const years = new Set(getDefaultYearOptions());
     try {
         if (includeLocal) {
             // Supabase 전환 후 로컬 캐시는 연도 산정에 사용하지 않습니다.
@@ -172,8 +173,8 @@ const collectNewPatientYears = (supabaseMap = null, includeLocal = true) => {
 const NewPatientAnalysis = () => {
     const { clinicId } = useAuth();
     const activeClinicId = getActiveAnalyticsClinicId(clinicId);
-    const [selectedYear, setSelectedYear] = useState('2025');
-    const [availableYears, setAvailableYears] = useState(['2025']);
+    const [selectedYear, setSelectedYear] = useState(() => getCurrentYearString());
+    const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
     const [half, setHalf] = useState('all');
     const [subTab, setSubTab] = useState('source');
@@ -186,7 +187,7 @@ const NewPatientAnalysis = () => {
     useEffect(() => {
         const years = collectNewPatientYears(supabaseNewPatientMap, !activeClinicId);
         setAvailableYears(years);
-        if (!years.includes(String(selectedYear))) setSelectedYear(years[0] || '2025');
+        if (!years.includes(String(selectedYear))) setSelectedYear(getCurrentYearString());
     }, [supabaseNewPatientMap, selectedYear, activeClinicId]);
 
     useEffect(() => {

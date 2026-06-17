@@ -8,6 +8,7 @@ import { Calendar, ChevronDown, ClipboardCheck, UserCheck, UserX, Users } from '
 import DashboardCard from '../components/DashboardCard';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
+import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
 import './SalesAnalysis.css';
 import './TreatmentAnalysis.css';
 
@@ -32,7 +33,7 @@ const normalizeMonth = (value) => {
     return month >= 1 && month <= 12 ? `${month}월` : '';
 };
 
-const normalizeYear = (value, fallback = '2025') => {
+const normalizeYear = (value, fallback = getCurrentYearString()) => {
     const text = String(value ?? '');
     const match = text.match(/([12]\d{3})년?/) || text.match(/^(\d{2})[-/.]/);
     if (!match) return fallback;
@@ -89,7 +90,7 @@ const CONSULTANT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'
 const REJECTED_ROWS_PER_PAGE = 10;
 
 const collectConsultationYears = (plans, overallData, consultantData, rejectedData) => {
-    const years = new Set(['2025']);
+    const years = new Set(getDefaultYearOptions());
     (plans || []).forEach(plan => {
         const year = getPlanYear(plan);
         if (year) years.add(String(year));
@@ -129,8 +130,8 @@ const isDoctorDiagnosisName = (value) => {
 const ConsultationAnalysis = () => {
     const { clinicId } = useAuth();
     const activeClinicId = getActiveAnalyticsClinicId(clinicId);
-    const [selectedYear, setSelectedYear] = useState('2025');
-    const [availableYears, setAvailableYears] = useState(['2025']);
+    const [selectedYear, setSelectedYear] = useState(() => getCurrentYearString());
+    const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
     const [half, setHalf] = useState('all');
     const [subTab, setSubTab] = useState('overall');
@@ -192,7 +193,7 @@ const ConsultationAnalysis = () => {
         const years = collectConsultationYears(treatmentPlans, consultationOverallData, consultationConsultantData, consultationRejectedData);
         setAvailableYears(years);
         if (!years.includes(String(selectedYear))) {
-            setSelectedYear(years[0] || '2025');
+            setSelectedYear(getCurrentYearString());
         }
     }, [treatmentPlans, consultationOverallData, consultationConsultantData, consultationRejectedData, selectedYear]);
 

@@ -7,6 +7,7 @@ import { Calendar, ChevronDown, WalletCards, Users, UserPlus, ShieldCheck, Trend
 import DashboardCard from '../components/DashboardCard';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
+import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
 import './SalesAnalysis.css';
 import './TreatmentAnalysis.css';
 
@@ -49,9 +50,9 @@ const formatPeople = (value) => `${Math.round(Number(value || 0)).toLocaleString
 const sum = (rows, key) => rows.reduce((acc, row) => acc + Number(row?.[key] || 0), 0);
 
 const getLatestYear = (...stores) => {
-    const years = new Set(['2025']);
+    const years = new Set(getDefaultYearOptions());
     stores.forEach(store => Object.keys(store || {}).forEach(year => years.add(year)));
-    return Array.from(years).sort((a, b) => Number(b) - Number(a))[0] || '2025';
+    return Array.from(years).sort((a, b) => Number(b) - Number(a))[0] || getCurrentYearString();
 };
 
 const readLocalDashboardStores = () => ({
@@ -151,8 +152,8 @@ const buildInsuranceFeesDashboardStore = (rows = []) => rows.reduce((store, row)
 const HomeDashboard = () => {
     const { clinicId } = useAuth();
     const activeClinicId = getActiveAnalyticsClinicId(clinicId);
-    const [selectedYear, setSelectedYear] = useState('2025');
-    const [availableYears, setAvailableYears] = useState(['2025']);
+    const [selectedYear, setSelectedYear] = useState(() => getCurrentYearString());
+    const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
     const [half, setHalf] = useState('all');
     const [monthFilter, setMonthFilter] = useState('all');
@@ -215,7 +216,7 @@ const HomeDashboard = () => {
 
     useEffect(() => {
         const latestYear = getLatestYear(stores.sales, stores.ledger, stores.newPatient, stores.insuranceFees, stores.consultationOverall);
-        const years = new Set(['2025']);
+        const years = new Set(getDefaultYearOptions());
         [stores.sales, stores.ledger, stores.newPatient, stores.insuranceFees, stores.consultationOverall].forEach(store => {
             Object.keys(store || {}).forEach(year => years.add(year));
         });
