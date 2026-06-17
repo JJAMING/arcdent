@@ -8,6 +8,8 @@ import {
     Wrench, PlusCircle, Stethoscope, RefreshCw
 } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import { useAuth } from '../context/AuthContext';
+import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import './TreatmentAnalysis.css';
 import './SalesAnalysis.css';
 
@@ -86,11 +88,24 @@ const getTotalReceptionPatients = (data) => {
 };
 
 // ── 실데이터 병합 헬퍼 (모듈 레벨 — 컴포넌트 밖) ──────────────────────────
-const buildMergedData = (year) => {
+const readLocalLedgerStore = () => {
+    return {};
+};
+
+const buildLedgerStoreFromSupabaseRows = (rows = []) => {
+    return rows.reduce((store, row) => {
+        const year = String(row.year || '');
+        const month = row.month ? `${Number(row.month)}월` : '';
+        if (!year || !month) return store;
+        if (!store[year]) store[year] = {};
+        store[year][month] = row.payload || {};
+        return store;
+    }, {});
+};
+
+const buildMergedData = (year, ledgerOverride = null) => {
     try {
-        const raw = localStorage.getItem('patient_ledger_data');
-        if (!raw) return createEmptyPatientData();
-        const ledger = JSON.parse(raw);
+        const ledger = ledgerOverride || readLocalLedgerStore();
         const yearData = ledger[year] || {};
         if (Object.keys(yearData).length === 0) return createEmptyPatientData();
         return createEmptyPatientData().map((empty) => {
@@ -118,6 +133,8 @@ const buildMergedData = (year) => {
 
 // ── 컴포넌트 ────────────────────────────────────────────────────────────────
 const PatientAnalysis = () => {
+    const { clinicId } = useAuth();
+    const activeClinicId = getActiveAnalyticsClinicId(clinicId);
 
     const [half, setHalf] = useState('all');
     const [subTab, setSubTab] = useState('newOld');
@@ -127,30 +144,42 @@ const PatientAnalysis = () => {
     const [refreshTick, setRefreshTick] = useState(0);
 
     // lazy initializer: 마운트 즉시 localStorage 읽기
-    const [patientData, setPatientData] = useState(() => buildMergedData('2025'));
+    const [patientData, setPatientData] = useState(() => buildMergedData('2025', {}));
 
 
-    // localStorage 실데이터 로드 (연도 변경·강제새로고침·커스텀 이벤트 대응)
+    // Supabase 우선, 없으면 localStorage 실데이터 로드
     useEffect(() => {
-        const loadData = () => {
+        let cancelled = false;
+
+        const loadData = async () => {
             // 연도 목록 구성
             let years = ['2025'];
+            let ledgerSource = {};
             try {
-                const s = localStorage.getItem('parsed_sales_data');
-                if (s) {
-                    const ys = Object.keys(JSON.parse(s)).sort((a, b) => b - a);
-                    if (ys.length > 0) years = ys;
+                if (activeClinicId) {
+                    const rows = await loadAnalyticsData({
+                        clinicId: activeClinicId,
+                        category: 'patient',
+                        subCategory: 'total_patients_ledger',
+                    });
+                    const supabaseLedger = buildLedgerStoreFromSupabaseRows(rows);
+                    if (Object.keys(supabaseLedger).length > 0) {
+                        ledgerSource = supabaseLedger;
+                    }
                 }
-                const raw = localStorage.getItem('patient_ledger_data');
-                if (raw) {
-                    const ly = Object.keys(JSON.parse(raw));
-                    years = Array.from(new Set([...years, ...ly])).sort((a, b) => b - a);
-                }
-            } catch (e) { /* ignore */ }
+
+                const ly = Object.keys(ledgerSource);
+                years = Array.from(new Set([...years, ...ly])).sort((a, b) => b - a);
+            } catch (e) {
+                console.error('[PatientAnalysis] Supabase 데이터 로드 오류:', e);
+            }
+
+            if (cancelled) return;
+
             setAvailableYears(years);
 
             // buildMergedData로 실데이터 병합
-            setPatientData(buildMergedData(selectedYear));
+            setPatientData(buildMergedData(selectedYear, ledgerSource));
         };
 
 
@@ -159,6 +188,7 @@ const PatientAnalysis = () => {
         // Admin 저장 시 커스텀 이벤트 감지
         const handleLedgerUpdate = () => loadData();
         window.addEventListener('patientLedgerUpdated', handleLedgerUpdate);
+        window.addEventListener('activeClinicChanged', handleLedgerUpdate);
 
         // 탭 전환 복귀 시 재로드
         const handleVisibility = () => {
@@ -167,10 +197,12 @@ const PatientAnalysis = () => {
         document.addEventListener('visibilitychange', handleVisibility);
 
         return () => {
+            cancelled = true;
             window.removeEventListener('patientLedgerUpdated', handleLedgerUpdate);
+            window.removeEventListener('activeClinicChanged', handleLedgerUpdate);
             document.removeEventListener('visibilitychange', handleVisibility);
         };
-    }, [selectedYear, refreshTick]);
+    }, [selectedYear, refreshTick, activeClinicId]);
 
 
     const currentHalfData = useMemo(() => {

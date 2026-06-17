@@ -103,6 +103,12 @@
     transform: translateY(-1px);
 }
 
+.auth-submit-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
 .auth-footer {
     display: flex;
     justify-content: center;

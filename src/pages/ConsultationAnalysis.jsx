@@ -6,6 +6,8 @@ import {
 } from 'recharts';
 import { Calendar, ChevronDown, ClipboardCheck, UserCheck, UserX, Users } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import { useAuth } from '../context/AuthContext';
+import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import './SalesAnalysis.css';
 import './TreatmentAnalysis.css';
 
@@ -19,13 +21,7 @@ const parseNumber = (value) => {
 };
 
 const safeJson = (key, fallback) => {
-    try {
-        const raw = localStorage.getItem(key);
-        return raw ? JSON.parse(raw) : fallback;
-    } catch (e) {
-        console.error(`[ConsultationAnalysis] ${key} parse error`, e);
-        return fallback;
-    }
+    return fallback;
 };
 
 const normalizeMonth = (value) => {
@@ -104,6 +100,26 @@ const collectConsultationYears = (plans, overallData, consultantData, rejectedDa
     return Array.from(years).sort((a, b) => Number(b) - Number(a));
 };
 
+const buildConsultationStoreFromRows = (rows = []) => rows.reduce((store, row) => {
+    const year = String(row.year || '');
+    const month = `${Number(row.month || 0)}월`;
+    if (!year || !MONTHS.includes(month)) return store;
+    if (!store[year]) store[year] = {};
+    store[year][month] = row.payload || {};
+    return store;
+}, {});
+
+const buildTreatmentPlansFromSupabaseRows = (rows = []) => (
+    rows.flatMap(row => {
+        const payloadRows = Array.isArray(row.payload?.rows) ? row.payload.rows : [];
+        return payloadRows.map(item => ({
+            ...item,
+            year: item.year || row.year,
+            month: item.month || `${Number(row.month || 0)}월`,
+        }));
+    })
+);
+
 const isDoctorDiagnosisName = (value) => {
     const text = String(value || '').trim();
     if (!/^[가-힣]{2,5}$/.test(text)) return false;
@@ -111,6 +127,8 @@ const isDoctorDiagnosisName = (value) => {
 };
 
 const ConsultationAnalysis = () => {
+    const { clinicId } = useAuth();
+    const activeClinicId = getActiveAnalyticsClinicId(clinicId);
     const [selectedYear, setSelectedYear] = useState('2025');
     const [availableYears, setAvailableYears] = useState(['2025']);
     const [isYearOpen, setIsYearOpen] = useState(false);
@@ -120,10 +138,55 @@ const ConsultationAnalysis = () => {
     const [rejectedPage, setRejectedPage] = useState(1);
     const [refreshKey, setRefreshKey] = useState(0);
 
-    const treatmentPlans = useMemo(() => safeJson('treatment_plan_data', []), [refreshKey]);
-    const consultationOverallData = useMemo(() => safeJson('consultation_overall_data', {}), [refreshKey]);
-    const consultationConsultantData = useMemo(() => safeJson('consultation_consultant_data', {}), [refreshKey]);
-    const consultationRejectedData = useMemo(() => safeJson('consultation_rejected_data', {}), [refreshKey]);
+    const [treatmentPlans, setTreatmentPlans] = useState(() => []);
+    const [consultationOverallData, setConsultationOverallData] = useState(() => ({}));
+    const [consultationConsultantData, setConsultationConsultantData] = useState(() => ({}));
+    const [consultationRejectedData, setConsultationRejectedData] = useState(() => ({}));
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadData = async () => {
+            let nextPlans = [];
+            let nextOverall = {};
+            let nextConsultant = {};
+            let nextRejected = {};
+
+            if (activeClinicId) {
+                try {
+                    const [overallRows, consultantRows, rejectedRows, treatmentRows] = await Promise.all([
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'consultation', subCategory: 'overall' }),
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'consultation', subCategory: 'consultant' }),
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'consultation', subCategory: 'rejected' }),
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'sales', subCategory: 'treatment_plan' }),
+                    ]);
+
+                    const overallStore = buildConsultationStoreFromRows(overallRows);
+                    const consultantStore = buildConsultationStoreFromRows(consultantRows);
+                    const rejectedStore = buildConsultationStoreFromRows(rejectedRows);
+                    const treatmentPlanRows = buildTreatmentPlansFromSupabaseRows(treatmentRows);
+
+                    if (Object.keys(overallStore).length > 0) nextOverall = overallStore;
+                    if (Object.keys(consultantStore).length > 0) nextConsultant = consultantStore;
+                    if (Object.keys(rejectedStore).length > 0) nextRejected = rejectedStore;
+                    if (treatmentPlanRows.length > 0) nextPlans = treatmentPlanRows;
+                } catch (e) {
+                    console.error('[ConsultationAnalysis] Supabase data load error:', e);
+                }
+            }
+
+            if (cancelled) return;
+            setTreatmentPlans(nextPlans);
+            setConsultationOverallData(nextOverall);
+            setConsultationConsultantData(nextConsultant);
+            setConsultationRejectedData(nextRejected);
+        };
+
+        loadData();
+        return () => {
+            cancelled = true;
+        };
+    }, [activeClinicId, refreshKey]);
 
     useEffect(() => {
         const years = collectConsultationYears(treatmentPlans, consultationOverallData, consultationConsultantData, consultationRejectedData);
@@ -137,9 +200,11 @@ const ConsultationAnalysis = () => {
         const handleUpdate = () => setRefreshKey(prev => prev + 1);
         window.addEventListener('storage', handleUpdate);
         window.addEventListener('consultationAnalysisUpdated', handleUpdate);
+        window.addEventListener('activeClinicChanged', handleUpdate);
         return () => {
             window.removeEventListener('storage', handleUpdate);
             window.removeEventListener('consultationAnalysisUpdated', handleUpdate);
+            window.removeEventListener('activeClinicChanged', handleUpdate);
         };
     }, []);
 

@@ -78,7 +78,6 @@ const firstPosInt = (row) => {
 // ─── 메인 파싱 로직 ───────────────────────────────────────────────
 const parseInsuranceSheet = (sheet, sheetName) => {
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-  console.log(`[보험파서] 시트 "${sheetName}" 전체:`, rows);
 
   const result = {
     // 보험 임플란트 단계별
@@ -100,7 +99,6 @@ const parseInsuranceSheet = (sheet, sheetName) => {
   }
 
   const countColIdx = findCountColIdx(headerRow);
-  console.log(`[보험파서] 헤더 행 인덱스: ${headerIdx}, 입력횟수 컬럼: ${countColIdx}`);
 
   for (let i = (headerIdx >= 0 ? headerIdx + 1 : 0); i < rows.length; i++) {
     const row = rows[i];
@@ -137,45 +135,13 @@ const parseInsuranceSheet = (sheet, sheetName) => {
   result.insImp  = result.insImpStep1 + result.insImpStep2 + result.insImpStep3;
   result.insDent = result.insDentStep1 + result.insDentStep5 + result.insDentStep6;
 
-  console.log('[보험파서] 파싱 결과:', result);
   return result;
 };
 
 // ─── localStorage upsert ─────────────────────────────────────────
 const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
 
-const upsertToStorage = (year, month, newData) => {
-  let dataMap = {};
-  try {
-    const raw = localStorage.getItem('treatment_performance_data');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      dataMap = Array.isArray(parsed) ? { '2025': parsed } : parsed;
-    }
-  } catch { dataMap = {}; }
-
-  if (!dataMap[year] || !Array.isArray(dataMap[year])) {
-    dataMap[year] = MONTHS.map(m => ({
-      month: m, surg1: 0, implantTotal: 0,
-      osstem: 0, dentium: 0, dio: 0, straumann: 0,
-      crestal: 0, lateral: 0, gbr: 0,
-      insImp: 0, insImpStep1: 0, insImpStep2: 0, insImpStep3: 0,
-      insDent: 0, insDentStep1: 0, insDentStep5: 0, insDentStep6: 0,
-    }));
-  }
-
-  const idx = dataMap[year].findIndex(d => d.month === month);
-  const entry = { ...(idx >= 0 ? dataMap[year][idx] : { month }), ...newData, month };
-  if (idx >= 0) {
-    dataMap[year][idx] = entry;
-  } else {
-    dataMap[year].push(entry);
-    dataMap[year].sort((a, b) => MONTHS.indexOf(a.month) - MONTHS.indexOf(b.month));
-  }
-
-  localStorage.setItem('treatment_performance_data', JSON.stringify(dataMap));
-  return dataMap[year];
-};
+const upsertToStorage = () => [];
 
 // ─── 메인 파서 ───────────────────────────────────────────────────
 export const parseInsuranceExcel = (file) => {
@@ -193,7 +159,6 @@ export const parseInsuranceExcel = (file) => {
     reader.onload = (e) => {
       try {
         const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-        console.log('[보험파서] 시트 목록:', workbook.SheetNames);
 
         // 시트를 순서대로 탐색 (하나만 있을 수도 있음)
         const found = findSheet(workbook, [
@@ -207,7 +172,7 @@ export const parseInsuranceExcel = (file) => {
         }
 
         const data = parseInsuranceSheet(found.sheet, found.name);
-        const updatedArr = upsertToStorage(ym.year, ym.month, data);
+        const updatedArr = [];
         resolve({ year: ym.year, month: ym.month, data, updatedArr });
       } catch (err) {
         console.error('[보험파서] 오류:', err);

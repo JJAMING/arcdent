@@ -18,8 +18,36 @@
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--accent-primary);
-    margin-bottom: 3rem;
+    margin-bottom: 0.9rem;
     padding: 0 0.5rem;
+}
+
+.clinic-badge {
+    margin: 0 0.25rem 2.25rem;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.75rem;
+    background-color: var(--card-bg);
+    box-shadow: var(--shadow);
+    display: grid;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.clinic-badge-name {
+    color: var(--text-primary);
+    font-size: 0.88rem;
+    font-weight: 800;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.clinic-badge-role {
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    font-weight: 700;
 }
 
 .nav-list {
@@ -79,7 +107,8 @@
     transform: translateY(-2px);
 }
 
-.admin-toggle {
+.admin-toggle,
+.logout-toggle {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -94,9 +123,14 @@
     cursor: pointer;
 }
 
-.admin-toggle:hover {
+.admin-toggle:hover,
+.logout-toggle:hover {
     transform: translateY(-2px);
     color: var(--accent-primary);
+}
+
+.logout-toggle:hover {
+    color: #ef4444;
 }
 
 .admin-toggle.active {

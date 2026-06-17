@@ -9,6 +9,8 @@ import {
     Stethoscope, Smile                          // 임플 탭 아이콘: Stethoscope / 틀니: Smile
 } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import { useAuth } from '../context/AuthContext';
+import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import './TreatmentAnalysis.css';
 import './SalesAnalysis.css';
 
@@ -28,39 +30,100 @@ const MOCK_TREATMENT_DATA = [
     { month: '12월', surg1: 68, implantTotal: 75, osstem: 50, dentium: 15, dio: 5, straumann: 5,  crestal: 25, lateral: 15, gbr: 32, insImp: 35, insImpStep1: 13, insImpStep2: 12, insImpStep3: 10, insDent: 25, insDentStep1: 10, insDentStep5: 9, insDentStep6: 6 },
 ];
 
+const createEmptyTreatmentData = () => MOCK_TREATMENT_DATA.map(row => ({
+    month: row.month,
+    surg1: 0,
+    implantTotal: 0,
+    osstem: 0,
+    dentium: 0,
+    dio: 0,
+    straumann: 0,
+    crestal: 0,
+    lateral: 0,
+    gbr: 0,
+    insImp: 0,
+    insImpStep1: 0,
+    insImpStep2: 0,
+    insImpStep3: 0,
+    insDent: 0,
+    insDentStep1: 0,
+    insDentStep5: 0,
+    insDentStep6: 0,
+}));
+
+const buildTreatmentMapFromSupabaseRows = (implantRows = [], insuranceRows = []) => {
+    const map = {};
+    const ensureMonth = (year, monthNumber) => {
+        const yearKey = String(year || '');
+        const monthLabel = `${Number(monthNumber || 0)}월`;
+        if (!yearKey || !MOCK_TREATMENT_DATA.some(row => row.month === monthLabel)) return null;
+        if (!map[yearKey]) map[yearKey] = createEmptyTreatmentData();
+        return map[yearKey].find(item => item.month === monthLabel);
+    };
+
+    [...implantRows, ...insuranceRows].forEach(row => {
+        const target = ensureMonth(row.year, row.month);
+        if (!target) return;
+        Object.assign(target, row.payload || {});
+    });
+
+    return map;
+};
+
 const TreatmentAnalysis = () => {
+    const { clinicId } = useAuth();
+    const activeClinicId = getActiveAnalyticsClinicId(clinicId);
     const [half, setHalf] = useState('all');
     const [subTab, setSubTab] = useState('implant');
     const [selectedYear, setSelectedYear] = useState('2025');
     const [availableYears, setAvailableYears] = useState(['2025']);
     const [isYearOpen, setIsYearOpen] = useState(false);
+    const [refreshTick, setRefreshTick] = useState(0);
     
-    const [perfDataMap, setPerfDataMap] = useState({ "2025": MOCK_TREATMENT_DATA });
-    const [perfData, setPerfData] = useState(MOCK_TREATMENT_DATA);
+    const [perfDataMap, setPerfDataMap] = useState(() => ({ "2025": createEmptyTreatmentData() }));
+    const [perfData, setPerfData] = useState(() => createEmptyTreatmentData());
 
 
     useEffect(() => {
-        const saved = localStorage.getItem('treatment_performance_data');
-        if (saved) {
+        let cancelled = false;
+
+        const loadTreatmentData = async () => {
+            let finalMap = { [selectedYear || '2025']: createEmptyTreatmentData() };
+
             try {
-                const parsed = JSON.parse(saved);
-                let finalMap = {};
-                if (Array.isArray(parsed)) {
-                    finalMap = { "2025": parsed };
-                } else {
-                    finalMap = parsed;
+                if (activeClinicId) {
+                    const [implantRows, insuranceRows] = await Promise.all([
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'treatment', subCategory: 'implant_surgery' }),
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'treatment', subCategory: 'insurance_treatment' }),
+                    ]);
+                    const supabaseMap = buildTreatmentMapFromSupabaseRows(implantRows, insuranceRows);
+                    if (Object.keys(supabaseMap).length > 0) {
+                        finalMap = supabaseMap;
+                    }
                 }
-                
+
+                if (cancelled) return;
+
                 const years = Object.keys(finalMap).sort((a, b) => b - a);
                 setAvailableYears(years.length > 0 ? years : ['2025']);
                 setPerfDataMap(finalMap);
-                
-                const initialYear = years.includes('2025') ? '2025' : (years[0] || '2025');
+
+                const initialYear = years.includes(selectedYear) ? selectedYear : (years.includes('2025') ? '2025' : (years[0] || '2025'));
                 setSelectedYear(initialYear);
                 if (finalMap[initialYear]) setPerfData(finalMap[initialYear]);
-            } catch (e) { console.error("Data load error:", e); }
-        }
-    }, []);
+            } catch (e) {
+                console.error("Data load error:", e);
+            }
+        };
+
+        loadTreatmentData();
+        const handleClinicChange = () => setRefreshTick(tick => tick + 1);
+        window.addEventListener('activeClinicChanged', handleClinicChange);
+        return () => {
+            cancelled = true;
+            window.removeEventListener('activeClinicChanged', handleClinicChange);
+        };
+    }, [activeClinicId, refreshTick]);
 
     const handleYearChange = (year) => {
         setSelectedYear(year);

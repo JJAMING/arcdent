@@ -81,7 +81,6 @@ const findUsageColIdx = (headerRow, dataRows) => {
 // ─── "임플란트 사용개수" 시트 파싱 ───────────────────────────────
 const parseImplantSheet = (sheet) => {
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-  console.log('[임플란트파서] 임플란트 사용개수 시트 (전체):', rows);
 
   const counts = { osstem: 0, dentium: 0, dio: 0, straumann: 0, implantTotal: 0 };
 
@@ -93,7 +92,6 @@ const parseImplantSheet = (sheet) => {
 
   // '사용개수' 컬럼 인덱스 결정
   const usageIdx = findUsageColIdx(headerRow, rows);
-  console.log(`[임플란트파서] 사용개수 컬럼 인덱스: ${usageIdx}`);
 
   for (const row of rows) {
     if (!row || row.length === 0) continue;
@@ -126,14 +124,12 @@ const parseImplantSheet = (sheet) => {
     counts.implantTotal = counts.osstem + counts.dentium + counts.dio + counts.straumann;
   }
 
-  console.log('[임플란트파서] 브랜드별 사용개수 합산:', counts);
   return counts;
 };
 
 // ─── "수술 기타건수" 시트 파싱 ───────────────────────────────────
 const parseSurgerySheet = (sheet) => {
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-  console.log('[임플란트파서] 수술 기타건수 시트 (전체):', rows);
 
   const counts = { gbr: 0, lateral: 0, crestal: 0 };
 
@@ -170,7 +166,6 @@ const parseSurgerySheet = (sheet) => {
       if (qtyIdx >= 0) break;
     }
   }
-  console.log(`[임플란트파서] 수술 기타건수 수량 컬럼 인덱스: ${qtyIdx}`);
 
   for (const row of rows) {
     if (!row || row.length === 0) continue;
@@ -182,7 +177,6 @@ const parseSurgerySheet = (sheet) => {
     if (qty > 0) counts[surg] += qty;
   }
 
-  console.log('[임플란트파서] 수술법 카운트:', counts);
   return counts;
 };
 
@@ -210,37 +204,7 @@ export const extractYearMonth = (filename) => {
 // ─── localStorage upsert ─────────────────────────────────────────
 const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
 
-const upsertToStorage = (year, month, newData) => {
-  let dataMap = {};
-  try {
-    const raw = localStorage.getItem('treatment_performance_data');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      dataMap = Array.isArray(parsed) ? { '2025': parsed } : parsed;
-    }
-  } catch { dataMap = {}; }
-
-  if (!dataMap[year] || !Array.isArray(dataMap[year])) {
-    dataMap[year] = MONTHS.map(m => ({
-      month: m, surg1: 0, implantTotal: 0,
-      osstem: 0, dentium: 0, dio: 0, straumann: 0,
-      crestal: 0, lateral: 0, gbr: 0,
-      insImp: 0, insDent: 0,
-    }));
-  }
-
-  const idx = dataMap[year].findIndex(d => d.month === month);
-  const entry = { ...(idx >= 0 ? dataMap[year][idx] : { month }), ...newData, month };
-  if (idx >= 0) {
-    dataMap[year][idx] = entry;
-  } else {
-    dataMap[year].push(entry);
-    dataMap[year].sort((a, b) => MONTHS.indexOf(a.month) - MONTHS.indexOf(b.month));
-  }
-
-  localStorage.setItem('treatment_performance_data', JSON.stringify(dataMap));
-  return dataMap[year];
-};
+const upsertToStorage = () => [];
 
 // ─── 메인 파서 ───────────────────────────────────────────────────
 export const parseImplantExcel = (file) => {
@@ -257,7 +221,6 @@ export const parseImplantExcel = (file) => {
     reader.onload = (e) => {
       try {
         const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-        console.log('[임플란트파서] 시트 목록:', workbook.SheetNames);
 
         // 임플란트 사용개수 시트
         const implantFound = findSheet(workbook, [
@@ -281,9 +244,7 @@ export const parseImplantExcel = (file) => {
         const surgeryData = parseSurgerySheet(surgeryFound.sheet);
         const combined = { ...implantData, ...surgeryData, surg1: implantData.implantTotal };
 
-        console.log('[임플란트파서] 최종 결과:', combined);
-
-        const updatedArr = upsertToStorage(ym.year, ym.month, combined);
+        const updatedArr = [];
         resolve({ year: ym.year, month: ym.month, data: combined, updatedArr });
       } catch (err) {
         console.error('[임플란트파서] 오류:', err);

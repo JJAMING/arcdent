@@ -1,21 +1,28 @@
 import React from 'react';
 import {
-    BarChart3,
-    Stethoscope,
-    Users,
-    UserPlus,
-    MessageSquare,
-    ShieldCheck,
-    Sun,
-    Moon,
     Activity,
-    Settings
+    BarChart3,
+    LogOut,
+    MessageSquare,
+    Moon,
+    Settings,
+    ShieldCheck,
+    Stethoscope,
+    Sun,
+    UserPlus,
+    Users,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import './Sidebar.css';
 
 const Sidebar = ({ activeTab, setActiveTab }) => {
     const { isDarkMode, toggleTheme } = useTheme();
+    const { logout, clinic, profile } = useAuth();
+    const accountName = profile?.role === 'admin'
+        ? '관리자 계정'
+        : clinic?.name || '치과 미연결';
+    const accountRole = profile?.role === 'admin' ? '관리자' : '치과 계정';
 
     const menuItems = [
         { id: 'home', icon: <Activity size={20} />, label: 'HOME' },
@@ -32,6 +39,11 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
             <div className="logo">
                 <Activity size={32} />
                 <span>Arcdent</span>
+            </div>
+
+            <div className="clinic-badge">
+                <span className="clinic-badge-name">{accountName}</span>
+                <span className="clinic-badge-role">{accountRole}</span>
             </div>
 
             <ul className="nav-list">
@@ -52,8 +64,15 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
                     {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
                     <span>{isDarkMode ? '라이트 모드' : '다크 모드'}</span>
                 </button>
-                <button 
-                    className={`admin-toggle ${activeTab === 'admin' ? 'active' : ''}`} 
+                <button
+                    className="logout-toggle"
+                    onClick={logout}
+                    title="로그아웃"
+                >
+                    <LogOut size={18} />
+                </button>
+                <button
+                    className={`admin-toggle ${activeTab === 'admin' ? 'active' : ''}`}
                     onClick={() => setActiveTab('admin')}
                     title="관리자 설정"
                 >

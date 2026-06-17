@@ -5,6 +5,8 @@ import {
 } from 'recharts';
 import { Calendar, ChevronDown, WalletCards, Users, UserPlus, ShieldCheck, TrendingDown, TrendingUp, Percent } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import { useAuth } from '../context/AuthContext';
+import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import './SalesAnalysis.css';
 import './TreatmentAnalysis.css';
 
@@ -28,13 +30,7 @@ const emptyNewPatientYear = () => MONTHS.map(month => ({
 }));
 
 const safeJson = (key, fallback) => {
-    try {
-        const raw = localStorage.getItem(key);
-        return raw ? JSON.parse(raw) : fallback;
-    } catch (e) {
-        console.error(`[HomeDashboard] ${key} parse error`, e);
-        return fallback;
-    }
+    return fallback;
 };
 
 const normalizeMonthArray = (rows, emptyFactory) => {
@@ -58,7 +54,103 @@ const getLatestYear = (...stores) => {
     return Array.from(years).sort((a, b) => Number(b) - Number(a))[0] || '2025';
 };
 
+const readLocalDashboardStores = () => ({
+    sales: {},
+    ledger: {},
+    newPatient: {},
+    insuranceFees: {},
+    consultationOverall: {},
+});
+
+const emptyDashboardStores = () => ({
+    sales: {},
+    ledger: {},
+    newPatient: {},
+    insuranceFees: {},
+    consultationOverall: {},
+});
+
+const ensureSalesMonth = (store, year, monthNumber) => {
+    const yearKey = String(year || '');
+    const month = `${Number(monthNumber || 0)}월`;
+    if (!yearKey || !MONTHS.includes(month)) return null;
+    if (!store[yearKey]) store[yearKey] = emptySalesYear();
+    return store[yearKey].find(item => item.month === month);
+};
+
+const buildSalesDashboardStore = (totalRows = [], doctorRows = [], newPatientRows = []) => {
+    const store = {};
+    totalRows.forEach(row => {
+        const target = ensureSalesMonth(store, row.year, row.month);
+        if (target) Object.assign(target, row.payload || {}, { month: target.month });
+    });
+    doctorRows.forEach(row => {
+        const target = ensureSalesMonth(store, row.year, row.month);
+        if (!target) return;
+        Object.assign(target, {
+            doctorData: row.payload?.doctorData || {},
+            netSales: Number(row.payload?.netSales || target.netSales || 0),
+            insurance: Number(row.payload?.insurance || target.insurance || 0),
+            total: Number(row.payload?.total || target.total || 0),
+        });
+    });
+    newPatientRows.forEach(row => {
+        const target = ensureSalesMonth(store, row.year, row.month);
+        if (!target) return;
+        Object.assign(target, {
+            newPatient: Number(row.payload?.newPatient || 0),
+            newPatientSales: Number(row.payload?.newPatientSales || 0),
+        });
+    });
+    return store;
+};
+
+const buildObjectMonthStore = (rows = []) => rows.reduce((store, row) => {
+    const year = String(row.year || '');
+    const month = `${Number(row.month || 0)}월`;
+    if (!year || !MONTHS.includes(month)) return store;
+    if (!store[year]) store[year] = {};
+    store[year][month] = row.payload || {};
+    return store;
+}, {});
+
+const buildNewPatientDashboardStore = (rows = []) => {
+    const store = {};
+    rows.forEach(row => {
+        const year = String(row.year || '');
+        const month = `${Number(row.month || 0)}월`;
+        if (!year || !MONTHS.includes(month)) return;
+        if (!store[year]) store[year] = emptyNewPatientYear();
+        const target = store[year].find(item => item.month === month);
+        if (!target) return;
+
+        const sources = {};
+        const sourceRevenue = {};
+        const sourceAvgFee = {};
+        (row.payload?.rows || []).forEach(item => {
+            if (!item.path) return;
+            sources[item.path] = Number(item.newPatient || 0);
+            sourceRevenue[item.path] = Number(item.totalFee || 0);
+            sourceAvgFee[item.path] = Number(item.avgFee || 0);
+        });
+        Object.assign(target, { sources, sourceRevenue, sourceAvgFee });
+    });
+    return store;
+};
+
+const buildInsuranceFeesDashboardStore = (rows = []) => rows.reduce((store, row) => {
+    const year = String(row.year || '');
+    const month = `${Number(row.month || 0)}월`;
+    if (!year || !MONTHS.includes(month)) return store;
+    if (!store[year]) store[year] = MONTHS.map(item => ({ month: item, fees: [] }));
+    const target = store[year].find(item => item.month === month);
+    if (target) target.fees = row.payload?.rows || [];
+    return store;
+}, {});
+
 const HomeDashboard = () => {
+    const { clinicId } = useAuth();
+    const activeClinicId = getActiveAnalyticsClinicId(clinicId);
     const [selectedYear, setSelectedYear] = useState('2025');
     const [availableYears, setAvailableYears] = useState(['2025']);
     const [isYearOpen, setIsYearOpen] = useState(false);
@@ -66,14 +158,60 @@ const HomeDashboard = () => {
     const [monthFilter, setMonthFilter] = useState('all');
     const [isMonthOpen, setIsMonthOpen] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
+    const [stores, setStores] = useState(() => emptyDashboardStores());
 
-    const stores = useMemo(() => ({
-        sales: safeJson('parsed_sales_data', {}),
-        ledger: safeJson('patient_ledger_data', {}),
-        newPatient: safeJson('new_patient_analysis_data', {}),
-        insuranceFees: safeJson('insurance_fee_stats_data', {}),
-        consultationOverall: safeJson('consultation_overall_data', {}),
-    }), [refreshKey]);
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadStores = async () => {
+            let nextStores = emptyDashboardStores();
+
+            if (activeClinicId) {
+                try {
+                    const [
+                        salesRows,
+                        doctorRows,
+                        newPatientRevenueRows,
+                        ledgerRows,
+                        newPatientRows,
+                        insuranceFeeRows,
+                        consultationRows,
+                    ] = await Promise.all([
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'sales', subCategory: 'total_revenue' }),
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'sales', subCategory: 'doctor_revenue' }),
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'sales', subCategory: 'new_patient_revenue' }),
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'patient', subCategory: 'total_patients_ledger' }),
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'newPatient', subCategory: 'path_distribution' }),
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'insurance', subCategory: 'fee_stats' }),
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'consultation', subCategory: 'overall' }),
+                    ]);
+
+                    const salesStore = buildSalesDashboardStore(salesRows, doctorRows, newPatientRevenueRows);
+                    const ledgerStore = buildObjectMonthStore(ledgerRows);
+                    const newPatientStore = buildNewPatientDashboardStore(newPatientRows);
+                    const insuranceFeesStore = buildInsuranceFeesDashboardStore(insuranceFeeRows);
+                    const consultationStore = buildObjectMonthStore(consultationRows);
+
+                    nextStores = {
+                        sales: Object.keys(salesStore).length > 0 ? salesStore : {},
+                        ledger: Object.keys(ledgerStore).length > 0 ? ledgerStore : {},
+                        newPatient: Object.keys(newPatientStore).length > 0 ? newPatientStore : {},
+                        insuranceFees: Object.keys(insuranceFeesStore).length > 0 ? insuranceFeesStore : {},
+                        consultationOverall: Object.keys(consultationStore).length > 0 ? consultationStore : {},
+                    };
+                } catch (e) {
+                    console.error('[HomeDashboard] Supabase data load error:', e);
+                }
+            }
+
+            if (!cancelled) setStores(nextStores);
+        };
+
+        loadStores();
+        return () => {
+            cancelled = true;
+        };
+    }, [activeClinicId, refreshKey]);
 
     useEffect(() => {
         const latestYear = getLatestYear(stores.sales, stores.ledger, stores.newPatient, stores.insuranceFees, stores.consultationOverall);
@@ -93,6 +231,7 @@ const HomeDashboard = () => {
         window.addEventListener('insuranceFeeStatsUpdated', handleUpdate);
         window.addEventListener('insuranceClaimUpdated', handleUpdate);
         window.addEventListener('consultationAnalysisUpdated', handleUpdate);
+        window.addEventListener('activeClinicChanged', handleUpdate);
         return () => {
             window.removeEventListener('storage', handleUpdate);
             window.removeEventListener('patientLedgerUpdated', handleUpdate);
@@ -100,6 +239,7 @@ const HomeDashboard = () => {
             window.removeEventListener('insuranceFeeStatsUpdated', handleUpdate);
             window.removeEventListener('insuranceClaimUpdated', handleUpdate);
             window.removeEventListener('consultationAnalysisUpdated', handleUpdate);
+            window.removeEventListener('activeClinicChanged', handleUpdate);
         };
     }, []);
 

@@ -5,6 +5,8 @@ import {
 } from 'recharts';
 import { Calendar, ChevronDown, ListChecks, ShieldCheck, WalletCards } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import { useAuth } from '../context/AuthContext';
+import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import './SalesAnalysis.css';
 import './TreatmentAnalysis.css';
 
@@ -55,30 +57,44 @@ const normalizeFeeYearData = (rows) => {
 };
 
 const loadInsuranceClaimData = (year) => {
-    try {
-        const stored = localStorage.getItem('insurance_claim_data');
-        if (stored) {
-            const parsed = JSON.parse(stored);
-            return normalizeClaimYearData(parsed[year]);
-        }
-    } catch (e) {
-        console.error('[InsuranceAnalysis] claim data load error:', e);
-    }
     return createEmptyClaimYearData();
 };
 
 const loadInsuranceFeeStatsData = (year) => {
-    try {
-        const stored = localStorage.getItem('insurance_fee_stats_data');
-        if (stored) {
-            const parsed = JSON.parse(stored);
-            return normalizeFeeYearData(parsed[year]);
-        }
-    } catch (e) {
-        console.error('[InsuranceAnalysis] fee stats load error:', e);
-    }
     return createEmptyFeeYearData();
 };
+
+const buildClaimMapFromSupabaseRows = (rows = []) => rows.reduce((map, row) => {
+    const year = String(row.year || '');
+    const monthLabel = `${Number(row.month || 0)}월`;
+    if (!year || !MONTHS.includes(monthLabel)) return map;
+    if (!map[year]) map[year] = createEmptyClaimYearData();
+    const target = map[year].find(item => item.month === monthLabel);
+    if (target) {
+        const payload = row.payload || {};
+        target.health = Number(payload.health || 0);
+        target.medicalAid = Number(payload.medicalAid || 0);
+        target.amount = Number(payload.amount ?? (target.health + target.medicalAid));
+    }
+    return map;
+}, {});
+
+const buildFeeMapFromSupabaseRows = (rows = []) => rows.reduce((map, row) => {
+    const year = String(row.year || '');
+    const monthLabel = `${Number(row.month || 0)}월`;
+    if (!year || !MONTHS.includes(monthLabel)) return map;
+    if (!map[year]) map[year] = createEmptyFeeYearData();
+    const target = map[year].find(item => item.month === monthLabel);
+    if (target) {
+        target.fees = (row.payload?.rows || []).map(item => ({
+            code: String(item.code || ''),
+            name: String(item.name || item.feeName || ''),
+            patients: Number(item.patients || 0),
+            visits: Number(item.visits || 0),
+        }));
+    }
+    return map;
+}, {});
 
 const formatWon = (value) => `${Math.round(Number(value || 0)).toLocaleString()}원`;
 const formatShortWon = (value) => {
@@ -104,6 +120,8 @@ const feeCountCellStyle = { minWidth: '72px', whiteSpace: 'nowrap', wordBreak: '
 const FEE_ROWS_PER_PAGE = 20;
 
 const InsuranceAnalysis = () => {
+    const { clinicId } = useAuth();
+    const activeClinicId = getActiveAnalyticsClinicId(clinicId);
     const [selectedYear, setSelectedYear] = useState('2025');
     const [availableYears, setAvailableYears] = useState(['2025']);
     const [isYearOpen, setIsYearOpen] = useState(false);
@@ -111,18 +129,17 @@ const InsuranceAnalysis = () => {
     const [subTab, setSubTab] = useState('claim');
     const [selectedFeeMonthIndex, setSelectedFeeMonthIndex] = useState(0);
     const [feePage, setFeePage] = useState(1);
-    const [claimYearData, setClaimYearData] = useState(() => loadInsuranceClaimData('2025'));
-    const [feeYearData, setFeeYearData] = useState(() => loadInsuranceFeeStatsData('2025'));
+    const [claimYearData, setClaimYearData] = useState(() => createEmptyClaimYearData());
+    const [feeYearData, setFeeYearData] = useState(() => createEmptyFeeYearData());
+    const [supabaseClaimMap, setSupabaseClaimMap] = useState(null);
+    const [supabaseFeeMap, setSupabaseFeeMap] = useState(null);
 
-    const refreshYears = () => {
+    const refreshYears = (claimMap = supabaseClaimMap, feeMap = supabaseFeeMap, includeLocal = !activeClinicId) => {
         const years = new Set(['2025']);
         try {
-            const savedClaims = localStorage.getItem('insurance_claim_data');
-            if (savedClaims) Object.keys(JSON.parse(savedClaims)).forEach(year => years.add(year));
-            const savedFees = localStorage.getItem('insurance_fee_stats_data');
-            if (savedFees) Object.keys(JSON.parse(savedFees)).forEach(year => years.add(year));
-            const savedSales = localStorage.getItem('parsed_sales_data');
-            if (savedSales) Object.keys(JSON.parse(savedSales)).forEach(year => years.add(year));
+            // Supabase 전환 후 로컬 캐시는 연도 산정에 사용하지 않습니다.
+            Object.keys(claimMap || {}).forEach(year => years.add(year));
+            Object.keys(feeMap || {}).forEach(year => years.add(year));
         } catch (e) {
             console.error(e);
         }
@@ -134,25 +151,57 @@ const InsuranceAnalysis = () => {
     }, []);
 
     useEffect(() => {
-        setClaimYearData(loadInsuranceClaimData(selectedYear));
-        setFeeYearData(loadInsuranceFeeStatsData(selectedYear));
-    }, [selectedYear]);
+        let cancelled = false;
+
+        const loadData = async () => {
+            let nextClaimMap = null;
+            let nextFeeMap = null;
+            if (activeClinicId) {
+                try {
+                    const [claimRows, feeRows] = await Promise.all([
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'insurance', subCategory: 'claim' }),
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'insurance', subCategory: 'fee_stats' }),
+                    ]);
+                    const claimMap = buildClaimMapFromSupabaseRows(claimRows);
+                    const feeMap = buildFeeMapFromSupabaseRows(feeRows);
+                    nextClaimMap = Object.keys(claimMap).length > 0 ? claimMap : null;
+                    nextFeeMap = Object.keys(feeMap).length > 0 ? feeMap : null;
+                } catch (e) {
+                    console.error('[InsuranceAnalysis] Supabase data load error:', e);
+                }
+            }
+
+            if (cancelled) return;
+            setSupabaseClaimMap(nextClaimMap);
+            setSupabaseFeeMap(nextFeeMap);
+            refreshYears(nextClaimMap, nextFeeMap, false);
+            setClaimYearData(nextClaimMap?.[selectedYear] || createEmptyClaimYearData());
+            setFeeYearData(nextFeeMap?.[selectedYear] || createEmptyFeeYearData());
+        };
+
+        loadData();
+        return () => {
+            cancelled = true;
+        };
+    }, [activeClinicId, selectedYear]);
 
     useEffect(() => {
         const handleUpdate = () => {
             refreshYears();
-            setClaimYearData(loadInsuranceClaimData(selectedYear));
-            setFeeYearData(loadInsuranceFeeStatsData(selectedYear));
+            setClaimYearData(createEmptyClaimYearData());
+            setFeeYearData(createEmptyFeeYearData());
         };
         window.addEventListener('insuranceClaimUpdated', handleUpdate);
         window.addEventListener('insuranceFeeStatsUpdated', handleUpdate);
         window.addEventListener('storage', handleUpdate);
+        window.addEventListener('activeClinicChanged', handleUpdate);
         return () => {
             window.removeEventListener('insuranceClaimUpdated', handleUpdate);
             window.removeEventListener('insuranceFeeStatsUpdated', handleUpdate);
             window.removeEventListener('storage', handleUpdate);
+            window.removeEventListener('activeClinicChanged', handleUpdate);
         };
-    }, [selectedYear]);
+    }, [selectedYear, activeClinicId]);
 
     const currentClaimData = useMemo(() => {
         if (half === 'first') return claimYearData.slice(0, 6);

@@ -5,6 +5,8 @@ import {
 } from 'recharts';
 import { Calendar, ChevronDown, ClipboardCheck, MapPin, Users, WalletCards } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import { useAuth } from '../context/AuthContext';
+import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import './SalesAnalysis.css';
 import './TreatmentAnalysis.css';
 
@@ -92,27 +94,75 @@ const normalizeYearData = (rawYearData) => {
 };
 
 const loadNewPatientData = (year) => {
-    try {
-        const stored = localStorage.getItem('new_patient_analysis_data');
-        if (stored) {
-            const parsed = JSON.parse(stored);
-            const normalized = normalizeYearData(parsed[year]);
-            if (normalized) return normalized;
-        }
-    } catch (e) {
-        console.error('[NewPatientAnalysis] data load error:', e);
-    }
-
-    return MOCK_NEW_PATIENT_DATA[year] || MOCK_NEW_PATIENT_DATA['2025'];
+    return normalizeYearData([]);
 };
 
-const collectNewPatientYears = () => {
+const buildNewPatientMapFromSupabaseRows = (pathRows = [], ageRows = []) => {
+    const map = {};
+    const ensureMonth = (year, monthNumber) => {
+        const yearKey = String(year || '');
+        const monthLabel = `${Number(monthNumber)}월`;
+        if (!yearKey || !MONTHS.includes(monthLabel)) return null;
+        if (!map[yearKey]) map[yearKey] = normalizeYearData([]);
+        return map[yearKey].find(item => item.month === monthLabel);
+    };
+
+    pathRows.forEach(row => {
+        const target = ensureMonth(row.year, row.month);
+        if (!target) return;
+        const payload = row.payload || {};
+        const rows = Array.isArray(payload.rows) ? payload.rows : [];
+        if (rows.length > 0) {
+            const sources = {};
+            const sourceRevenue = {};
+            const sourceAvgFee = {};
+            const sourceInsurancePatients = {};
+            const sourceNonInsurancePatients = {};
+
+            rows.forEach(item => {
+                const path = item.path;
+                if (!path) return;
+                sources[path] = Number(item.newPatient || 0);
+                sourceRevenue[path] = Number(item.totalFee || 0);
+                sourceAvgFee[path] = Number(item.avgFee || 0);
+                sourceInsurancePatients[path] = Number(item.insurancePatients || 0);
+                sourceNonInsurancePatients[path] = Number(item.nonInsurancePatients || 0);
+            });
+
+            Object.assign(target, {
+                sources,
+                sourceRevenue,
+                sourceAvgFee,
+                sourceInsurancePatients,
+                sourceNonInsurancePatients,
+                pathDistributionSummary: payload.summary || {},
+            });
+        }
+
+        if (payload.insuranceRatios && Object.keys(payload.insuranceRatios).length > 0) {
+            target.sourceInsuranceRatios = {
+                ...(target.sourceInsuranceRatios || {}),
+                ...payload.insuranceRatios,
+            };
+        }
+    });
+
+    ageRows.forEach(row => {
+        const target = ensureMonth(row.year, row.month);
+        if (!target) return;
+        target.ages = normalizeAgeBuckets(row.payload?.ages || {});
+    });
+
+    return map;
+};
+
+const collectNewPatientYears = (supabaseMap = null, includeLocal = true) => {
     const years = new Set(['2025']);
     try {
-        const savedSales = localStorage.getItem('parsed_sales_data');
-        if (savedSales) Object.keys(JSON.parse(savedSales)).forEach(year => years.add(String(year)));
-        const savedNewPatients = localStorage.getItem('new_patient_analysis_data');
-        if (savedNewPatients) Object.keys(JSON.parse(savedNewPatients)).forEach(year => years.add(String(year)));
+        if (includeLocal) {
+            // Supabase 전환 후 로컬 캐시는 연도 산정에 사용하지 않습니다.
+        }
+        if (supabaseMap) Object.keys(supabaseMap).forEach(year => years.add(String(year)));
     } catch (e) {
         console.error(e);
     }
@@ -120,6 +170,8 @@ const collectNewPatientYears = () => {
 };
 
 const NewPatientAnalysis = () => {
+    const { clinicId } = useAuth();
+    const activeClinicId = getActiveAnalyticsClinicId(clinicId);
     const [selectedYear, setSelectedYear] = useState('2025');
     const [availableYears, setAvailableYears] = useState(['2025']);
     const [isYearOpen, setIsYearOpen] = useState(false);
@@ -128,30 +180,59 @@ const NewPatientAnalysis = () => {
     const [selectedRatioMonthIndex, setSelectedRatioMonthIndex] = useState(0);
     const [selectedTreatmentDetailMonthIndex, setSelectedTreatmentDetailMonthIndex] = useState(0);
     const [selectedUnitPriceMonthIndex, setSelectedUnitPriceMonthIndex] = useState(0);
-    const [yearData, setYearData] = useState(() => loadNewPatientData('2025'));
+    const [yearData, setYearData] = useState(() => normalizeYearData([]));
+    const [supabaseNewPatientMap, setSupabaseNewPatientMap] = useState(null);
 
     useEffect(() => {
-        const years = collectNewPatientYears();
+        const years = collectNewPatientYears(supabaseNewPatientMap, !activeClinicId);
         setAvailableYears(years);
         if (!years.includes(String(selectedYear))) setSelectedYear(years[0] || '2025');
-    }, []);
+    }, [supabaseNewPatientMap, selectedYear, activeClinicId]);
 
     useEffect(() => {
-        setYearData(loadNewPatientData(selectedYear));
-    }, [selectedYear]);
+        let cancelled = false;
+
+        const loadData = async () => {
+            let supabaseMap = null;
+            if (activeClinicId) {
+                try {
+                    const [pathRows, ageRows] = await Promise.all([
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'newPatient', subCategory: 'path_distribution' }),
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'newPatient', subCategory: 'age_distribution' }),
+                    ]);
+                    const nextMap = buildNewPatientMapFromSupabaseRows(pathRows, ageRows);
+                    supabaseMap = Object.keys(nextMap).length > 0 ? nextMap : null;
+                } catch (e) {
+                    console.error('[NewPatientAnalysis] Supabase data load error:', e);
+                }
+            }
+
+            if (cancelled) return;
+            setSupabaseNewPatientMap(supabaseMap);
+            setYearData(supabaseMap?.[selectedYear] || normalizeYearData([]));
+        };
+
+        loadData();
+        return () => {
+            cancelled = true;
+        };
+    }, [activeClinicId, selectedYear]);
 
     useEffect(() => {
         const handleNewPatientUpdate = () => {
-            setAvailableYears(collectNewPatientYears());
-            setYearData(loadNewPatientData(selectedYear));
+            setSupabaseNewPatientMap(null);
+            setAvailableYears(collectNewPatientYears(null, false));
+            setYearData(normalizeYearData([]));
         };
         window.addEventListener('newPatientAnalysisUpdated', handleNewPatientUpdate);
         window.addEventListener('storage', handleNewPatientUpdate);
+        window.addEventListener('activeClinicChanged', handleNewPatientUpdate);
         return () => {
             window.removeEventListener('newPatientAnalysisUpdated', handleNewPatientUpdate);
             window.removeEventListener('storage', handleNewPatientUpdate);
+            window.removeEventListener('activeClinicChanged', handleNewPatientUpdate);
         };
-    }, [selectedYear]);
+    }, [selectedYear, activeClinicId]);
 
     const currentHalfData = useMemo(() => {
         if (half === 'first') return yearData.slice(0, 6);

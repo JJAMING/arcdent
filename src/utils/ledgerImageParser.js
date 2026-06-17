@@ -174,24 +174,12 @@ export const parseLedgerText = (text) => {
 
 // ── localStorage 저장 ─────────────────────────────────────────────────────────
 export const saveLedgerData = (year, month, data) => {
-    const raw = localStorage.getItem(LEDGER_STORAGE_KEY);
-    let store = {};
-    try { store = raw ? JSON.parse(raw) : {}; } catch (e) { store = {}; }
-
-    if (!store[year]) store[year] = {};
-    store[year][month] = { ...data };
-
-    localStorage.setItem(LEDGER_STORAGE_KEY, JSON.stringify(store));
+    return { year, month, data };
 };
 
 // ── localStorage 전체 데이터 읽기 ────────────────────────────────────────────
 export const loadLedgerData = () => {
-    try {
-        const raw = localStorage.getItem(LEDGER_STORAGE_KEY);
-        return raw ? JSON.parse(raw) : {};
-    } catch (e) {
-        return {};
-    }
+    return {};
 };
 
 // ── 메인 API: 이미지 파일 → OCR → 파싱 → 반환 (저장은 caller 책임) ────────────

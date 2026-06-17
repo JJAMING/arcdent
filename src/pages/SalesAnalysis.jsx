@@ -11,6 +11,8 @@ import {
   Users, ChevronRight, Calculator, Calendar, ChevronDown
 } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import { useAuth } from '../context/AuthContext';
+import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import './SalesAnalysis.css';
 
 // --- MOCK DATA (100% Matching Structure) ---
@@ -28,6 +30,71 @@ const MOCK_DATA = [
   { month: '11월', netSales: 48000000, insurance: 13500000, total: 61500000, cash: 15000000, card: 33000000, other: 13500000, newPatient: 210, agreed: 150, newPatientSales: 21000000, doctorData: { '김원장': { pure: 22000000, insurance: 6000000 }, '이원장': { pure: 18500000, insurance: 5000000 }, '박원장': { pure: 7500000, insurance: 2500000 } } },
   { month: '12월', netSales: 55000000, insurance: 16000000, total: 71000000, cash: 17500000, card: 37500000, other: 16000000, newPatient: 260, agreed: 190, newPatientSales: 26000000, doctorData: { '김원장': { pure: 25000000, insurance: 8000000 }, '이원장': { pure: 21000000, insurance: 6000000 }, '박원장': { pure: 9000000, insurance: 2000000 } } }
 ];
+
+const SALES_MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+
+const createEmptySalesData = () => SALES_MONTHS.map(month => ({
+  month,
+  netSales: 0,
+  insurance: 0,
+  total: 0,
+  cash: 0,
+  card: 0,
+  other: 0,
+  newPatient: 0,
+  agreed: 0,
+  newPatientSales: 0,
+  doctorData: {},
+}));
+
+const readLocalSalesMap = () => {
+  return { '2025': createEmptySalesData() };
+};
+
+const buildSalesMapFromSupabaseRows = (rows = []) => {
+  return rows.reduce((map, row) => {
+    const year = String(row.year || '');
+    const monthNumber = Number(row.month || 0);
+    if (!year || monthNumber < 1 || monthNumber > 12) return map;
+    if (!map[year]) map[year] = createEmptySalesData();
+
+    const monthLabel = `${monthNumber}월`;
+    const target = map[year].find(item => item.month === monthLabel);
+    if (!target) return map;
+
+    Object.assign(target, {
+      ...row.payload,
+      month: monthLabel,
+    });
+    return map;
+  }, {});
+};
+
+const mergeSalesMonthlyPayloadRows = (map, rows = [], mapper = payload => payload) => {
+  rows.forEach(row => {
+    const year = String(row.year || '');
+    const monthNumber = Number(row.month || 0);
+    if (!year || monthNumber < 1 || monthNumber > 12) return;
+    if (!map[year]) map[year] = createEmptySalesData();
+
+    const monthLabel = `${monthNumber}월`;
+    const target = map[year].find(item => item.month === monthLabel);
+    if (!target) return;
+
+    Object.assign(target, mapper(row.payload || {}, row));
+  });
+};
+
+const buildRowsFromSupabasePayloadRows = (rows = []) => (
+  rows.flatMap(row => {
+    const payloadRows = Array.isArray(row.payload?.rows) ? row.payload.rows : [];
+    return payloadRows.map(item => ({
+      ...item,
+      year: item.year || row.year,
+      month: item.month || `${Number(row.month || 0)}월`,
+    }));
+  })
+);
 
 // --- Error Boundary for Robustness ---
 class TabErrorBoundary extends React.Component {
@@ -54,14 +121,16 @@ class TabErrorBoundary extends React.Component {
 }
 
 const SalesAnalysis = () => {
+  const { clinicId } = useAuth();
+  const activeClinicId = getActiveAnalyticsClinicId(clinicId);
   const [half, setHalf] = useState('all'); // 기본: 전체
   const [subTab, setSubTab] = useState('total'); // 기본탭: 총 매출 현황
   const [selectedYear, setSelectedYear] = useState('2025');
   const [availableYears, setAvailableYears] = useState(['2025']);
   const [isYearOpen, setIsYearOpen] = useState(false);
   
-  const [salesDataMap, setSalesDataMap] = useState({ "2025": MOCK_DATA });
-  const [salesData, setSalesData] = useState(MOCK_DATA);
+  const [salesDataMap, setSalesDataMap] = useState(() => ({ "2025": createEmptySalesData() }));
+  const [salesData, setSalesData] = useState(() => createEmptySalesData());
   const [agreedPatients, setAgreedPatients] = useState([]);
   const [comment, setComment] = useState('상반기 매출이 전년 대비 15% 성장하였습니다. 특히 4월과 6월 임플란트 패키지 프로모션으로 인한 순매출 증대가 두드러집니다. 하반기에는 리콜 환자 관리를 통한 재내원율 향상이 주요 과제입니다.');
 
@@ -70,50 +139,96 @@ const SalesAnalysis = () => {
   const [selectedDoctorMonth, setSelectedDoctorMonth] = useState('전체');
 
   useEffect(() => {
+    let cancelled = false;
+
+    const loadSalesAnalysisData = async () => {
     // 1. 매출 데이터 로드 (연도별 맵 지원)
-    const savedSales = localStorage.getItem('parsed_sales_data');
-    if (savedSales) {
-      try {
-        const parsed = JSON.parse(savedSales);
-        let finalMap = {};
-        if (Array.isArray(parsed)) {
-            finalMap = { "2025": parsed };
-        } else {
-            finalMap = parsed;
+    let loadedAgreedFromSupabase = false;
+    let loadedTopFromSupabase = false;
+    try {
+        let finalMap = { [selectedYear || '2025']: createEmptySalesData() };
+
+        if (activeClinicId) {
+          const [
+            totalRows,
+            doctorRows,
+            newPatientRevenueRows,
+            treatmentPlanRows,
+            topPatientRows,
+          ] = await Promise.all([
+            loadAnalyticsData({ clinicId: activeClinicId, category: 'sales', subCategory: 'total_revenue' }),
+            loadAnalyticsData({ clinicId: activeClinicId, category: 'sales', subCategory: 'doctor_revenue' }),
+            loadAnalyticsData({ clinicId: activeClinicId, category: 'sales', subCategory: 'new_patient_revenue' }),
+            loadAnalyticsData({ clinicId: activeClinicId, category: 'sales', subCategory: 'treatment_plan' }),
+            loadAnalyticsData({ clinicId: activeClinicId, category: 'sales', subCategory: 'top_patients' }),
+          ]);
+          const supabaseMap = buildSalesMapFromSupabaseRows(totalRows);
+          mergeSalesMonthlyPayloadRows(supabaseMap, doctorRows, payload => ({
+            doctorData: payload.doctorData || {},
+            netSales: Number(payload.netSales || 0),
+            insurance: Number(payload.insurance || 0),
+            total: Number(payload.total || 0),
+          }));
+          mergeSalesMonthlyPayloadRows(supabaseMap, newPatientRevenueRows, payload => ({
+            newPatient: Number(payload.newPatient || 0),
+            newPatientSales: Number(payload.newPatientSales || 0),
+          }));
+          if (Object.keys(supabaseMap).length > 0) {
+            finalMap = supabaseMap;
+          }
+
+          const supabaseAgreedRows = buildRowsFromSupabasePayloadRows(treatmentPlanRows);
+          if (supabaseAgreedRows.length > 0) {
+            setAgreedPatients(supabaseAgreedRows);
+            loadedAgreedFromSupabase = true;
+          }
+
+          const supabaseTopRows = buildRowsFromSupabasePayloadRows(topPatientRows);
+          if (supabaseTopRows.length > 0) {
+            setTopPatientsRaw(supabaseTopRows);
+            loadedTopFromSupabase = true;
+          }
         }
+
+        if (cancelled) return;
         
         const years = Object.keys(finalMap).sort((a, b) => b - a);
         setAvailableYears(years.length > 0 ? years : ['2025']);
         setSalesDataMap(finalMap);
         
         // 현재 선택된 연도의 데이터로 초기화
-        const initialYear = years.includes('2025') ? '2025' : (years[0] || '2025');
+        const initialYear = years.includes(selectedYear) ? selectedYear : (years.includes('2025') ? '2025' : (years[0] || '2025'));
         setSelectedYear(initialYear);
         if (finalMap[initialYear]) setSalesData(finalMap[initialYear]);
       } catch (e) { console.error(e); }
-    }
 
     // 2. 동의환자 데이터 로드
-    const savedAgreed = localStorage.getItem('treatment_plan_data');
-    if (savedAgreed) {
-      try { setAgreedPatients(JSON.parse(savedAgreed)); } catch (e) { console.error(e); }
+    if (!loadedAgreedFromSupabase) {
+      setAgreedPatients([]);
     }
 
     // 3. 진료비 상위 환자 데이터 로드
-    const savedTop = localStorage.getItem('top_patients_raw_data');
-    if (savedTop) {
-      try { setTopPatientsRaw(JSON.parse(savedTop)); } catch (e) { console.error(e); }
+    if (!loadedTopFromSupabase) {
+      setTopPatientsRaw([]);
     }
+    };
+
+    loadSalesAnalysisData();
 
     // Storage 이벤트 리스너
     const handleStorageChange = (e) => {
-      if (e.key === 'parsed_sales_data' || e.key === 'treatment_plan_data' || e.key === 'top_patients_raw_data') {
+      if (e.type === 'activeClinicChanged' || e.key === 'parsed_sales_data' || e.key === 'treatment_plan_data' || e.key === 'top_patients_raw_data') {
         window.location.reload();
       }
     };
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
+    window.addEventListener('activeClinicChanged', handleStorageChange);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('activeClinicChanged', handleStorageChange);
+    };
+  }, [activeClinicId]);
 
   // 연도 변경 핸들러
   const handleYearChange = (year) => {

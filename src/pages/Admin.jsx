@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { Users, Upload, FileSpreadsheet, CheckCircle, XCircle, X, FileDown } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle, XCircle, X, FileDown, LockKeyhole, LogOut } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Tesseract from 'tesseract.js';
 import { parseImplantExcel } from '../utils/implantExcelParser';
 import { parseInsuranceExcel } from '../utils/insuranceExcelParser';
-import { parseLedgerImage, saveLedgerData, loadLedgerData, extractYearMonthFromFileName } from '../utils/ledgerImageParser';
+import { parseLedgerImage, parseLedgerText, extractYearMonthFromFileName } from '../utils/ledgerImageParser';
+import { supabase } from '../lib/supabaseClient';
+import { loadAnalyticsData, saveAnalyticsData } from '../utils/supabaseAnalyticsStore';
+import { useAuth } from '../context/AuthContext';
 import './Admin.css';
 
 // ── 모달/버튼 스타일 상수 ────────────────────────────────────────────────────
@@ -91,7 +93,13 @@ const REPORT_PERIODS = [
 const NEW_PATIENT_STORAGE_KEY = 'new_patient_analysis_data';
 const CONSULTATION_CONSULTANT_STORAGE_KEY = 'consultation_consultant_data';
 const CONSULTATION_REJECTED_STORAGE_KEY = 'consultation_rejected_data';
+const ADMIN_AUTH_SESSION_KEY = 'arcdent_admin_authenticated';
 const AGE_RANGES = ['0대', '10대', '20대', '30대', '40대', '50대', '60대', '70대+'];
+const normalizeAdminLoginId = (value) => {
+    const loginId = value.trim();
+    if (loginId.includes('@')) return loginId;
+    return `${loginId}@arcdent.local`;
+};
 const OCR_FIELDS = [
     { key: 'workDays', label: '진료일수',        unit: '일' },
     { key: 'newPt',    label: '신환',            unit: '명' },
@@ -148,25 +156,7 @@ const isInsuranceClaimFile = (filename) => (
     /^[12]\d{3}년.*보험청구액/.test(normalizeHeader(filename))
 );
 
-const saveInsuranceClaimData = ({ year, rows }) => {
-    let store = {};
-    try {
-        store = JSON.parse(localStorage.getItem('insurance_claim_data') || '{}');
-    } catch (e) {
-        store = {};
-    }
-
-    store[year] = MONTHS.map(month => {
-        const found = rows.find(row => row.month === month) || {};
-        return {
-            month,
-            health: Number(found.health || 0),
-            medicalAid: Number(found.medicalAid || 0),
-            amount: Number(found.amount || 0),
-        };
-    });
-
-    localStorage.setItem('insurance_claim_data', JSON.stringify(store));
+const notifyInsuranceClaimUpdated = ({ year }) => {
     window.dispatchEvent(new CustomEvent('insuranceClaimUpdated', { detail: { year } }));
 };
 
@@ -254,23 +244,7 @@ const parseInsuranceClaimExcel = (file) => new Promise((resolve, reject) => {
     reader.readAsBinaryString(file);
 });
 
-const saveInsuranceFeeStatsData = ({ year, month, rows }) => {
-    let store = {};
-    try {
-        store = JSON.parse(localStorage.getItem('insurance_fee_stats_data') || '{}');
-    } catch (e) {
-        store = {};
-    }
-
-    const yearData = Array.isArray(store[year])
-        ? store[year]
-        : MONTHS.map(item => ({ month: item, fees: [] }));
-    const target = yearData.find(item => item.month === month);
-    if (!target) throw new Error(`${year}년 ${month} 데이터를 만들 수 없습니다.`);
-
-    target.fees = rows;
-    store[year] = yearData;
-    localStorage.setItem('insurance_fee_stats_data', JSON.stringify(store));
+const notifyInsuranceFeeStatsUpdated = ({ year, month }) => {
     window.dispatchEvent(new CustomEvent('insuranceFeeStatsUpdated', { detail: { year, month } }));
 };
 
@@ -701,77 +675,19 @@ const parseNewPatientPathText = (text, fileName, words = []) => {
     }
 };
 
-const saveNewPatientPathDistribution = ({ year, month, rows = [], summary, insuranceRatios }) => {
-    let store = {};
-    try {
-        store = JSON.parse(localStorage.getItem(NEW_PATIENT_STORAGE_KEY) || '{}');
-    } catch (e) {
-        store = {};
-    }
-
-    const yearData = Array.isArray(store[year]) ? store[year] : createEmptyNewPatientYearData();
-    const target = yearData.find(item => item.month === month);
-    if (!target) throw new Error(`${year}년 ${month} 데이터를 만들 수 없습니다.`);
-
-    const sources = {};
-    const sourceRevenue = {};
-    const sourceAvgFee = {};
-    const sourceInsurancePatients = {};
-    const sourceNonInsurancePatients = {};
-
-    rows.forEach(row => {
-        sources[row.path] = row.newPatient;
-        sourceRevenue[row.path] = row.totalFee;
-        sourceAvgFee[row.path] = row.avgFee;
-        sourceInsurancePatients[row.path] = row.insurancePatients;
-        sourceNonInsurancePatients[row.path] = row.nonInsurancePatients;
-    });
-
-    if (rows.length > 0) {
-        Object.assign(target, {
-            sources,
-            sourceRevenue,
-            sourceAvgFee,
-            sourceInsurancePatients,
-            sourceNonInsurancePatients,
-            pathDistributionSummary: summary || {},
-        });
-    }
-
-    if (insuranceRatios && Object.keys(insuranceRatios).length > 0) {
-        target.sourceInsuranceRatios = {
-            ...(target.sourceInsuranceRatios || {}),
-            ...insuranceRatios,
-        };
-    }
-
-    store[year] = yearData;
-    localStorage.setItem(NEW_PATIENT_STORAGE_KEY, JSON.stringify(store));
-    window.dispatchEvent(new CustomEvent('newPatientAnalysisUpdated', { detail: { year, month } }));
-};
-
-const saveNewPatientAgeDistribution = ({ year, month, ages }) => {
-    let store = {};
-    try {
-        store = JSON.parse(localStorage.getItem(NEW_PATIENT_STORAGE_KEY) || '{}');
-    } catch (e) {
-        store = {};
-    }
-
-    const yearData = Array.isArray(store[year]) ? store[year] : createEmptyNewPatientYearData();
-    const target = yearData.find(item => item.month === month);
-    if (!target) throw new Error(`${year}년 ${month} 데이터를 만들 수 없습니다.`);
-
-    target.ages = Object.fromEntries(AGE_RANGES.map(range => [range, Number(ages?.[range] || 0)]));
-    store[year] = yearData;
-    localStorage.setItem(NEW_PATIENT_STORAGE_KEY, JSON.stringify(store));
+const notifyNewPatientAnalysisUpdated = ({ year, month }) => {
     window.dispatchEvent(new CustomEvent('newPatientAnalysisUpdated', { detail: { year, month } }));
 };
 
 const Admin = () => {
-    const { getAllUsers } = useAuth();
-    const [users, setUsers] = useState([]);
+    const { isAdmin, profileError } = useAuth();
     const fileInputRef  = useRef(null);
+    const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => (
+        sessionStorage.getItem(ADMIN_AUTH_SESSION_KEY) === 'true'
+    ));
+    const [adminLoginId, setAdminLoginId] = useState('');
+    const [adminLoginPassword, setAdminLoginPassword] = useState('');
+    const [adminLoginError, setAdminLoginError] = useState('');
     const [uploadLog, setUploadLog]       = useState([]);
     const [isDragOver, setIsDragOver]     = useState(false);
     const [pendingNewPatientUploads, setPendingNewPatientUploads] = useState([]);
@@ -781,42 +697,318 @@ const Admin = () => {
     const [reportSubTab, setReportSubTab] = useState('all');
     const [reportBundleCategories, setReportBundleCategories] = useState(['home', 'sales', 'patient', 'newPatient', 'consultation']);
     const [reportYear, setReportYear] = useState('2025');
+    const [availableReportYears, setAvailableReportYears] = useState(YEARS);
     const [reportPeriod, setReportPeriod] = useState('all');
     const [reportMonth, setReportMonth] = useState('1월');
+    const reportStoreRef = useRef(null);
+    const [adminClinics, setAdminClinics] = useState([]);
+    const [selectedAdminClinicId, setSelectedAdminClinicId] = useState(() => (
+        sessionStorage.getItem('arcdent_admin_selected_clinic_id') || ''
+    ));
+    const [clinicSelectLoading, setClinicSelectLoading] = useState(false);
+    const [clinicSelectError, setClinicSelectError] = useState('');
 
     // OCR 모달
     const [ocrModal, setOcrModal]   = useState(null);
     const [ocrProcessingFile, setOcrProcessingFile] = useState('');
 
     useEffect(() => {
-        setUsers(getAllUsers());
         localStorage.removeItem('admin_uploaded_images');
     }, []);
+
+    useEffect(() => {
+        if (!isAdmin) {
+            sessionStorage.removeItem(ADMIN_AUTH_SESSION_KEY);
+            setIsAdminAuthenticated(false);
+        }
+    }, [isAdmin]);
+
+    useEffect(() => {
+        if (!isAdminAuthenticated || !isAdmin) return;
+
+        let isMounted = true;
+
+        const loadAdminClinics = async () => {
+            setClinicSelectLoading(true);
+            setClinicSelectError('');
+
+            const { data, error } = await supabase
+                .from('clinics')
+                .select('id, name, code')
+                .order('name', { ascending: true });
+
+            if (!isMounted) return;
+
+            if (error) {
+                setAdminClinics([]);
+                setClinicSelectError(error.message);
+                setClinicSelectLoading(false);
+                return;
+            }
+
+            const clinics = data || [];
+            setAdminClinics(clinics);
+
+            const savedClinicId = sessionStorage.getItem('arcdent_admin_selected_clinic_id') || '';
+            const hasSavedClinic = clinics.some(item => item.id === savedClinicId);
+            const nextClinicId = hasSavedClinic ? savedClinicId : clinics[0]?.id || '';
+
+            setSelectedAdminClinicId(nextClinicId);
+
+            if (nextClinicId) {
+                sessionStorage.setItem('arcdent_admin_selected_clinic_id', nextClinicId);
+            } else {
+                sessionStorage.removeItem('arcdent_admin_selected_clinic_id');
+            }
+
+            setClinicSelectLoading(false);
+        };
+
+        loadAdminClinics();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [isAdminAuthenticated, isAdmin]);
+
+    useEffect(() => {
+        if (!isAdminAuthenticated || !isAdmin || !selectedAdminClinicId) {
+            setAvailableReportYears(YEARS);
+            return;
+        }
+
+        let isMounted = true;
+        const loadReportYears = async () => {
+            const { data, error } = await supabase
+                .from('analytics_data')
+                .select('year')
+                .eq('clinic_id', selectedAdminClinicId);
+
+            if (!isMounted) return;
+            if (error) {
+                setAvailableReportYears(YEARS);
+                return;
+            }
+
+            const years = Array.from(new Set([
+                ...YEARS,
+                ...(data || []).map(row => String(row.year)).filter(Boolean),
+            ])).sort((a, b) => Number(b) - Number(a));
+            setAvailableReportYears(years);
+            if (!years.includes(reportYear)) {
+                setReportYear(years[0] || '2025');
+            }
+        };
+
+        loadReportYears();
+        return () => {
+            isMounted = false;
+        };
+    }, [isAdminAuthenticated, isAdmin, selectedAdminClinicId, reportYear]);
+
+    const handleAdminLogin = async (event) => {
+        event.preventDefault();
+        setAdminLoginError('');
+
+        const email = normalizeAdminLoginId(adminLoginId);
+        if (!adminLoginId.trim() || !adminLoginPassword) {
+            setAdminLoginError('관리자 계정 아이디와 비밀번호를 입력해 주세요.');
+            return;
+        }
+
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password: adminLoginPassword,
+        });
+
+        if (error || !data?.user?.id) {
+            setAdminLoginError('관리자 계정 아이디 또는 비밀번호가 올바르지 않습니다.');
+            return;
+        }
+
+        const { data: profileData, error: profileFetchError } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('user_id', data.user.id)
+            .maybeSingle();
+
+        if (profileFetchError || profileData?.role !== 'admin') {
+            await supabase.auth.signOut();
+            sessionStorage.removeItem(ADMIN_AUTH_SESSION_KEY);
+            sessionStorage.removeItem('arcdent_admin_selected_clinic_id');
+            setIsAdminAuthenticated(false);
+            setAdminLoginError('관리자 권한이 없는 계정입니다. 관리자 계정으로 로그인해 주세요.');
+            return;
+        }
+
+        sessionStorage.setItem(ADMIN_AUTH_SESSION_KEY, 'true');
+        setIsAdminAuthenticated(true);
+        setAdminLoginError('');
+        setAdminLoginPassword('');
+    };
+
+    const handleAdminLogout = async () => {
+        sessionStorage.removeItem(ADMIN_AUTH_SESSION_KEY);
+        sessionStorage.removeItem('arcdent_admin_selected_clinic_id');
+        setIsAdminAuthenticated(false);
+        setAdminLoginId('');
+        setAdminLoginPassword('');
+        setAdminLoginError('');
+        await supabase.auth.signOut();
+    };
+
+    if (!isAdmin || !isAdminAuthenticated) {
+        return (
+            <div className="admin-auth-container">
+                <form className="admin-auth-card" onSubmit={handleAdminLogin}>
+                    <div className="admin-auth-header">
+                        <LockKeyhole size={34} className="admin-auth-icon" />
+                        <h1>관리자 계정 로그인</h1>
+                        <p>관리자 모드는 Supabase 관리자 계정으로 로그인한 경우에만 이용할 수 있습니다.</p>
+                    </div>
+
+                    {adminLoginError && (
+                        <div className="admin-auth-error">{adminLoginError}</div>
+                    )}
+                    {!isAdmin && profileError && (
+                        <div className="admin-auth-error">{profileError}</div>
+                    )}
+
+                    <label className="admin-auth-field">
+                        <span>관리자 계정 아이디</span>
+                        <input
+                            type="text"
+                            value={adminLoginId}
+                            onChange={(event) => setAdminLoginId(event.target.value)}
+                            autoComplete="username"
+                            autoFocus
+                        />
+                    </label>
+
+                    <label className="admin-auth-field">
+                        <span>비밀번호</span>
+                        <input
+                            type="password"
+                            value={adminLoginPassword}
+                            onChange={(event) => setAdminLoginPassword(event.target.value)}
+                            autoComplete="current-password"
+                        />
+                    </label>
+
+                    <button type="submit" className="admin-auth-submit">
+                        관리자 모드 진입
+                    </button>
+                </form>
+            </div>
+        );
+    }
 
     const addLog = (type, msg) => {
         setUploadLog(prev => [...prev, { type, msg, id: Date.now() }]);
     };
 
-    const getReportYears = () => {
-        const years = new Set(YEARS);
-        [
-            'parsed_sales_data',
-            'patient_ledger_data',
-            NEW_PATIENT_STORAGE_KEY,
-            'treatment_performance_data',
-            'insurance_claim_data',
-            'insurance_fee_stats_data',
-            'consultation_overall_data',
-            CONSULTATION_CONSULTANT_STORAGE_KEY,
-            CONSULTATION_REJECTED_STORAGE_KEY,
-        ].forEach(key => {
-            try {
-                const parsed = JSON.parse(localStorage.getItem(key) || '{}');
-                Object.keys(parsed || {}).forEach(year => years.add(String(year)));
-            } catch (e) { /* ignore */ }
-        });
-        return Array.from(years).sort((a, b) => Number(b) - Number(a));
+    const selectedAdminClinic = adminClinics.find(item => item.id === selectedAdminClinicId) || null;
+
+    const handleAdminClinicChange = (event) => {
+        const clinicId = event.target.value;
+        setSelectedAdminClinicId(clinicId);
+
+        if (clinicId) {
+            sessionStorage.setItem('arcdent_admin_selected_clinic_id', clinicId);
+        } else {
+            sessionStorage.removeItem('arcdent_admin_selected_clinic_id');
+        }
+        window.dispatchEvent(new Event('activeClinicChanged'));
     };
+
+    const getExistingAnalyticsPayload = async ({ category, subCategory, year, month }) => {
+        const rows = await loadAnalyticsData({
+            clinicId: selectedAdminClinicId,
+            category,
+            subCategory,
+            year,
+        });
+        const monthNumber = month == null
+            ? null
+            : Number(String(month).replace(/[^0-9]/g, ''));
+        const found = rows.find(row => (
+            monthNumber == null
+                ? row.month == null
+                : Number(row.month) === monthNumber
+        ));
+        return found?.payload || {};
+    };
+
+    const mergeAnalyticsPayload = (existingPayload, nextPayload) => {
+        const merged = {
+            ...(existingPayload || {}),
+            ...(nextPayload || {}),
+        };
+
+        if (Array.isArray(nextPayload?.rows) && nextPayload.rows.length === 0 && Array.isArray(existingPayload?.rows)) {
+            merged.rows = existingPayload.rows;
+        }
+        if ((!nextPayload?.summary || Object.keys(nextPayload.summary || {}).length === 0) && existingPayload?.summary) {
+            merged.summary = existingPayload.summary;
+        }
+        if (existingPayload?.insuranceRatios || nextPayload?.insuranceRatios) {
+            merged.insuranceRatios = {
+                ...(existingPayload?.insuranceRatios || {}),
+                ...(nextPayload?.insuranceRatios || {}),
+            };
+        }
+
+        return merged;
+    };
+
+    const saveSelectedClinicAnalytics = async ({ category, subCategory, year, month, payload, mergeExisting = false }) => {
+        if (!selectedAdminClinicId) {
+            const err = new Error('업로드 대상 치과를 먼저 선택해주세요.');
+            addLog('error', `❌ [Supabase 저장 실패] ${err.message}`);
+            throw err;
+        }
+
+        try {
+            const finalPayload = mergeExisting
+                ? mergeAnalyticsPayload(
+                    await getExistingAnalyticsPayload({ category, subCategory, year, month }),
+                    payload
+                )
+                : payload;
+
+            let lastError = null;
+            for (let attempt = 1; attempt <= 3; attempt += 1) {
+                try {
+                    await saveAnalyticsData({
+                        clinicId: selectedAdminClinicId,
+                        category,
+                        subCategory,
+                        year,
+                        month,
+                        payload: finalPayload,
+                    });
+                    lastError = null;
+                    break;
+                } catch (saveError) {
+                    lastError = saveError;
+                    if (attempt < 3) {
+                        await new Promise(resolve => setTimeout(resolve, attempt * 350));
+                    }
+                }
+            }
+            if (lastError) throw lastError;
+            addLog(
+                'success',
+                `✅ [Supabase] ${selectedAdminClinic?.name || '선택 치과'} ${year}년 ${month ? `${month}월 ` : ''}${category}/${subCategory} 저장 완료`
+            );
+            return true;
+        } catch (err) {
+            addLog('error', `❌ [Supabase 저장 실패] ${err.message}`);
+            throw err;
+        }
+    };
+
+    const getReportYears = () => availableReportYears;
 
     const reportMonths = reportPeriod === 'month'
         ? [reportMonth]
@@ -833,11 +1025,7 @@ const Admin = () => {
     const reportSubTabLabel = reportSubTabs.find(item => item.key === reportSubTab)?.label || reportSubTabs[0]?.label || '전체 탭';
 
     const readReportStore = (key, fallback = {}) => {
-        try {
-            return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback));
-        } catch (e) {
-            return fallback;
-        }
+        return reportStoreRef.current?.[key] ?? fallback;
     };
 
     const normalizeReportRows = (store, year, emptyRow = {}) => {
@@ -885,6 +1073,114 @@ const Admin = () => {
             `).join('')}
         </div>
     `;
+
+    const getReportMonthLabel = (month) => {
+        const index = Number(month) - 1;
+        return MONTHS[index] || `${Number(month)}월`;
+    };
+
+    const emptyReportMonthStore = (year) => ({ [String(year)]: {} });
+
+    const putReportPayload = (store, year, row, payloadMapper = payload => payload || {}) => {
+        const monthLabel = getReportMonthLabel(row.month);
+        if (!monthLabel) return;
+        if (!store[String(year)]) store[String(year)] = {};
+        store[String(year)][monthLabel] = {
+            ...(store[String(year)][monthLabel] || {}),
+            month: monthLabel,
+            ...payloadMapper(row.payload || {}, row),
+        };
+    };
+
+    const loadReportStoresFromSupabase = async (year) => {
+        if (!selectedAdminClinicId) {
+            throw new Error('PDF 보고서를 만들 치과를 먼저 선택해주세요.');
+        }
+
+        const fetchRows = (category, subCategory) => loadAnalyticsData({
+            clinicId: selectedAdminClinicId,
+            category,
+            subCategory,
+            year,
+        });
+
+        const [
+            salesTotalRows,
+            salesDoctorRows,
+            salesNewPatientRows,
+            salesTreatmentPlanRows,
+            salesTopPatientRows,
+            patientLedgerRows,
+            treatmentImplantRows,
+            treatmentInsuranceRows,
+            newPatientPathRows,
+            newPatientAgeRows,
+            consultationOverallRows,
+            consultationConsultantRows,
+            consultationRejectedRows,
+            insuranceClaimRows,
+            insuranceFeeRows,
+        ] = await Promise.all([
+            fetchRows('sales', 'total_revenue'),
+            fetchRows('sales', 'doctor_revenue'),
+            fetchRows('sales', 'new_patient_revenue'),
+            fetchRows('sales', 'treatment_plan'),
+            fetchRows('sales', 'top_patients'),
+            fetchRows('patient', 'total_patients_ledger'),
+            fetchRows('treatment', 'implant_surgery'),
+            fetchRows('treatment', 'insurance_treatment'),
+            fetchRows('newPatient', 'path_distribution'),
+            fetchRows('newPatient', 'age_distribution'),
+            fetchRows('consultation', 'overall'),
+            fetchRows('consultation', 'consultant'),
+            fetchRows('consultation', 'rejected'),
+            fetchRows('insurance', 'claim'),
+            fetchRows('insurance', 'fee_stats'),
+        ]);
+
+        const stores = {
+            parsed_sales_data: emptyReportMonthStore(year),
+            patient_ledger_data: emptyReportMonthStore(year),
+            treatment_performance_data: emptyReportMonthStore(year),
+            [NEW_PATIENT_STORAGE_KEY]: emptyReportMonthStore(year),
+            consultation_overall_data: emptyReportMonthStore(year),
+            [CONSULTATION_CONSULTANT_STORAGE_KEY]: emptyReportMonthStore(year),
+            [CONSULTATION_REJECTED_STORAGE_KEY]: emptyReportMonthStore(year),
+            insurance_claim_data: emptyReportMonthStore(year),
+            insurance_fee_stats_data: emptyReportMonthStore(year),
+            top_patients_raw_data: [],
+        };
+
+        salesTotalRows.forEach(row => putReportPayload(stores.parsed_sales_data, year, row));
+        salesDoctorRows.forEach(row => putReportPayload(stores.parsed_sales_data, year, row));
+        salesNewPatientRows.forEach(row => putReportPayload(stores.parsed_sales_data, year, row));
+        salesTreatmentPlanRows.forEach(row => putReportPayload(stores.parsed_sales_data, year, row, payload => ({
+            treatmentPlans: payload.rows || [],
+        })));
+        salesTopPatientRows.forEach(row => {
+            const monthLabel = getReportMonthLabel(row.month);
+            (row.payload?.rows || []).forEach(item => {
+                stores.top_patients_raw_data.push({ ...item, year: String(year), month: monthLabel });
+            });
+        });
+
+        patientLedgerRows.forEach(row => putReportPayload(stores.patient_ledger_data, year, row));
+        treatmentImplantRows.forEach(row => putReportPayload(stores.treatment_performance_data, year, row));
+        treatmentInsuranceRows.forEach(row => putReportPayload(stores.treatment_performance_data, year, row));
+        newPatientPathRows.forEach(row => putReportPayload(stores[NEW_PATIENT_STORAGE_KEY], year, row));
+        newPatientAgeRows.forEach(row => putReportPayload(stores[NEW_PATIENT_STORAGE_KEY], year, row, payload => ({
+            ages: payload.ages || {},
+        })));
+        consultationOverallRows.forEach(row => putReportPayload(stores.consultation_overall_data, year, row));
+        consultationConsultantRows.forEach(row => putReportPayload(stores[CONSULTATION_CONSULTANT_STORAGE_KEY], year, row));
+        consultationRejectedRows.forEach(row => putReportPayload(stores[CONSULTATION_REJECTED_STORAGE_KEY], year, row));
+        insuranceClaimRows.forEach(row => putReportPayload(stores.insurance_claim_data, year, row));
+        insuranceFeeRows.forEach(row => putReportPayload(stores.insurance_fee_stats_data, year, row, payload => ({
+            fees: payload.rows || payload.fees || [],
+        })));
+
+        return stores;
+    };
 
     const buildReportSections = (category, year, tab = 'all') => {
         const includeTab = (key) => tab === 'all' || tab === key;
@@ -1199,7 +1495,7 @@ const Admin = () => {
         `).join('');
     };
 
-    const handleDownloadReportPdf = () => {
+    const handleDownloadReportPdf = async () => {
         const category = REPORT_CATEGORIES.find(item => item.key === reportCategory) || REPORT_CATEGORIES[0];
         if (reportMode === 'bundle' && reportBundleCategories.length === 0) {
             addLog('error', '❌ [PDF 보고서] 통합 보고서에 포함할 카테고리를 1개 이상 선택해 주세요.');
@@ -1208,9 +1504,19 @@ const Admin = () => {
         const title = reportMode === 'bundle'
             ? `${reportYear}년 ${reportPeriodLabel} 통합 보고서`
             : `${reportYear}년 ${reportPeriodLabel} ${category.label}${reportSubTab !== 'all' ? ` - ${reportSubTabLabel}` : ''}`;
-        const sections = reportMode === 'bundle'
-            ? buildIntegratedReportSections(reportYear)
-            : buildReportSections(reportCategory, reportYear, reportSubTab);
+        let sections = '';
+        try {
+            reportStoreRef.current = await loadReportStoresFromSupabase(reportYear);
+            sections = reportMode === 'bundle'
+                ? buildIntegratedReportSections(reportYear)
+                : buildReportSections(reportCategory, reportYear, reportSubTab);
+        } catch (err) {
+            reportStoreRef.current = null;
+            addLog('error', `??[PDF 보고서] Supabase 데이터를 불러오지 못했습니다: ${err.message}`);
+            return;
+        } finally {
+            reportStoreRef.current = null;
+        }
         const popup = window.open('', '_blank', 'width=1100,height=900');
         if (!popup) {
             addLog('error', '❌ PDF 보고서 창을 열 수 없습니다. 팝업 차단을 해제해 주세요.');
@@ -1273,22 +1579,34 @@ const Admin = () => {
         }]);
     };
 
-    const handleApproveNewPatientUpload = () => {
+    const handleApproveNewPatientUpload = async () => {
         if (pendingNewPatientUploads.length === 0) return;
         let savedCount = 0;
         try {
-            pendingNewPatientUploads.forEach(upload => {
-                saveNewPatientPathDistribution(upload);
+            for (const upload of pendingNewPatientUploads) {
+                await saveSelectedClinicAnalytics({
+                    category: 'newPatient',
+                    subCategory: 'path_distribution',
+                    year: upload.year,
+                    month: upload.month,
+                    payload: {
+                        rows: upload.rows || [],
+                        summary: upload.summary,
+                        insuranceRatios: upload.insuranceRatios || {},
+                    },
+                    mergeExisting: true,
+                });
+                notifyNewPatientAnalysisUpdated(upload);
                 savedCount += 1;
                 addLog('success', `✅ [신환분석] ${upload.year}년 ${upload.month} ${upload.fileName} 반영 완료 (${upload.rows.length}개 경로)`);
-            });
+            }
             setPendingNewPatientUploads([]);
         } catch (err) {
             addLog('error', `❌ [신환분석 저장 오류] ${savedCount}개 반영 후 중단: ${err.message}`);
         }
     };
 
-    const handleApproveConsultationBundle = () => {
+    const handleApproveConsultationBundle = async () => {
         if (!pendingConsultationBundle) return;
         try {
             const { fileName, overall, consultant, rejected } = pendingConsultationBundle;
@@ -1344,6 +1662,27 @@ const Admin = () => {
                     .filter(row => row.patientName),
             };
 
+            await saveSelectedClinicAnalytics({
+                category: 'consultation',
+                subCategory: 'overall',
+                year: normalizedOverall.year,
+                month: normalizedOverall.month,
+                payload: normalizedOverall,
+            });
+            await saveSelectedClinicAnalytics({
+                category: 'consultation',
+                subCategory: 'consultant',
+                year: normalizedConsultant.year,
+                month: normalizedConsultant.month,
+                payload: normalizedConsultant,
+            });
+            await saveSelectedClinicAnalytics({
+                category: 'consultation',
+                subCategory: 'rejected',
+                year: normalizedRejected.year,
+                month: normalizedRejected.month,
+                payload: normalizedRejected,
+            });
             saveConsultationOverallData(normalizedOverall);
             saveConsultationConsultantData(normalizedConsultant);
             saveConsultationRejectedData(normalizedRejected);
@@ -1433,6 +1772,13 @@ const Admin = () => {
                 try {
                     const text = await file.text();
                     const parsed = parseConsultationRejectedMarkdown(text, file.name);
+                    await saveSelectedClinicAnalytics({
+                        category: 'consultation',
+                        subCategory: 'rejected',
+                        year: parsed.year,
+                        month: parsed.month,
+                        payload: parsed,
+                    });
                     saveConsultationRejectedData(parsed);
                     addLog('success', `✅ [상담분석/미동의 환자 현황] ${parsed.year}년 ${parsed.month} MD 반영 완료 (${parsed.rows.length}명)`);
                 } catch (err) {
@@ -1442,6 +1788,13 @@ const Admin = () => {
                 try {
                     const text = await file.text();
                     const parsed = parseConsultationConsultantMarkdown(text, file.name);
+                    await saveSelectedClinicAnalytics({
+                        category: 'consultation',
+                        subCategory: 'consultant',
+                        year: parsed.year,
+                        month: parsed.month,
+                        payload: parsed,
+                    });
                     saveConsultationConsultantData(parsed);
                     addLog('success', `✅ [상담분석/상담자별 동의율] ${parsed.year}년 ${parsed.month} MD 반영 완료 (${parsed.rows.length}명)`);
                 } catch (err) {
@@ -1451,6 +1804,13 @@ const Admin = () => {
                 try {
                     const text = await file.text();
                     const parsed = parseConsultationOverallMarkdown(text, file.name);
+                    await saveSelectedClinicAnalytics({
+                        category: 'consultation',
+                        subCategory: 'overall',
+                        year: parsed.year,
+                        month: parsed.month,
+                        payload: parsed,
+                    });
                     saveConsultationOverallData(parsed);
                     addLog('success', `✅ [상담분석/전체동의율] ${parsed.year}년 ${parsed.month} MD 반영 완료`);
                 } catch (err) {
@@ -1459,7 +1819,14 @@ const Admin = () => {
             } else if (isNewPatientAgeDistributionFile(file.name) && !isImage) {
                 try {
                     const parsed = await parseNewPatientAgeExcel(file);
-                    saveNewPatientAgeDistribution(parsed);
+                    await saveSelectedClinicAnalytics({
+                        category: 'newPatient',
+                        subCategory: 'age_distribution',
+                        year: parsed.year,
+                        month: parsed.month,
+                        payload: parsed,
+                    });
+                    notifyNewPatientAnalysisUpdated(parsed);
                     const total = Object.values(parsed.ages || {}).reduce((sum, count) => sum + Number(count || 0), 0);
                     addLog('success', `✅ [신환분석/연령별] ${parsed.year}년 ${parsed.month} 연령별 신환수 반영 완료 (${total.toLocaleString()}명)`);
                 } catch (err) {
@@ -1502,7 +1869,6 @@ const Admin = () => {
         if (e.target) e.target.value = '';
         if (e?.target?.files && !(files instanceof Array)) setUploadLog([]);
 
-        const savedDataStr = localStorage.getItem('parsed_sales_data');
         const defaultData = [
             { month: '1월',  netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 },
             { month: '2월',  netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 },
@@ -1518,7 +1884,7 @@ const Admin = () => {
             { month: '12월', netSales: 0, insurance: 0, total: 0, cash: 0, card: 0, other: 0, newPatient: 0, agreed: 0, newPatientSales: 0 },
         ];
 
-        let salesDataMap = savedDataStr ? JSON.parse(savedDataStr) : { '2025': JSON.parse(JSON.stringify(defaultData)) };
+        let salesDataMap = { '2025': JSON.parse(JSON.stringify(defaultData)) };
         let updatedCount = 0;
 
         for (const file of files) {
@@ -1636,10 +2002,13 @@ const Admin = () => {
                                         createdAt: ci.createdAt !== -1 ? String(row[ci.createdAt] || '').trim() : `${yearFromFile}-${monthFromFile}`,
                                     });
                                 }
-                                let allPlans = JSON.parse(localStorage.getItem('treatment_plan_data') || '[]');
-                                allPlans = allPlans.filter(p => !(String(p.year) === String(yearFromFile) && String(p.month) === String(monthFromFile)));
-                                allPlans = [...allPlans, ...plans];
-                                localStorage.setItem('treatment_plan_data', JSON.stringify(allPlans));
+                                await saveSelectedClinicAnalytics({
+                                    category: 'sales',
+                                    subCategory: 'treatment_plan',
+                                    year: yearFromFile,
+                                    month: monthFromFile,
+                                    payload: { rows: plans },
+                                });
                                 updatedCount++; resolve();
                             } else { reject(`파일 내 헤더를 찾을 수 없습니다. (${fileName})`); }
                         }
@@ -1723,8 +2092,14 @@ const Admin = () => {
 
                             const month = monthFromFile;
                             if (Object.keys(doctorPatients).length > 0) {
-                                const existingLedger = loadLedgerData()?.[yearFromFile]?.[month] || {};
-                                saveLedgerData(yearFromFile, month, { ...existingLedger, doctorPatients });
+                                await saveSelectedClinicAnalytics({
+                                    category: 'patient',
+                                    subCategory: 'total_patients_ledger',
+                                    year: yearFromFile,
+                                    month,
+                                    payload: { doctorPatients },
+                                    mergeExisting: true,
+                                });
                                 window.dispatchEvent(new CustomEvent('patientLedgerUpdated', {
                                     detail: { year: yearFromFile, month }
                                 }));
@@ -1742,6 +2117,18 @@ const Admin = () => {
                                 d.netSales = netSales;
                                 d.insurance = insuranceTotal;
                                 d.total = netSales + insuranceTotal;
+                                await saveSelectedClinicAnalytics({
+                                    category: 'sales',
+                                    subCategory: 'doctor_revenue',
+                                    year: yearFromFile,
+                                    month,
+                                    payload: {
+                                        doctorData,
+                                        netSales,
+                                        insurance: insuranceTotal,
+                                        total: d.total,
+                                    },
+                                });
                             }
 
                             addLog('success', `✅ [의사별 매출] ${yearFromFile}년 ${month} 업로드 완료 (의사 ${Object.keys(doctorData).length || Object.keys(doctorPatients).length}명)`);
@@ -1814,16 +2201,16 @@ const Admin = () => {
                                 return;
                             }
 
-                            let existingTop = [];
-                            try {
-                                existingTop = JSON.parse(localStorage.getItem('top_patients_raw_data') || '[]');
-                                if (!Array.isArray(existingTop)) existingTop = [];
-                            } catch {
-                                existingTop = [];
-                            }
-                            const filteredTop = existingTop.filter(p => !(String(p.year) === String(yearFromFile) && String(p.month) === String(monthFromFile)));
-                            localStorage.setItem('top_patients_raw_data', JSON.stringify([...filteredTop, ...topPatients]));
-                            window.dispatchEvent(new StorageEvent('storage', { key: 'top_patients_raw_data' }));
+                            await saveSelectedClinicAnalytics({
+                                category: 'sales',
+                                subCategory: 'top_patients',
+                                year: yearFromFile,
+                                month: monthFromFile,
+                                payload: { rows: topPatients },
+                            });
+                            window.dispatchEvent(new CustomEvent('salesAnalysisUpdated', {
+                                detail: { year: yearFromFile, month: monthFromFile }
+                            }));
                             addLog('success', `✅ [진료비 상위] ${yearFromFile}년 ${monthFromFile} 환자별 수납내역 업로드 완료 (${topPatients.length}명)`);
                             updatedCount++;
                             resolve('topPatients');
@@ -1897,6 +2284,16 @@ const Admin = () => {
 
                             d.newPatient = newPatientTotal;
                             d.newPatientSales = newPatientSalesTotal;
+                            await saveSelectedClinicAnalytics({
+                                category: 'sales',
+                                subCategory: 'new_patient_revenue',
+                                year: yearFromFile,
+                                month: monthFromFile,
+                                payload: {
+                                    newPatient: newPatientTotal,
+                                    newPatientSales: newPatientSalesTotal,
+                                },
+                            });
                             addLog('success', `✅ [신환수익] ${yearFromFile}년 ${monthFromFile} 업로드 완료 (신환 ${newPatientTotal.toLocaleString()}명 / 신환 매출 ${newPatientSalesTotal.toLocaleString()}원)`);
                             updatedCount++;
                             resolve('newPatientRevenue');
@@ -1905,7 +2302,16 @@ const Admin = () => {
                         else if (isInsuranceClaimFile(fileName)) {
                             try {
                                 const parsed = await parseInsuranceClaimExcel(file);
-                                saveInsuranceClaimData(parsed);
+                        for (const row of parsed.rows || []) {
+                            await saveSelectedClinicAnalytics({
+                                category: 'insurance',
+                                subCategory: 'claim',
+                                year: parsed.year,
+                                        month: row.month,
+                                        payload: row,
+                                    });
+                                }
+                                notifyInsuranceClaimUpdated(parsed);
                                 const total = parsed.rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
                                 addLog('success', `✅ [보험청구분석] ${parsed.year}년 보험청구액 업로드 완료 (${total.toLocaleString()}원)`);
                                 updatedCount++;
@@ -1979,8 +2385,14 @@ const Admin = () => {
                             }
 
                             const month = monthFromFile;
-                            const existingLedger = loadLedgerData()?.[yearFromFile]?.[month] || {};
-                            saveLedgerData(yearFromFile, month, { ...existingLedger, labRequests: Object.values(labRequests) });
+                            await saveSelectedClinicAnalytics({
+                                category: 'patient',
+                                subCategory: 'total_patients_ledger',
+                                year: yearFromFile,
+                                month,
+                                payload: { labRequests: Object.values(labRequests) },
+                                mergeExisting: true,
+                            });
                             window.dispatchEvent(new CustomEvent('patientLedgerUpdated', {
                                 detail: { year: yearFromFile, month }
                             }));
@@ -1989,7 +2401,7 @@ const Admin = () => {
                             resolve('labRequests');
                         }
                         // 월간장부 (엑셀 버전)
-                        else if (fileName.includes('월간장부')) {
+                        else if (fileName.replace(/\s+/g, '').includes('월간장부')) {
                             const month = extractMonth(fileName);
                             let cashVal = 0, cardVal = 0, otherVal = 0, insuranceVal = 0;
                             let cashCol = -1, cardCol = -1, otherCol = -1, insuranceCol = -1, tonghapIdx = -1;
@@ -2003,15 +2415,30 @@ const Admin = () => {
                                 }
                                 return null;
                             };
+                            const extractMetricValueFromCell = (value, labels) => {
+                                const text = String(value ?? '');
+                                const compactText = text.replace(/\s+/g, '');
+                                for (const label of labels) {
+                                    const compactLabel = String(label).replace(/\s+/g, '');
+                                    const labelIndex = compactText.indexOf(compactLabel);
+                                    if (labelIndex === -1) continue;
+
+                                    const afterLabel = compactText.slice(labelIndex + compactLabel.length);
+                                    const match = afterLabel.match(/[:：=\-]?\s*([0-9][0-9,]*(?:\.[0-9]+)?)/);
+                                    if (match) {
+                                        return parseMaybeNum(match[1]);
+                                    }
+                                }
+                                return null;
+                            };
                             const findMetric = (labels) => {
                                 for (let r = 0; r < rawData.length; r++) {
                                     const row = rawData[r] || [];
                                     for (let c = 0; c < row.length; c++) {
                                         const cellText = String(row[c] ?? '').replace(/\s+/g, '');
                                         if (!cellText || !labels.some(label => cellText.includes(label))) continue;
-                                        if (labels.includes('총내원') && cellText.includes('총내원횟수')) continue;
 
-                                        const sameCellValue = parseMaybeNum(String(row[c]).replace(/[^\d.,-]/g, ''));
+                                        const sameCellValue = extractMetricValueFromCell(row[c], labels);
                                         if (sameCellValue != null) return sameCellValue;
 
                                         for (let offset = 1; offset <= 4; offset++) {
@@ -2063,6 +2490,9 @@ const Admin = () => {
                             if (!cardVal) {
                                 cardVal = findMetric(['카드수입', '카드']) || 0;
                             }
+                            if (!otherVal) {
+                                otherVal = findMetric(['기타(온라인)수입', '기타온라인수입', '온라인수입']) || 0;
+                            }
                             if (!insuranceVal) {
                                 insuranceVal = findMetric(['공단부담(청구액)', '공단부담청구액', '공단부담', '보험청구']) || 0;
                             }
@@ -2071,15 +2501,49 @@ const Admin = () => {
                                 d.cash = cashVal; d.card = cardVal; d.other = otherVal; d.insurance = insuranceVal;
                                 d.netSales = cashVal + cardVal + otherVal;
                                 d.total = d.netSales + insuranceVal;
+                                await saveSelectedClinicAnalytics({
+                                    category: 'sales',
+                                    subCategory: 'total_revenue',
+                                    year: yearFromFile,
+                                    month,
+                                    payload: {
+                                        month,
+                                        cash: d.cash,
+                                        card: d.card,
+                                        other: d.other,
+                                        insurance: d.insurance,
+                                        netSales: d.netSales,
+                                        total: d.total,
+                                    },
+                                });
 
+                                const ledgerTextFromSheet = rawData
+                                    .map(row => (row || []).map(cell => String(cell ?? '').trim()).filter(Boolean).join(' '))
+                                    .filter(Boolean)
+                                    .join('\n');
+                                const parsedLedgerText = parseLedgerText(ledgerTextFromSheet);
+                                const firstNumber = (...values) => {
+                                    for (const value of values) {
+                                        const num = Number(value);
+                                        if (Number.isFinite(num) && num > 0) return num;
+                                    }
+                                    return null;
+                                };
                                 const patientLedger = {
-                                    workDays: findMetric(['진료일수', '진료일', '영업일수']),
-                                    newPt: findMetric(['신환', '신규환자', '새환자']),
-                                    oldPt: findMetric(['구환', '재진환자', '기존환자']),
-                                    total: findMetric(['총내원', '총접수', '내원합계']),
-                                    avgNewPt: findMetric(['일평균신환', '신환일평균', '평균신환']),
+                                    workDays: firstNumber(findMetric(['진료일수', '진료일', '영업일수']), parsedLedgerText.workDays),
+                                    newPt: firstNumber(findMetric(['신환', '신규환자', '새환자']), parsedLedgerText.newPt),
+                                    oldPt: firstNumber(findMetric(['구환', '재진환자', '기존환자']), parsedLedgerText.oldPt),
+                                    totalVisits: firstNumber(findMetric(['총내원횟수', '총내원회수', '내원횟수', '내원회수']), parsedLedgerText.totalVisits),
+                                    total: null,
+                                    avgNewPt: null,
                                     avgOldPt: null,
                                 };
+                                if (patientLedger.totalVisits && patientLedger.workDays) {
+                                    patientLedger.total = parseFloat((patientLedger.totalVisits / patientLedger.workDays).toFixed(1));
+                                }
+                                if (patientLedger.newPt && patientLedger.workDays) {
+                                    patientLedger.avgNewPt = parseFloat((patientLedger.newPt / patientLedger.workDays).toFixed(1));
+                                }
                                 if ((patientLedger.newPt || patientLedger.oldPt) && patientLedger.workDays) {
                                     patientLedger.avgOldPt = parseFloat((((patientLedger.newPt || 0) + (patientLedger.oldPt || 0)) / patientLedger.workDays).toFixed(1));
                                 }
@@ -2087,11 +2551,20 @@ const Admin = () => {
                                     Object.entries(patientLedger).filter(([, value]) => value != null)
                                 );
                                 if (Object.keys(detectedLedger).length > 0) {
-                                    const existingLedger = loadLedgerData()?.[yearFromFile]?.[month] || {};
-                                    saveLedgerData(yearFromFile, month, { ...existingLedger, ...detectedLedger });
+                                    await saveSelectedClinicAnalytics({
+                                        category: 'patient',
+                                        subCategory: 'total_patients_ledger',
+                                        year: yearFromFile,
+                                        month,
+                                        payload: detectedLedger,
+                                        mergeExisting: true,
+                                    });
                                     window.dispatchEvent(new CustomEvent('patientLedgerUpdated', {
                                         detail: { year: yearFromFile, month }
                                     }));
+                                    addLog('success', `✅ [환자분석/총환자수] ${yearFromFile}년 ${month} 월간장부 환자 데이터 반영 완료`);
+                                } else {
+                                    addLog('warning', `⚠️ [환자분석/총환자수] ${fileName}: 월간장부에서 진료일수/신환/구환/총내원횟수 값을 찾지 못했습니다.`);
                                 }
                                 updatedCount++; resolve();
                             } else { reject(`${month} 데이터를 찾을 수 없습니다.`); }
@@ -2115,18 +2588,39 @@ const Admin = () => {
                 if (flag === 'implant') {
                     try {
                         const result = await parseImplantExcel(file);
+                        await saveSelectedClinicAnalytics({
+                            category: 'treatment',
+                            subCategory: 'implant_surgery',
+                            year: result.year,
+                            month: result.month,
+                            payload: result.data,
+                        });
                         addLog('success', `✅ [임플란트] ${result.year}년 ${result.month} 업로드 완료 (오스템 ${result.data.osstem}개 / 덴티움 ${result.data.dentium}개 / 합계 ${result.data.implantTotal}개)`);
                         updatedCount++;
                     } catch (implantErr) { addLog('error', `❌ [임플란트] ${file.name}: ${implantErr.message}`); }
                 } else if (flag === 'insurance') {
                     try {
                         const result = await parseInsuranceExcel(file);
+                        await saveSelectedClinicAnalytics({
+                            category: 'treatment',
+                            subCategory: 'insurance_treatment',
+                            year: result.year,
+                            month: result.month,
+                            payload: result.data,
+                        });
                         addLog('success', `✅ [보험수가] ${result.year}년 ${result.month} 업로드 완료\n임플 1단계:${result.data.insImpStep1} / 2단계:${result.data.insImpStep2} / 3단계:${result.data.insImpStep3}\n틀니 1단계:${result.data.insDentStep1} / 5단계:${result.data.insDentStep5} / 6단계:${result.data.insDentStep6}`);
                         updatedCount++;
                     } catch (insErr) { addLog('error', `❌ [보험수가] ${file.name}: ${insErr.message}`); }
                     try {
                         const feeStats = await parseInsuranceFeeStatsExcel(file);
-                        saveInsuranceFeeStatsData(feeStats);
+                        await saveSelectedClinicAnalytics({
+                            category: 'insurance',
+                            subCategory: 'fee_stats',
+                            year: feeStats.year,
+                            month: feeStats.month,
+                            payload: { rows: feeStats.rows },
+                        });
+                        notifyInsuranceFeeStatsUpdated(feeStats);
                         addLog('success', `✅ [보험청구분석/보험수가별] ${feeStats.year}년 ${feeStats.month} 업로드 완료 (${feeStats.rows.length}개 수가)`);
                     } catch (feeErr) { addLog('error', `❌ [보험청구분석/보험수가별] ${file.name}: ${feeErr.message}`); }
                 } else if (flag === 'doctorPatients') {
@@ -2140,8 +2634,8 @@ const Admin = () => {
                 } else if (flag === 'insuranceClaim') {
                     // handled inside processFile
                 } else {
-                    updatedCount++;
-                    addLog('success', `✅ ${file.name} 처리 완료`);
+                    addLog('error', `[미지원 파일] ${file.name}: 등록된 업로드 규칙과 일치하지 않습니다.`);
+                    continue;
                 }
             } catch (err) {
                 addLog('error', `❌ ${file.name}: ${err}`);
@@ -2149,9 +2643,6 @@ const Admin = () => {
             }
         }
 
-        if (updatedCount > 0) {
-            localStorage.setItem('parsed_sales_data', JSON.stringify(salesDataMap));
-        }
     };
 
     // ── 이미지 업로드 처리 ────────────────────────────────────────────────────
@@ -2445,11 +2936,6 @@ const Admin = () => {
     };
 
     const saveConsultationOverallData = (parsed) => {
-        const saved = JSON.parse(localStorage.getItem('consultation_overall_data') || '{}');
-        if (!saved[parsed.year]) saved[parsed.year] = {};
-        saved[parsed.year][parsed.month] = parsed;
-        localStorage.setItem('consultation_overall_data', JSON.stringify(saved));
-        window.dispatchEvent(new StorageEvent('storage', { key: 'consultation_overall_data' }));
         window.dispatchEvent(new CustomEvent('consultationAnalysisUpdated', {
             detail: { year: parsed.year, month: parsed.month }
         }));
@@ -2563,11 +3049,6 @@ const Admin = () => {
     };
 
     const saveConsultationConsultantData = (parsed) => {
-        const saved = JSON.parse(localStorage.getItem(CONSULTATION_CONSULTANT_STORAGE_KEY) || '{}');
-        if (!saved[parsed.year]) saved[parsed.year] = {};
-        saved[parsed.year][parsed.month] = parsed;
-        localStorage.setItem(CONSULTATION_CONSULTANT_STORAGE_KEY, JSON.stringify(saved));
-        window.dispatchEvent(new StorageEvent('storage', { key: CONSULTATION_CONSULTANT_STORAGE_KEY }));
         window.dispatchEvent(new CustomEvent('consultationAnalysisUpdated', {
             detail: { year: parsed.year, month: parsed.month }
         }));
@@ -2689,11 +3170,6 @@ const Admin = () => {
     };
 
     const saveConsultationRejectedData = (parsed) => {
-        const saved = JSON.parse(localStorage.getItem(CONSULTATION_REJECTED_STORAGE_KEY) || '{}');
-        if (!saved[parsed.year]) saved[parsed.year] = {};
-        saved[parsed.year][parsed.month] = parsed;
-        localStorage.setItem(CONSULTATION_REJECTED_STORAGE_KEY, JSON.stringify(saved));
-        window.dispatchEvent(new StorageEvent('storage', { key: CONSULTATION_REJECTED_STORAGE_KEY }));
         window.dispatchEvent(new CustomEvent('consultationAnalysisUpdated', {
             detail: { year: parsed.year, month: parsed.month }
         }));
@@ -3823,7 +4299,7 @@ const Admin = () => {
     };
 
     // OCR 저장
-    const handleOcrSave = () => {
+    const handleOcrSave = async () => {
         if (!ocrModal) return;
         const { yearMonth, parsedData } = ocrModal;
 
@@ -3843,6 +4319,13 @@ const Admin = () => {
                         .filter(item => item.name && item.count > 0),
                 });
                 validateConsultationOverallParsed(parsed);
+                await saveSelectedClinicAnalytics({
+                    category: 'consultation',
+                    subCategory: 'overall',
+                    year: yearMonth.year,
+                    month: yearMonth.month,
+                    payload: parsed,
+                });
                 saveConsultationOverallData(parsed);
                 addLog('success', `✅ [상담분석/전체동의율] ${yearMonth.year}년 ${yearMonth.month} 저장 완료`);
                 setOcrModal(null);
@@ -3868,7 +4351,14 @@ const Admin = () => {
             avgOldPt: safeNum(parsedData.avgOldPt),
         };
 
-        saveLedgerData(yearMonth.year, yearMonth.month, data);
+        await saveSelectedClinicAnalytics({
+            category: 'patient',
+            subCategory: 'total_patients_ledger',
+            year: yearMonth.year,
+            month: yearMonth.month,
+            payload: data,
+            mergeExisting: true,
+        });
         addLog('success',
             `✅ [환자분석] ${yearMonth.year}년 ${yearMonth.month} 월간장부 저장 완료 ` +
             `(진료일수: ${data.workDays ?? '-'}일 / 신환: ${data.newPt ?? '-'}명 / 구환: ${data.oldPt ?? '-'}명 / 총내원횟수: ${data.totalVisits ?? '-'}회 / 총접수: ${data.total ?? '-'}명)`
@@ -3889,10 +4379,47 @@ const Admin = () => {
     // ── JSX ──────────────────────────────────────────────────────────────────
     return (
         <div className="admin-container">
-            <div className="page-header">
-                <h1>관리자 패널</h1>
-                <p>시스템 설정 및 데이터 관리를 담당하는 공간입니다.</p>
+            <div className="page-header admin-page-header">
+                <div>
+                    <h1>관리자 패널</h1>
+                    <p>시스템 설정 및 데이터 관리를 담당하는 공간입니다.</p>
+                </div>
+                <button className="admin-logout-btn" onClick={handleAdminLogout}>
+                    <LogOut size={17} />
+                    <span>관리자 로그아웃</span>
+                </button>
             </div>
+
+            <section className="admin-clinic-selector">
+                <div>
+                    <h2>업로드 대상 치과</h2>
+                    <p>
+                        관리자 모드에서 업로드할 데이터를 저장할 치과를 선택하세요.
+                        {selectedAdminClinic ? ` 현재 선택: ${selectedAdminClinic.name}` : ''}
+                    </p>
+                </div>
+                <label className="admin-clinic-select-field">
+                    <span>치과 선택</span>
+                    <select
+                        value={selectedAdminClinicId}
+                        onChange={handleAdminClinicChange}
+                        disabled={clinicSelectLoading || adminClinics.length === 0}
+                    >
+                        {clinicSelectLoading && <option value="">치과 목록 불러오는 중...</option>}
+                        {!clinicSelectLoading && adminClinics.length === 0 && <option value="">등록된 치과 없음</option>}
+                        {!clinicSelectLoading && adminClinics.map(item => (
+                            <option key={item.id} value={item.id}>
+                                {item.name}{item.code ? ` (${item.code})` : ''}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+                {clinicSelectError && (
+                    <div className="admin-clinic-error">
+                        치과 목록을 불러오지 못했습니다: {clinicSelectError}
+                    </div>
+                )}
+            </section>
 
             {ocrProcessingFile && (
                 <div className="admin-loading-overlay">
@@ -4404,34 +4931,6 @@ const Admin = () => {
             )}
 
             <div className="admin-grid">
-
-                {/* 로그인 아이디 관리 */}
-                <div className="admin-card user-management">
-                    <div className="admin-card-header">
-                        <Users size={24} className="admin-card-icon" />
-                        <h2>로그인 아이디 관리</h2>
-                    </div>
-                    <div className="table-responsive">
-                        <table className="admin-table">
-                            <thead>
-                                <tr>
-                                    <th>이름</th><th>치과명</th><th>직책</th><th>이메일(ID)</th><th>가입일</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {users.length > 0 ? users.map(user => (
-                                    <tr key={user.id}>
-                                        <td>{user.name}</td>
-                                        <td>{user.clinicName}</td>
-                                        <td>{user.position}</td>
-                                        <td>{user.email}</td>
-                                        <td>{new Date(user.createdAt).toLocaleDateString()}</td>
-                                    </tr>
-                                )) : <tr><td colSpan="5">사용자가 없습니다.</td></tr>}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
 
                 {/* PDF 보고서 다운로드 */}
                 <div className="admin-card">

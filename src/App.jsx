@@ -9,7 +9,6 @@ import ConsultationAnalysis from './pages/ConsultationAnalysis';
 import InsuranceAnalysis from './pages/InsuranceAnalysis';
 import Admin from './pages/Admin';
 import Login from './pages/Login';
-import SignUp from './pages/SignUp';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import './styles/Layout.css';
@@ -32,14 +31,9 @@ function AppContent() {
     };
 
     const { isAuthenticated } = useAuth();
-    const [isSignUp, setIsSignUp] = useState(false);
 
     if (!isAuthenticated) {
-        return isSignUp ? (
-            <SignUp onSwitchToLogin={() => setIsSignUp(false)} />
-        ) : (
-            <Login onSwitchToSignUp={() => setIsSignUp(true)} />
-        );
+        return <Login />;
     }
 
     return (
