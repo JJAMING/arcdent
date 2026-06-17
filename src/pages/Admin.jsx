@@ -1939,22 +1939,43 @@ const Admin = () => {
                             return 0;
                         };
 
-                        const extractMonth = (str) => {
-                            let m = str.match(/(\d{1,2})월/);
-                            if (!m) m = str.match(/[\.\-\/](\d{1,2})(?!\d)/);
-                            if (!m) m = str.match(/^(\d{1,2})[\.\-\/]/);
-                            return m ? parseInt(m[1]) + '월' : null;
+                        const extractYearMonth = (str) => {
+                            const text = String(str || '').replace(/\.[^.]+$/, '');
+                            const compact = text.replace(/\s+/g, '');
+
+                            const compactDate = compact.match(/(20\d{2})(0[1-9]|1[0-2])(?:[0-3]\d)?/);
+                            if (compactDate) {
+                                return {
+                                    year: compactDate[1],
+                                    month: `${Number(compactDate[2])}월`,
+                                };
+                            }
+
+                            const koreanDate = text.match(/(20\d{2}|\d{2})\s*년\s*(\d{1,2})\s*월/);
+                            if (koreanDate) {
+                                const year = koreanDate[1].length === 2 ? `20${koreanDate[1]}` : koreanDate[1];
+                                return { year, month: `${Number(koreanDate[2])}월` };
+                            }
+
+                            const separatedDate =
+                                text.match(/(20\d{2})[.\-_/](\d{1,2})/) ||
+                                text.match(/(\d{2})[.\-_/](\d{1,2})/);
+                            if (separatedDate) {
+                                const year = separatedDate[1].length === 2 ? `20${separatedDate[1]}` : separatedDate[1];
+                                return { year, month: `${Number(separatedDate[2])}월` };
+                            }
+
+                            const monthOnly = text.match(/(\d{1,2})\s*월/);
+                            const yearOnly = text.match(/(20\d{2}|\d{2})\s*년/);
+                            return {
+                                year: yearOnly ? (yearOnly[1].length === 2 ? `20${yearOnly[1]}` : yearOnly[1]) : '2025',
+                                month: monthOnly ? `${Number(monthOnly[1])}월` : null,
+                            };
                         };
 
-                        const extractYear = (str) => {
-                            let m = str.match(/(20\d{2})년/) || str.match(/(\d{2})년/);
-                            if (!m) {
-                                const ym = str.match(/(20\d{2})[\.\-\/]/) || str.match(/(\d{2})[\.\-\/]/) || str.match(/^(\d{2})[\.\-\/]/);
-                                if (ym) m = ym;
-                            }
-                            if (m) { const y = m[1]; return y.length === 2 ? '20' + y : y; }
-                            return '2025';
-                        };
+                        const extractedYearMonth = extractYearMonth(fileName);
+                        const extractMonth = () => extractedYearMonth.month;
+                        const extractYear = () => extractedYearMonth.year;
 
                         const monthFromFile = extractMonth(fileName);
                         const yearFromFile  = extractYear(fileName);
@@ -2002,6 +2023,11 @@ const Admin = () => {
                                         createdAt: ci.createdAt !== -1 ? String(row[ci.createdAt] || '').trim() : `${yearFromFile}-${monthFromFile}`,
                                     });
                                 }
+                                if (plans.length === 0) {
+                                    reject(`저장할 치료비용계획 데이터가 없습니다. (${fileName})`);
+                                    return;
+                                }
+
                                 await saveSelectedClinicAnalytics({
                                     category: 'sales',
                                     subCategory: 'treatment_plan',
@@ -2009,7 +2035,7 @@ const Admin = () => {
                                     month: monthFromFile,
                                     payload: { rows: plans },
                                 });
-                                updatedCount++; resolve();
+                                updatedCount++; resolve('treatmentPlan');
                             } else { reject(`파일 내 헤더를 찾을 수 없습니다. (${fileName})`); }
                         }
                         // 의사별 진료 환자수 + 매출분석(의사)
@@ -2632,6 +2658,8 @@ const Admin = () => {
                 } else if (flag === 'newPatientRevenue') {
                     // handled inside processFile
                 } else if (flag === 'insuranceClaim') {
+                    // handled inside processFile
+                } else if (flag === 'treatmentPlan') {
                     // handled inside processFile
                 } else {
                     addLog('error', `[미지원 파일] ${file.name}: 등록된 업로드 규칙과 일치하지 않습니다.`);
