@@ -84,6 +84,8 @@ const normalizeYearData = (rawYearData) => {
             sources: found.sources || found.newPatientSources || {},
             sourceRevenue: found.sourceRevenue || found.newPatientSourceRevenue || {},
             sourceTreatments: found.sourceTreatments || found.newPatientSourceTreatments || {},
+            sourceOldPatients: found.sourceOldPatients || found.oldPatientsBySource || {},
+            sourceVisitPatients: found.sourceVisitPatients || found.visitPatientsBySource || {},
             sourceInsurancePatients: found.sourceInsurancePatients || found.newPatientSourceInsurancePatients || found.insurancePatientsBySource || {},
             sourceNonInsurancePatients: found.sourceNonInsurancePatients || found.newPatientSourceNonInsurancePatients || found.nonInsurancePatientsBySource || {},
             sourceInsuranceRatios: found.sourceInsuranceRatios || found.newPatientSourceInsuranceRatios || {},
@@ -117,13 +119,20 @@ const buildNewPatientMapFromSupabaseRows = (pathRows = [], ageRows = []) => {
             const sources = {};
             const sourceRevenue = {};
             const sourceAvgFee = {};
+            const sourceOldPatients = {};
+            const sourceVisitPatients = {};
             const sourceInsurancePatients = {};
             const sourceNonInsurancePatients = {};
 
             rows.forEach(item => {
                 const path = item.path;
                 if (!path) return;
-                sources[path] = Number(item.newPatient || 0);
+                const newPatient = Number(item.newPatient || 0);
+                const oldPatient = Number(item.oldPatient || item.oldPatients || 0);
+                const visitPatient = Number(item.visitPatient || item.visitPatients || item.visitPatientsCount || (newPatient + oldPatient) || 0);
+                sources[path] = newPatient;
+                sourceOldPatients[path] = oldPatient;
+                sourceVisitPatients[path] = visitPatient;
                 sourceRevenue[path] = Number(item.totalFee || 0);
                 sourceAvgFee[path] = Number(item.avgFee || 0);
                 sourceInsurancePatients[path] = Number(item.insurancePatients || 0);
@@ -134,6 +143,8 @@ const buildNewPatientMapFromSupabaseRows = (pathRows = [], ageRows = []) => {
                 sources,
                 sourceRevenue,
                 sourceAvgFee,
+                sourceOldPatients,
+                sourceVisitPatients,
                 sourceInsurancePatients,
                 sourceNonInsurancePatients,
                 pathDistributionSummary: payload.summary || {},
@@ -178,8 +189,9 @@ const NewPatientAnalysis = () => {
     const [isYearOpen, setIsYearOpen] = useState(false);
     const [half, setHalf] = useState('all');
     const [subTab, setSubTab] = useState('source');
-    const [selectedRatioMonthIndex, setSelectedRatioMonthIndex] = useState(0);
+    const [selectedRatioMonthIndex, setSelectedRatioMonthIndex] = useState('period');
     const [selectedTreatmentDetailMonthIndex, setSelectedTreatmentDetailMonthIndex] = useState(0);
+    const [selectedAgeDetailMonthIndex, setSelectedAgeDetailMonthIndex] = useState('period');
     const [selectedUnitPriceMonthIndex, setSelectedUnitPriceMonthIndex] = useState(0);
     const [yearData, setYearData] = useState(() => normalizeYearData([]));
     const [supabaseNewPatientMap, setSupabaseNewPatientMap] = useState(null);
@@ -442,17 +454,30 @@ const NewPatientAnalysis = () => {
         }))
     ), [currentHalfData]);
 
-    const monthlySourceTotals = useMemo(() => (
-        currentHalfData.map(month => ({
-            month: month.month,
-            total: Object.values(month.sources || {}).reduce((sum, count) => sum + Number(count || 0), 0),
-        }))
-    ), [currentHalfData]);
-
     const formatRatio = (value, total) => (total ? `${((value / total) * 100).toFixed(1)}%` : '0.0%');
 
-    const selectedRatioMonth = yearData[selectedRatioMonthIndex] || {};
-    const selectedRatioMonthTotal = Object.values(selectedRatioMonth.sources || {})
+    const isRatioMonthMode = selectedRatioMonthIndex !== 'period';
+    const selectedRatioMonth = isRatioMonthMode ? (yearData[Number(selectedRatioMonthIndex)] || {}) : {};
+    const fullYearSourceTotals = yearData.reduce((acc, month) => {
+        Object.entries(month.sources || {}).forEach(([name, count]) => {
+            acc[name] = (acc[name] || 0) + Number(count || 0);
+        });
+        return acc;
+    }, {});
+    const fullYearTotalNewPatients = Object.values(fullYearSourceTotals)
+        .reduce((sum, count) => sum + Number(count || 0), 0);
+    const detailSourceSummary = Object.entries(fullYearSourceTotals)
+        .map(([name, value], index) => ({ name, value, color: COLORS[index % COLORS.length] }))
+        .sort((a, b) => b.value - a.value);
+    const selectedRatioDetailRows = isRatioMonthMode && selectedRatioMonth?.month ? [selectedRatioMonth] : currentHalfData;
+    const selectedRatioDetailSourceTotals = detailSourceSummary.reduce((acc, { name }) => {
+        acc[name] = selectedRatioDetailRows.reduce(
+            (sum, month) => sum + Number((month.sources || {})[name] || 0),
+            0
+        );
+        return acc;
+    }, {});
+    const selectedRatioDetailGrandTotal = Object.values(selectedRatioDetailSourceTotals)
         .reduce((sum, count) => sum + Number(count || 0), 0);
     const selectedTreatmentDetailMonth = yearData[selectedTreatmentDetailMonthIndex] || {};
     const selectedTreatmentDetailTotal = Object.values(selectedTreatmentDetailMonth.sources || {})
@@ -491,12 +516,46 @@ const NewPatientAnalysis = () => {
         count: Number((selectedAgeDetailData.totals || {})[range] || 0),
     })), [selectedAgeDetailData]);
 
+    const selectedAgeTableData = useMemo(() => {
+        const isMonthMode = selectedAgeDetailMonthIndex !== 'period';
+        const months = isMonthMode
+            ? [yearData[Number(selectedAgeDetailMonthIndex)]].filter(Boolean)
+            : selectedAgeDetailData.months;
+        const totals = Object.fromEntries(AGE_RANGES.map(range => [range, 0]));
+        months.forEach(month => {
+            AGE_RANGES.forEach(range => {
+                totals[range] += Number((month.ages || {})[range] || 0);
+            });
+        });
+        return {
+            months,
+            totals,
+            total: Object.values(totals).reduce((sum, count) => sum + Number(count || 0), 0),
+            label: isMonthMode ? '당월 비율' : selectedAgeDetailData.label,
+        };
+    }, [selectedAgeDetailMonthIndex, yearData, selectedAgeDetailData]);
+
+    const fullYearAgeTotals = useMemo(() => {
+        const totals = Object.fromEntries(AGE_RANGES.map(range => [range, 0]));
+        yearData.forEach(month => {
+            AGE_RANGES.forEach(range => {
+                totals[range] += Number((month.ages || {})[range] || 0);
+            });
+        });
+        return totals;
+    }, [yearData]);
+    const fullYearAgeTotal = Object.values(fullYearAgeTotals)
+        .reduce((sum, count) => sum + Number(count || 0), 0);
+
     const selectedUnitPriceMonth = yearData[selectedUnitPriceMonthIndex] || {};
     const selectedUnitPriceRows = useMemo(() => (
         sourceSummary
             .map(({ name, color }) => ({
                 name,
                 color,
+                newPatientCount: Number((selectedUnitPriceMonth.sources || {})[name] || 0),
+                oldPatientCount: Number((selectedUnitPriceMonth.sourceOldPatients || {})[name] || 0),
+                visitPatientCount: Number((selectedUnitPriceMonth.sourceVisitPatients || {})[name] || 0),
                 revenue: Number((selectedUnitPriceMonth.sourceRevenue || {})[name] || 0),
                 unitPrice: Number((selectedUnitPriceMonth.sourceAvgFee || {})[name] || 0),
             }))
@@ -507,6 +566,27 @@ const NewPatientAnalysis = () => {
         { key: 'total', label: '합계', values: unitPriceSummary.total || {} },
         { key: 'average', label: '평균', values: unitPriceSummary.average || {} },
     ];
+
+    const renderSourcePieLabel = ({ cx, cy, midAngle, outerRadius, percent, name, fill }) => {
+        const ratio = (percent || 0) * 100;
+        if (ratio < 3) return null;
+        const RADIAN = Math.PI / 180;
+        const radius = outerRadius + 26;
+        const x = cx + radius * Math.cos(-midAngle * RADIAN);
+        const y = cy + radius * Math.sin(-midAngle * RADIAN);
+        return (
+            <text
+                x={x}
+                y={y}
+                fill={fill}
+                textAnchor={x > cx ? 'start' : 'end'}
+                dominantBaseline="central"
+                style={{ fontSize: 12, fontWeight: 700 }}
+            >
+                {`${name} ${ratio.toFixed(1)}%`}
+            </text>
+        );
+    };
 
     const renderUnitPriceTooltip = ({ active, label, payload }) => {
         if (!active || !payload?.length) return null;
@@ -702,7 +782,7 @@ const NewPatientAnalysis = () => {
                                                     dataKey="count"
                                                     nameKey="range"
                                                     label={({ range, percent }) => `${range} ${(percent * 100).toFixed(1)}%`}
-                                                    labelLine={false}
+                                                    labelLine={{ stroke: 'var(--border-color)', strokeWidth: 1 }}
                                                 >
                                                     {ageScopedSummary.map((entry, index) => <Cell key={entry.range} fill={COLORS[index % COLORS.length]} />)}
                                                 </Pie>
@@ -723,6 +803,23 @@ const NewPatientAnalysis = () => {
                             <DashboardCard
                                 title="연령별 신환 상세 데이터"
                                 subtitle="선택 기간 월별 인원수와 연령대 비율"
+                                headerRight={
+                                    <div style={monthSelectWrapStyle}>
+                                        <span style={monthSelectLabelStyle}>표시 범위</span>
+                                        <select
+                                            value={selectedAgeDetailMonthIndex}
+                                            onChange={(e) => setSelectedAgeDetailMonthIndex(e.target.value)}
+                                            style={monthSelectStyle}
+                                        >
+                                            <option value="period">
+                                                {half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체보기'}
+                                            </option>
+                                            {MONTHS.map((month, index) => (
+                                                <option key={month} value={index}>{month}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                }
                             >
                                 <div className="treatment-data-table-container">
                                     <table className="treatment-data-table">
@@ -739,7 +836,7 @@ const NewPatientAnalysis = () => {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {selectedAgeDetailData.months.map((month) => {
+                                            {selectedAgeTableData.months.map((month) => {
                                                 const monthTotal = AGE_RANGES.reduce((sum, range) => sum + Number((month.ages || {})[range] || 0), 0);
                                                 return (
                                                     <tr key={month.month}>
@@ -755,18 +852,26 @@ const NewPatientAnalysis = () => {
                                             <tr className="highlight-row">
                                                 <td className="row-header" style={ageTableLabelCellStyle}>소계</td>
                                                 {ageSummary.map(({ range }, index) => {
-                                                    const count = Number((selectedAgeDetailData.totals || {})[range] || 0);
+                                                    const count = Number((selectedAgeTableData.totals || {})[range] || 0);
                                                     return <td key={range} className="font-bold" style={{ color: COLORS[index % COLORS.length] }}>{count.toLocaleString()}명</td>;
                                                 })}
-                                                <td className="font-bold">{selectedAgeDetailData.total.toLocaleString()}명</td>
+                                                <td className="font-bold">{selectedAgeTableData.total.toLocaleString()}명</td>
                                             </tr>
                                             <tr>
-                                                <td className="row-header" style={ageTableLabelCellStyle}>{selectedAgeDetailData.label}</td>
+                                                <td className="row-header" style={ageTableLabelCellStyle}>{selectedAgeTableData.label}</td>
                                                 {ageSummary.map(({ range }, index) => {
-                                                    const count = Number((selectedAgeDetailData.totals || {})[range] || 0);
-                                                    return <td key={range} style={{ color: COLORS[index % COLORS.length] }}>{formatRatio(count, selectedAgeDetailData.total)}</td>;
+                                                    const count = Number((selectedAgeTableData.totals || {})[range] || 0);
+                                                    return <td key={range} style={{ color: COLORS[index % COLORS.length] }}>{formatRatio(count, selectedAgeTableData.total)}</td>;
                                                 })}
-                                                <td className="font-bold">{selectedAgeDetailData.total ? '100.0%' : '0.0%'}</td>
+                                                <td className="font-bold">{selectedAgeTableData.total ? '100.0%' : '0.0%'}</td>
+                                            </tr>
+                                            <tr>
+                                                <td className="row-header" style={ageTableLabelCellStyle}>전체 비율</td>
+                                                {ageSummary.map(({ range }, index) => {
+                                                    const count = Number((fullYearAgeTotals || {})[range] || 0);
+                                                    return <td key={range} style={{ color: COLORS[index % COLORS.length] }}>{formatRatio(count, fullYearAgeTotal)}</td>;
+                                                })}
+                                                <td className="font-bold">{fullYearAgeTotal ? '100.0%' : '0.0%'}</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -831,18 +936,25 @@ const NewPatientAnalysis = () => {
                                         <thead>
                                             <tr>
                                                 <th className="row-header">내원경로</th>
+                                                <th>신환수</th>
+                                                <th>구환수</th>
+                                                <th>총 내원환자수</th>
                                                 <th>총 진료비</th>
                                                 <th>평균 진료비</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {selectedUnitPriceRows.map(({ name, color, revenue, unitPrice }) => {
+                                            {selectedUnitPriceRows.map(({ name, color, newPatientCount, oldPatientCount, visitPatientCount, revenue, unitPrice }) => {
+                                                const totalVisitPatients = visitPatientCount || (newPatientCount + oldPatientCount);
                                                 return (
                                                     <tr key={name}>
                                                         <td className="row-header">
                                                             <MapPin size={14} style={{ color }} />
                                                             {name}
                                                         </td>
+                                                        <td>{newPatientCount.toLocaleString()}명</td>
+                                                        <td>{oldPatientCount.toLocaleString()}명</td>
+                                                        <td className="font-bold">{totalVisitPatients.toLocaleString()}명</td>
                                                         <td>{formatWon(revenue)}</td>
                                                         <td className="font-bold"><WalletCards size={14} /> {formatWon(unitPrice)}</td>
                                                     </tr>
@@ -924,10 +1036,20 @@ const NewPatientAnalysis = () => {
                                 </DashboardCard>
 
                                 <DashboardCard title="신환 내원경로 비중" subtitle="기간 합계 기준">
-                                    <div style={{ height: 300, width: '100%' }}>
+                                    <div style={{ height: 340, width: '100%' }}>
                                         <ResponsiveContainer>
                                             <PieChart>
-                                                <Pie data={sourceSummary} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={4} dataKey="value">
+                                                <Pie
+                                                    data={sourceSummary}
+                                                    cx="50%"
+                                                    cy="48%"
+                                                    innerRadius={52}
+                                                    outerRadius={78}
+                                                    paddingAngle={4}
+                                                    dataKey="value"
+                                                    label={renderSourcePieLabel}
+                                                    labelLine={{ stroke: 'var(--border-color)', strokeWidth: 1 }}
+                                                >
                                                     {sourceSummary.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
                                                 </Pie>
                                                 <Tooltip formatter={(v, name) => [`${v}명`, name]} />
@@ -943,12 +1065,15 @@ const NewPatientAnalysis = () => {
                                 subtitle="월별 내원경로와 비율"
                                 headerRight={
                                     <div style={monthSelectWrapStyle}>
-                                        <span style={monthSelectLabelStyle}>당월 비율</span>
+                                        <span style={monthSelectLabelStyle}>표시 범위</span>
                                         <select
                                             value={selectedRatioMonthIndex}
-                                            onChange={(e) => setSelectedRatioMonthIndex(Number(e.target.value))}
+                                            onChange={(e) => setSelectedRatioMonthIndex(e.target.value)}
                                             style={monthSelectStyle}
                                         >
+                                            <option value="period">
+                                                {half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체보기'}
+                                            </option>
                                             {MONTHS.map((month, index) => (
                                                 <option key={month} value={index}>{month}</option>
                                             ))}
@@ -960,23 +1085,24 @@ const NewPatientAnalysis = () => {
                                     <table className="treatment-data-table">
                                         <colgroup>
                                             <col style={{ width: '72px' }} />
-                                            {sourceSummary.map(({ name }) => <col key={name} />)}
+                                            {detailSourceSummary.map(({ name }) => <col key={name} />)}
                                             <col style={{ width: '112px' }} />
                                         </colgroup>
                                         <thead>
                                             <tr>
                                                 <th className="row-header" style={compactMonthCellStyle}>월</th>
-                                                {sourceSummary.map(({ name }) => <th key={name}>{name}</th>)}
+                                                {detailSourceSummary.map(({ name }) => <th key={name}>{name}</th>)}
                                                 <th>총 신환 합계</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {currentHalfData.map((month, index) => {
-                                                const monthTotal = monthlySourceTotals[index]?.total || 0;
+                                            {selectedRatioDetailRows.map((month) => {
+                                                const monthTotal = Object.values(month.sources || {})
+                                                    .reduce((sum, count) => sum + Number(count || 0), 0);
                                                 return (
                                                     <tr key={month.month}>
                                                         <td className="row-header" style={compactMonthCellStyle}>{month.month}</td>
-                                                        {sourceSummary.map(({ name }) => {
+                                                        {detailSourceSummary.map(({ name }) => {
                                                             const count = Number((month.sources || {})[name] || 0);
                                                             return <td key={name}>{count.toLocaleString()}명</td>;
                                                         })}
@@ -986,25 +1112,26 @@ const NewPatientAnalysis = () => {
                                             })}
                                             <tr className="highlight-row">
                                                 <td className="row-header" style={compactMonthCellStyle}>소계</td>
-                                                {sourceSummary.map(({ name, value, color }) => (
-                                                    <td key={name} className="font-bold" style={{ color }}>{value.toLocaleString()}명</td>
-                                                ))}
-                                                <td className="font-bold">{totalNewPatients.toLocaleString()}명</td>
+                                                {detailSourceSummary.map(({ name, color }) => {
+                                                    const value = Number(selectedRatioDetailSourceTotals[name] || 0);
+                                                    return <td key={name} className="font-bold" style={{ color }}>{value.toLocaleString()}명</td>;
+                                                })}
+                                                <td className="font-bold">{selectedRatioDetailGrandTotal.toLocaleString()}명</td>
                                             </tr>
                                             <tr>
-                                                <td className="row-header" style={compactMonthCellStyle}>당월 비율</td>
-                                                {sourceSummary.map(({ name, color }) => {
-                                                    const count = Number((selectedRatioMonth.sources || {})[name] || 0);
-                                                    return <td key={name} style={{ color }}>{formatRatio(count, selectedRatioMonthTotal)}</td>;
+                                                <td className="row-header" style={compactMonthCellStyle}>{isRatioMonthMode ? '당월 비율' : '기간 비율'}</td>
+                                                {detailSourceSummary.map(({ name, color }) => {
+                                                    const count = Number(selectedRatioDetailSourceTotals[name] || 0);
+                                                    return <td key={name} style={{ color }}>{formatRatio(count, selectedRatioDetailGrandTotal)}</td>;
                                                 })}
-                                                <td className="font-bold">{selectedRatioMonthTotal ? '100.0%' : '0.0%'}</td>
+                                                <td className="font-bold">{selectedRatioDetailGrandTotal ? '100.0%' : '0.0%'}</td>
                                             </tr>
                                             <tr>
                                                 <td className="row-header" style={compactMonthCellStyle}>총 비율</td>
-                                                {sourceSummary.map(({ name, value, color }) => (
-                                                    <td key={name} style={{ color }}>{formatRatio(value, totalNewPatients)}</td>
+                                                {detailSourceSummary.map(({ name, color }) => (
+                                                    <td key={name} style={{ color }}>{formatRatio(fullYearSourceTotals[name] || 0, fullYearTotalNewPatients)}</td>
                                                 ))}
-                                                <td className="font-bold">100.0%</td>
+                                                <td className="font-bold">{fullYearTotalNewPatients ? '100.0%' : '0.0%'}</td>
                                             </tr>
                                         </tbody>
                                     </table>

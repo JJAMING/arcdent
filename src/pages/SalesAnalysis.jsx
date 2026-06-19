@@ -475,11 +475,14 @@ const SalesAnalysis = () => {
   const CustomizedLineLabel = (props) => {
     const { x, y, value, stroke } = props;
     if (!value || value === 0) return null;
+    const text = `${value.toLocaleString()}원`;
+    const labelWidth = Math.max(92, text.length * 7 + 16);
+    const labelY = Math.max(22, y - 56);
     return (
       <g>
-        <rect x={x - 45} y={y - 65} width={90} height={20} rx={4} fill={stroke} />
-        <text x={x} y={y - 54} fill="#fff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '11px', fontWeight: 'bold' }}>
-          {value.toLocaleString()}원
+        <rect x={x - labelWidth/2} y={labelY - 11} width={labelWidth} height={22} rx={4} fill={stroke} />
+        <text x={x} y={labelY + 1} fill="#fff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '11px', fontWeight: 'bold' }}>
+          {text}
         </text>
       </g>
     );
@@ -499,7 +502,7 @@ const SalesAnalysis = () => {
             <div className="dashboard-stack">
               <DashboardCard title="월별 매출 추합 및 목표 대비">
                 <ResponsiveContainer width="100%" height={400}>
-                  <ComposedChart data={doctorChartData} margin={{ left: 30, right: 30, top: 40, bottom: 20 }}>
+                  <ComposedChart data={doctorChartData} margin={{ left: 30, right: 30, top: 56, bottom: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                     <XAxis dataKey="month" stroke="var(--text-secondary)" tick={{ dy: 10 }} />
                     <YAxis 
@@ -510,12 +513,8 @@ const SalesAnalysis = () => {
                     />
                     <Tooltip formatter={(v) => `${v.toLocaleString()}원`} contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }} />
                     <Legend verticalAlign="top" height={36}/>
-                    <Bar dataKey="netSales" name="순매출" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40}>
-                      <LabelList dataKey="netSales" content={<CustomizedLabel fill="#3b82f6" />} />
-                    </Bar>
-                    <Bar dataKey="insurance" name="보험청구" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40}>
-                      <LabelList dataKey="insurance" content={<CustomizedLabel fill="#10b981" />} />
-                    </Bar>
+                    <Bar dataKey="netSales" name="순매출" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
+                    <Bar dataKey="insurance" name="보험청구" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40} />
                     <Line type="monotone" dataKey="total" name="총합계" stroke="#f59e0b" strokeWidth={3} dot={{ r: 5, fill: '#f59e0b' }}>
                       <LabelList dataKey="total" content={<CustomizedLineLabel stroke="#f59e0b" />} />
                     </Line>

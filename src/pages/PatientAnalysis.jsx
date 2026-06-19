@@ -627,7 +627,7 @@ const PatientAnalysis = () => {
                             {/* KPI 요약 */}
                             <div className="patient-kpi-row">
                                 {topLabSeries.map(({ name, total, color }) => (
-                                    <div key={name} className="patient-kpi-card" style={{ borderTop: `3px solid ${color}` }}>
+                                    <div key={name} className="patient-kpi-card lab-request-kpi-card" style={{ borderTop: `3px solid ${color}` }}>
                                         <span className="kpi-label">{name}</span>
                                         <span className="kpi-value" style={{ color }}>{total}건</span>
                                         <span className="kpi-sub">비율 {((total / grandTotal) * 100).toFixed(1)}%</span>

@@ -264,9 +264,9 @@ const TreatmentAnalysis = () => {
                     { key: 'insImpStep3', name: '임플 3단계', color: '#a78bfa' },
                 ];
                 const dentSeries = [
-                    { key: 'insDentStep1', name: '틈니 1단계', color: '#f59e0b' },
-                    { key: 'insDentStep5', name: '틈니 5단계', color: '#fb923c' },
-                    { key: 'insDentStep6', name: '틈니 6단계', color: '#ef4444' },
+                    { key: 'insDentStep1', name: '틀니 1단계', color: '#f59e0b' },
+                    { key: 'insDentStep5', name: '틀니 5단계', color: '#fb923c' },
+                    { key: 'insDentStep6', name: '틀니 6단계', color: '#ef4444' },
                 ];
 
                 // 데이터 없으면 insImp/insDent로 확인해 fallback
@@ -277,9 +277,9 @@ const TreatmentAnalysis = () => {
                         <div className="dashboard-stack">
                             {/* 상단 2분할: 종합 추이 + 단계별 */}
                             <div className="dashboard-grid" style={{ gridTemplateColumns: '1fr 2fr' }}>
-                                {/* 좌측: 보험 임플/틈니 요약 */}
+                                {/* 좌측: 보험 임플/틀니 요약 */}
                                 <DashboardCard
-                                    title="보험 임플/틈니 요약"
+                                    title="보험 임플/틀니 요약"
                                     subtitle={`${half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체'} 추이`}
                                 >
                                     <div style={{ height: 350, width: '100%' }}>
@@ -293,7 +293,7 @@ const TreatmentAnalysis = () => {
                                                 <Bar dataKey="insImp" name="보험임플" fill="#4472c4" maxBarSize={50} radius={[4,4,0,0]}>
                                                     <LabelList dataKey="insImp" position="top" style={{ fontSize: 12, fontWeight: 700, fill: '#4472c4' }} />
                                                 </Bar>
-                                                <Bar dataKey="insDent" name="보험틈니" fill="#f59e0b" maxBarSize={50} radius={[4,4,0,0]}>
+                                                <Bar dataKey="insDent" name="보험틀니" fill="#f59e0b" maxBarSize={50} radius={[4,4,0,0]}>
                                                     <LabelList dataKey="insDent" position="top" style={{ fontSize: 12, fontWeight: 700, fill: '#f59e0b' }} />
                                                 </Bar>
                                             </BarChart>
@@ -304,7 +304,7 @@ const TreatmentAnalysis = () => {
                                 {/* 우측: 단계별 그룹 바차트 */}
                                 <DashboardCard
                                     title="단계별 사용량"
-                                    subtitle="임플 1·2·3단계 / 틈니 1·5·6단계"
+                                    subtitle="임플 1·2·3단계 / 틀니 1·5·6단계"
                                 >
                                     <div style={{ height: 350, width: '100%' }}>
                                         <ResponsiveContainer>
@@ -331,7 +331,7 @@ const TreatmentAnalysis = () => {
                             </div>
 
                             {/* 하단 상세 테이블 */}
-                            <DashboardCard title="보험 임플/틈니 상세 데이터">
+                            <DashboardCard title="보험 임플/틀니 상세 데이터">
                                 <div className="treatment-data-table-container">
                                     <table className="treatment-data-table">
                                         <thead>
@@ -362,9 +362,9 @@ const TreatmentAnalysis = () => {
                                             {/* 구분선 */}
                                             <tr><td colSpan={currentHalfData.length + 2} style={{ height: 1, padding: 0, background: 'var(--border-color)' }} /></tr>
 
-                                            {/* 보험 틈니 합계 */}
+                                            {/* 보험 틀니 합계 */}
                                             <tr className="highlight-row">
-                                                <td className="row-header"><PlusCircle size={14} /> 보험 틈니 합계</td>
+                                                <td className="row-header"><PlusCircle size={14} /> 보험 틀니 합계</td>
                                                 {currentHalfData.map(d => <td key={d.month} className="font-bold">{safeD(d,'insDent')}건</td>)}
                                                 <td className="font-bold" style={{ fontSize: '1.1rem' }}>{currentHalfData.reduce((s,d)=>s+safeD(d,'insDent'),0)}건</td>
                                             </tr>

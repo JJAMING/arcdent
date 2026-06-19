@@ -569,17 +569,21 @@ const parseNewPatientPathRows = (rows, fileName) => {
         }
         if (shouldSkipPath(path)) continue;
 
+        const oldPatient = columns.oldPatient !== -1 ? parseNumber(row[columns.oldPatient]) : 0;
         const newPatient = columns.newPatient !== -1 ? parseNumber(row[columns.newPatient]) : 0;
+        const visitPatient = (oldPatient + newPatient) || (columns.visitPatients !== -1 ? parseNumber(row[columns.visitPatients]) : 0);
         const totalFee = columns.totalFee !== -1 ? parseNumber(row[columns.totalFee]) : 0;
         const avgFee = columns.avgFee !== -1 ? parseNumber(row[columns.avgFee]) : 0;
-        const unitCount = newPatient || 1;
+        const unitCount = visitPatient || newPatient || 1;
 
         if (!grouped[path]) {
-            grouped[path] = { path, newPatient: 0, totalFee: 0, avgFee: 0, avgFeeCount: 0, insurancePatients: 0, nonInsurancePatients: 0 };
+            grouped[path] = { path, oldPatient: 0, newPatient: 0, visitPatient: 0, totalFee: 0, avgFee: 0, avgFeeCount: 0, insurancePatients: 0, nonInsurancePatients: 0 };
         }
 
+        grouped[path].oldPatient += oldPatient;
         grouped[path].newPatient += newPatient;
-        grouped[path].totalFee += totalFee || (avgFee * newPatient);
+        grouped[path].visitPatient += visitPatient;
+        grouped[path].totalFee += totalFee || (avgFee * unitCount);
         if (avgFee > 0) {
             grouped[path].avgFee += avgFee;
             grouped[path].avgFeeCount += 1;
@@ -4723,6 +4727,8 @@ const Admin = () => {
                                                 <tr>
                                                     <th>내원경로</th>
                                                     <th>신환수</th>
+                                                    <th>구환수</th>
+                                                    <th>총 내원환자수</th>
                                                     <th>총 진료비</th>
                                                     <th>평균 진료비</th>
                                                     <th>보험환자</th>
@@ -4734,6 +4740,8 @@ const Admin = () => {
                                                     <tr key={`${upload.id}-${row.path}`}>
                                                         <td>{row.path}</td>
                                                         <td>{row.newPatient.toLocaleString()}명</td>
+                                                        <td>{Number(row.oldPatient || 0).toLocaleString()}명</td>
+                                                        <td>{Number(row.visitPatient || Number(row.oldPatient || 0) + Number(row.newPatient || 0)).toLocaleString()}명</td>
                                                         <td>{Math.round(row.totalFee || 0).toLocaleString()}원</td>
                                                         <td>{Math.round(row.avgFee || 0).toLocaleString()}원</td>
                                                         <td>{Math.round(row.insurancePatients || 0).toLocaleString()}명</td>
