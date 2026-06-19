@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
     Tooltip, Legend, ResponsiveContainer,
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList,
+    BarChart, Bar, XAxis, YAxis, CartesianGrid,
     ComposedChart, Line
 } from 'recharts';
 import { Calendar, ChevronDown, ClipboardCheck, UserCheck, UserX, Users } from 'lucide-react';
@@ -911,9 +911,7 @@ const ConsultationAnalysis = () => {
                             <Bar yAxisId="amount" dataKey="최종동의금액" fill="#8fbf4d" radius={[4, 4, 0, 0]} maxBarSize={34} />
                             <Bar yAxisId="amount" dataKey="상담금액" fill="#7c5aa6" radius={[4, 4, 0, 0]} maxBarSize={34} />
                             <Bar yAxisId="amount" dataKey="진단금액" fill="#c94f4f" radius={[4, 4, 0, 0]} maxBarSize={34} />
-                            <Bar yAxisId="count" dataKey="상담건수" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={18}>
-                                <LabelList dataKey="상담건수" position="insideBottom" formatter={(value) => Number(value) > 0 ? `${value}` : ''} style={{ fontSize: 10, fill: '#1e293b', fontWeight: 700 }} />
-                            </Bar>
+                            <Bar yAxisId="count" dataKey="상담건수" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={18} />
                             <Line
                                 yAxisId="rate"
                                 type="monotone"

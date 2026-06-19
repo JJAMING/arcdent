@@ -1097,6 +1097,47 @@ const Admin = () => {
         };
     };
 
+    const mapNewPatientPathReportPayload = (payload = {}) => {
+        const rows = Array.isArray(payload.rows) ? payload.rows : [];
+        if (rows.length === 0) return payload || {};
+
+        const sources = {};
+        const sourceOldPatients = {};
+        const sourceVisitPatients = {};
+        const sourceRevenue = {};
+        const sourceAvgFee = {};
+        const sourceInsurancePatients = {};
+        const sourceNonInsurancePatients = {};
+
+        rows.forEach(item => {
+            const path = item.path || item.name || item.source;
+            if (!path) return;
+            const newPatient = Number(item.newPatient || item.newPatients || item.count || 0);
+            const oldPatient = Number(item.oldPatient || item.oldPatients || 0);
+            const visitPatient = Number(item.visitPatient || item.visitPatients || item.visitPatientsCount || (newPatient + oldPatient) || 0);
+            sources[path] = (sources[path] || 0) + newPatient;
+            sourceOldPatients[path] = (sourceOldPatients[path] || 0) + oldPatient;
+            sourceVisitPatients[path] = (sourceVisitPatients[path] || 0) + visitPatient;
+            sourceRevenue[path] = (sourceRevenue[path] || 0) + Number(item.totalFee || item.revenue || 0);
+            sourceAvgFee[path] = Number(item.avgFee || item.averageFee || 0);
+            sourceInsurancePatients[path] = (sourceInsurancePatients[path] || 0) + Number(item.insurancePatients || 0);
+            sourceNonInsurancePatients[path] = (sourceNonInsurancePatients[path] || 0) + Number(item.nonInsurancePatients || 0);
+        });
+
+        return {
+            sources,
+            sourceOldPatients,
+            sourceVisitPatients,
+            sourceRevenue,
+            sourceAvgFee,
+            sourceInsurancePatients,
+            sourceNonInsurancePatients,
+            sourceInsuranceRatios: payload.insuranceRatios || {},
+            pathDistributionSummary: payload.summary || {},
+            rows,
+        };
+    };
+
     const loadReportStoresFromSupabase = async (year) => {
         if (!selectedAdminClinicId) {
             throw new Error('PDF 보고서를 만들 치과를 먼저 선택해주세요.');
@@ -1172,7 +1213,7 @@ const Admin = () => {
         patientLedgerRows.forEach(row => putReportPayload(stores.patient_ledger_data, year, row));
         treatmentImplantRows.forEach(row => putReportPayload(stores.treatment_performance_data, year, row));
         treatmentInsuranceRows.forEach(row => putReportPayload(stores.treatment_performance_data, year, row));
-        newPatientPathRows.forEach(row => putReportPayload(stores[NEW_PATIENT_STORAGE_KEY], year, row));
+        newPatientPathRows.forEach(row => putReportPayload(stores[NEW_PATIENT_STORAGE_KEY], year, row, mapNewPatientPathReportPayload));
         newPatientAgeRows.forEach(row => putReportPayload(stores[NEW_PATIENT_STORAGE_KEY], year, row, payload => ({
             ages: payload.ages || {},
         })));
@@ -1223,16 +1264,17 @@ const Admin = () => {
             { label: '순매출', value: reportWon(reportSum(salesRows, 'netSales')), sub: '현금+카드+기타' },
             { label: '보험청구', value: reportWon(reportSum(salesRows, 'insurance')), sub: '공단부담/청구액' },
         ];
+        const getLedgerPatientTotal = (row = {}) => Number(row.newPt || 0) + Number(row.oldPt || 0);
 
         if (category === 'home') {
-            const totalPatients = ledgerRows.reduce((acc, row) => acc + Number(row.total || row.totalVisits || 0), 0);
+            const totalPatients = ledgerRows.reduce((acc, row) => acc + getLedgerPatientTotal(row), 0);
             const newPatients = ledgerRows.reduce((acc, row, index) => acc + Number(row.newPt || salesRows[index]?.newPatient || 0), 0);
             const consultationAmount = reportSum(consultationRows, 'consultationAmount');
             const agreedAmount = reportSum(consultationRows, 'agreedAmount');
             const consultationRate = consultationAmount > 0 ? (agreedAmount / consultationAmount) * 100 : 0;
             return `
                 ${reportCards([...salesCards,
-                    { label: '총 접수 환자 수', value: `${reportNumber(totalPatients, 1)}명`, sub: reportPeriodLabel },
+                    { label: '총 내원 환자수', value: `${reportNumber(totalPatients)}명`, sub: reportPeriodLabel },
                     { label: '신환 수', value: `${reportNumber(newPatients)}명`, sub: reportPeriodLabel },
                     { label: '상담 동의율', value: reportPercent(consultationRate), sub: '상담금액 대비' },
                 ])}
@@ -1333,11 +1375,11 @@ const Admin = () => {
                     ${reportCards([
                         { label: '신환 합계', value: `${reportNumber(reportSum(ledgerRows, 'newPt'))}명`, sub: reportPeriodLabel },
                         { label: '구환 합계', value: `${reportNumber(reportSum(ledgerRows, 'oldPt'))}명`, sub: reportPeriodLabel },
-                        { label: '총 내원횟수', value: `${reportNumber(reportSum(ledgerRows, 'totalVisits'))}회`, sub: reportPeriodLabel },
+                        { label: '총 내원 환자수', value: `${reportNumber(ledgerRows.reduce((acc, row) => acc + getLedgerPatientTotal(row), 0))}명`, sub: reportPeriodLabel },
                     ])}
                     <h2>총 환자수(신환/구환)</h2>
-                    ${reportTable(['월', '진료일수', '신환', '구환', '총 내원횟수', '총 접수 환자 수'], ledgerRows.map(row => [
-                        row.month, `${reportNumber(row.workDays)}일`, `${reportNumber(row.newPt)}명`, `${reportNumber(row.oldPt)}명`, `${reportNumber(row.totalVisits)}회`, `${reportNumber(row.total, 1)}명`,
+                    ${reportTable(['월', '진료일수', '신환', '구환', '총 내원 환자수'], ledgerRows.map(row => [
+                        row.month, `${reportNumber(row.workDays)}일`, `${reportNumber(row.newPt)}명`, `${reportNumber(row.oldPt)}명`, `${reportNumber(getLedgerPatientTotal(row))}명`,
                     ]))}
                 ` : ''}
                 ${includeTab('doctorPatients') ? `
