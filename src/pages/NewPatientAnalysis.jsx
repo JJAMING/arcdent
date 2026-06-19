@@ -569,9 +569,10 @@ const NewPatientAnalysis = () => {
 
     const renderSourcePieLabel = ({ cx, cy, midAngle, outerRadius, percent, name, fill }) => {
         const ratio = (percent || 0) * 100;
-        if (ratio < 3) return null;
+        const isUnspecified = String(name || '').includes('미입력');
+        if (ratio < 3 && !isUnspecified) return null;
         const RADIAN = Math.PI / 180;
-        const radius = outerRadius + 26;
+        const radius = outerRadius + (isUnspecified ? 34 : 26);
         const x = cx + radius * Math.cos(-midAngle * RADIAN);
         const y = cy + radius * Math.sin(-midAngle * RADIAN);
         return (
@@ -581,7 +582,7 @@ const NewPatientAnalysis = () => {
                 fill={fill}
                 textAnchor={x > cx ? 'start' : 'end'}
                 dominantBaseline="central"
-                style={{ fontSize: 12, fontWeight: 700 }}
+                style={{ fontSize: isUnspecified ? 11 : 12, fontWeight: 700 }}
             >
                 {`${name} ${ratio.toFixed(1)}%`}
             </text>

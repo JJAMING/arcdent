@@ -75,3 +75,76 @@ export const loadAnalyticsData = async ({
     if (error) throw error;
     return data || [];
 };
+
+export const saveAnalyticsAuditLog = async ({
+    clinicId,
+    category,
+    subCategory = '',
+    year = null,
+    month = null,
+    actionType = 'upload',
+    status = 'success',
+    fileName = '',
+    fileType = '',
+    fileSize = null,
+    summary = {},
+    errorMessage = '',
+    metadata = {},
+}) => {
+    if (!clinicId) return null;
+
+    const { data: userData } = await supabase.auth.getUser();
+    const normalizedMonth = normalizeMonth(month);
+    const row = {
+        clinic_id: clinicId,
+        user_id: userData?.user?.id || null,
+        action_type: actionType,
+        status,
+        category,
+        sub_category: subCategory || '',
+        year: year ? Number(year) : null,
+        month: normalizedMonth,
+        file_name: fileName || '',
+        file_type: fileType || '',
+        file_size: Number.isFinite(Number(fileSize)) ? Number(fileSize) : null,
+        summary: summary || {},
+        error_message: errorMessage || '',
+        metadata: metadata || {},
+    };
+
+    const { data, error } = await supabase
+        .from('analytics_audit_logs')
+        .insert(row)
+        .select('id')
+        .single();
+
+    if (error) throw error;
+    return data;
+};
+
+export const loadAnalyticsAuditLogs = async ({
+    clinicId,
+    limit = 200,
+    status = 'all',
+    category = 'all',
+    year = 'all',
+    month = 'all',
+}) => {
+    if (!clinicId) return [];
+
+    let query = supabase
+        .from('analytics_audit_logs')
+        .select('id, clinic_id, user_id, action_type, status, category, sub_category, year, month, file_name, file_type, file_size, summary, error_message, metadata, created_at')
+        .eq('clinic_id', clinicId)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+    if (status !== 'all') query = query.eq('status', status);
+    if (category !== 'all') query = query.eq('category', category);
+    if (year !== 'all') query = query.eq('year', Number(year));
+    if (month !== 'all') query = query.eq('month', normalizeMonth(month));
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+};

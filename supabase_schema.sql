@@ -34,6 +34,25 @@ create table if not exists public.analytics_data (
     updated_at timestamptz not null default now()
 );
 
+create table if not exists public.analytics_audit_logs (
+    id uuid primary key default gen_random_uuid(),
+    clinic_id uuid not null references public.clinics(id) on delete cascade,
+    user_id uuid references auth.users(id) on delete set null,
+    action_type text not null default 'upload' check (action_type in ('upload', 'update', 'delete', 'rollback')),
+    status text not null check (status in ('success', 'failed')),
+    category text not null,
+    sub_category text not null default '',
+    year int,
+    month int,
+    file_name text not null default '',
+    file_type text not null default '',
+    file_size bigint,
+    summary jsonb not null default '{}'::jsonb,
+    error_message text not null default '',
+    metadata jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now()
+);
+
 alter table public.analytics_data
 add column if not exists month_key int generated always as (coalesce(month, 0)) stored;
 
@@ -50,14 +69,19 @@ on public.analytics_data (
 create index if not exists analytics_data_lookup_idx
 on public.analytics_data (clinic_id, category, sub_category, year, month);
 
+create index if not exists analytics_audit_logs_lookup_idx
+on public.analytics_audit_logs (clinic_id, created_at desc, category, status, year, month);
+
 alter table public.clinics enable row level security;
 alter table public.profiles enable row level security;
 alter table public.analytics_data enable row level security;
+alter table public.analytics_audit_logs enable row level security;
 
 grant usage on schema public to anon, authenticated;
 grant select on public.clinics to authenticated;
 grant select on public.profiles to authenticated;
 grant select, insert, update, delete on public.analytics_data to authenticated;
+grant select, insert, update, delete on public.analytics_audit_logs to authenticated;
 grant usage on schema app_private to authenticated;
 
 create or replace function app_private.current_user_role()
@@ -149,6 +173,27 @@ for delete
 to authenticated
 using (
     app_private.current_user_role() = 'admin'
+);
+
+drop policy if exists "analytics_audit_logs_admin_all" on public.analytics_audit_logs;
+create policy "analytics_audit_logs_admin_all"
+on public.analytics_audit_logs
+for all
+to authenticated
+using (
+    app_private.current_user_role() = 'admin'
+)
+with check (
+    app_private.current_user_role() = 'admin'
+);
+
+drop policy if exists "analytics_audit_logs_clinic_read" on public.analytics_audit_logs;
+create policy "analytics_audit_logs_clinic_read"
+on public.analytics_audit_logs
+for select
+to authenticated
+using (
+    app_private.current_user_clinic_id() = public.analytics_audit_logs.clinic_id
 );
 
 -- Example setup after creating Auth users:

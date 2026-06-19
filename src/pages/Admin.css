@@ -102,6 +102,198 @@
     font-weight: 700;
 }
 
+.admin-panel-tabs {
+    display: inline-flex;
+    gap: 0.5rem;
+    padding: 0.35rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.85rem;
+    background: var(--card-bg);
+    box-shadow: var(--shadow);
+    align-self: flex-start;
+}
+
+.admin-panel-tab {
+    min-height: 38px;
+    padding: 0 1rem;
+    border-radius: 0.65rem;
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+    font-weight: 800;
+    transition: var(--transition);
+}
+
+.admin-panel-tab.active {
+    background: var(--accent-primary);
+    color: #fff;
+    box-shadow: 0 8px 18px rgba(59, 130, 246, 0.18);
+}
+
+.admin-history-card {
+    gap: 1.2rem;
+}
+
+.admin-history-filters {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(130px, 1fr)) auto;
+    gap: 0.75rem;
+    align-items: end;
+}
+
+.admin-history-filters label {
+    display: grid;
+    gap: 0.35rem;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.admin-history-filters select,
+.admin-history-filters button {
+    min-height: 38px;
+    padding: 0.5rem 0.65rem;
+    border-radius: 0.55rem;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-primary);
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.admin-history-filters button {
+    background: var(--accent-primary);
+    color: #fff;
+    border-color: var(--accent-primary);
+}
+
+.admin-history-error {
+    padding: 0.75rem 0.9rem;
+    border-radius: 0.65rem;
+    border: 1px solid rgba(239, 68, 68, 0.22);
+    background: rgba(239, 68, 68, 0.08);
+    color: #ef4444;
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+.admin-history-table th,
+.admin-history-table td {
+    text-align: center;
+    vertical-align: middle;
+}
+
+.admin-history-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 52px;
+    padding: 0.25rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 900;
+}
+
+.admin-history-status.success {
+    color: #047857;
+    background: rgba(16, 185, 129, 0.12);
+}
+
+.admin-history-status.failed {
+    color: #dc2626;
+    background: rgba(239, 68, 68, 0.12);
+}
+
+.admin-history-summary {
+    max-width: 320px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.admin-history-detail-btn {
+    min-height: 30px;
+    padding: 0 0.65rem;
+    border-radius: 0.45rem;
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--accent-primary);
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.admin-history-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1400;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(3px);
+}
+
+.admin-history-modal {
+    width: min(720px, 100%);
+    max-height: 86vh;
+    overflow: auto;
+    padding: 1.25rem;
+    border-radius: 1rem;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    box-shadow: 0 20px 55px rgba(15, 23, 42, 0.22);
+}
+
+.admin-history-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.8rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.admin-history-modal-header h3 {
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    font-weight: 900;
+}
+
+.admin-history-modal-header p {
+    margin-top: 0.2rem;
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+}
+
+.admin-history-detail-grid {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr);
+    gap: 0.65rem 0.9rem;
+    margin-top: 1rem;
+    font-size: 0.88rem;
+}
+
+.admin-history-detail-grid dt {
+    color: var(--text-secondary);
+    font-weight: 900;
+}
+
+.admin-history-detail-grid dd {
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+.admin-history-json {
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border-color);
+    background: var(--bg-color);
+    color: var(--text-primary);
+    font-size: 0.78rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 @media (max-width: 720px) {
     .admin-page-header {
         flex-direction: column;
@@ -112,6 +304,16 @@
     }
 
     .admin-clinic-selector {
+        grid-template-columns: 1fr;
+    }
+
+    .admin-panel-tabs {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .admin-history-filters {
         grid-template-columns: 1fr;
     }
 }

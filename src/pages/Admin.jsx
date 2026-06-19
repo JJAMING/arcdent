@@ -6,7 +6,12 @@ import { parseImplantExcel } from '../utils/implantExcelParser';
 import { parseInsuranceExcel } from '../utils/insuranceExcelParser';
 import { parseLedgerImage, parseLedgerText, extractYearMonthFromFileName } from '../utils/ledgerImageParser';
 import { supabase } from '../lib/supabaseClient';
-import { loadAnalyticsData, saveAnalyticsData } from '../utils/supabaseAnalyticsStore';
+import {
+    loadAnalyticsAuditLogs,
+    loadAnalyticsData,
+    saveAnalyticsAuditLog,
+    saveAnalyticsData,
+} from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getRollingYearOptions } from '../utils/dateUtils';
 import { useAuth } from '../context/AuthContext';
 import './Admin.css';
@@ -45,6 +50,33 @@ const REPORT_CATEGORIES = [
     { key: 'consultation', label: '상담분석' },
     { key: 'insurance', label: '보험청구분석' },
 ];
+const AUDIT_CATEGORY_LABELS = {
+    home: 'HOME',
+    sales: '매출분석',
+    treatment: '진료분석',
+    patient: '환자분석',
+    newPatient: '신환분석',
+    consultation: '상담분석',
+    insurance: '보험청구분석',
+};
+const AUDIT_SUBCATEGORY_LABELS = {
+    total_revenue: '총 매출 현황',
+    doctor_revenue: '매출분석(의사)',
+    new_patient_revenue: '신환수익 비교',
+    treatment_plan: '동의환자 수납액',
+    top_patients: '진료비 상위',
+    implant_surgery: '임플란트',
+    insurance_treatment: '보험 임플/틀니',
+    fee_stats: '보험수가별 통계',
+    total_patients_ledger: '총 환자수(신환/구환)',
+    lab_requests: '기공물 의뢰 현황',
+    path_distribution: '신환 내원경로 현황',
+    age_distribution: '연령별 신환 현황',
+    overall: '전체 동의율',
+    consultant: '상담자별 동의율',
+    rejected: '미동의 환자 현황',
+    claim: '보험청구액 통계',
+};
 const REPORT_SUBTABS = {
     home: [{ key: 'all', label: '종합 대시보드' }],
     sales: [
@@ -712,6 +744,17 @@ const Admin = () => {
     ));
     const [clinicSelectLoading, setClinicSelectLoading] = useState(false);
     const [clinicSelectError, setClinicSelectError] = useState('');
+    const [adminPanelTab, setAdminPanelTab] = useState('upload');
+    const [auditLogs, setAuditLogs] = useState([]);
+    const [auditLoading, setAuditLoading] = useState(false);
+    const [auditError, setAuditError] = useState('');
+    const [auditFilters, setAuditFilters] = useState({
+        status: 'all',
+        category: 'all',
+        year: 'all',
+        month: 'all',
+    });
+    const [selectedAuditLog, setSelectedAuditLog] = useState(null);
 
     // OCR 모달
     const [ocrModal, setOcrModal]   = useState(null);
@@ -810,6 +853,35 @@ const Admin = () => {
             isMounted = false;
         };
     }, [isAdminAuthenticated, isAdmin, selectedAdminClinicId, reportYear]);
+
+    useEffect(() => {
+        if (!isAdminAuthenticated || !isAdmin || !selectedAdminClinicId) {
+            setAuditLogs([]);
+            return;
+        }
+
+        let isMounted = true;
+        const loadLogs = async () => {
+            setAuditLoading(true);
+            setAuditError('');
+            try {
+                const rows = await loadAnalyticsAuditLogs({
+                    clinicId: selectedAdminClinicId,
+                    ...auditFilters,
+                });
+                if (isMounted) setAuditLogs(rows);
+            } catch (err) {
+                if (isMounted) setAuditError(err.message || '이력 데이터를 불러오지 못했습니다.');
+            } finally {
+                if (isMounted) setAuditLoading(false);
+            }
+        };
+
+        loadLogs();
+        return () => {
+            isMounted = false;
+        };
+    }, [isAdminAuthenticated, isAdmin, selectedAdminClinicId, auditFilters]);
 
     const handleAdminLogin = async (event) => {
         event.preventDefault();
@@ -914,6 +986,61 @@ const Admin = () => {
 
     const selectedAdminClinic = adminClinics.find(item => item.id === selectedAdminClinicId) || null;
 
+    const loadAuditLogList = async (filters = auditFilters) => {
+        if (!selectedAdminClinicId) {
+            setAuditLogs([]);
+            return;
+        }
+
+        setAuditLoading(true);
+        setAuditError('');
+        try {
+            const rows = await loadAnalyticsAuditLogs({
+                clinicId: selectedAdminClinicId,
+                ...filters,
+            });
+            setAuditLogs(rows);
+        } catch (err) {
+            setAuditError(err.message || '이력 데이터를 불러오지 못했습니다.');
+        } finally {
+            setAuditLoading(false);
+        }
+    };
+
+    const recordAuditLog = async ({
+        category,
+        subCategory,
+        year,
+        month,
+        status,
+        actionType = 'upload',
+        errorMessage = '',
+        summary = {},
+        metadata = {},
+    }) => {
+        if (!selectedAdminClinicId) return;
+
+        try {
+            await saveAnalyticsAuditLog({
+                clinicId: selectedAdminClinicId,
+                category,
+                subCategory,
+                year,
+                month,
+                status,
+                actionType,
+                summary,
+                errorMessage,
+                metadata,
+            });
+            if (adminPanelTab === 'history') {
+                await loadAuditLogList();
+            }
+        } catch (auditErr) {
+            console.warn('Failed to save analytics audit log', auditErr);
+        }
+    };
+
     const handleAdminClinicChange = (event) => {
         const clinicId = event.target.value;
         setSelectedAdminClinicId(clinicId);
@@ -966,10 +1093,21 @@ const Admin = () => {
         return merged;
     };
 
-    const saveSelectedClinicAnalytics = async ({ category, subCategory, year, month, payload, mergeExisting = false }) => {
+    const saveSelectedClinicAnalytics = async ({ category, subCategory, year, month, payload, mergeExisting = false, auditSummary = {}, auditMetadata = {} }) => {
         if (!selectedAdminClinicId) {
             const err = new Error('업로드 대상 치과를 먼저 선택해주세요.');
             addLog('error', `❌ [Supabase 저장 실패] ${err.message}`);
+            await recordAuditLog({
+                category,
+                subCategory,
+                year,
+                month,
+                status: 'failed',
+                actionType: mergeExisting ? 'update' : 'upload',
+                errorMessage: err.message,
+                summary: auditSummary,
+                metadata: auditMetadata,
+            });
             throw err;
         }
 
@@ -1001,11 +1139,37 @@ const Admin = () => {
                     }
                 }
             }
-            if (lastError) throw lastError;
+            if (lastError) {
+                await recordAuditLog({
+                    category,
+                    subCategory,
+                    year,
+                    month,
+                    status: 'failed',
+                    actionType: mergeExisting ? 'update' : 'upload',
+                    errorMessage: lastError.message,
+                    summary: auditSummary,
+                    metadata: auditMetadata,
+                });
+                throw lastError;
+            }
             addLog(
                 'success',
                 `✅ [Supabase] ${selectedAdminClinic?.name || '선택 치과'} ${year}년 ${month ? `${month}월 ` : ''}${category}/${subCategory} 저장 완료`
             );
+            await recordAuditLog({
+                category,
+                subCategory,
+                year,
+                month,
+                status: 'success',
+                actionType: mergeExisting ? 'update' : 'upload',
+                summary: {
+                    mergeExisting,
+                    ...auditSummary,
+                },
+                metadata: auditMetadata,
+            });
             return true;
         } catch (err) {
             addLog('error', `❌ [Supabase 저장 실패] ${err.message}`);
@@ -2465,6 +2629,14 @@ const Admin = () => {
                                 month,
                                 payload: { labRequests: Object.values(labRequests) },
                                 mergeExisting: true,
+                                auditSummary: {
+                                    subCategoryLabel: AUDIT_SUBCATEGORY_LABELS.lab_requests,
+                                    itemCount: Object.keys(labRequests).length,
+                                },
+                                auditMetadata: {
+                                    feature: 'lab_requests',
+                                    subCategoryLabel: AUDIT_SUBCATEGORY_LABELS.lab_requests,
+                                },
                             });
                             window.dispatchEvent(new CustomEvent('patientLedgerUpdated', {
                                 detail: { year: yearFromFile, month }
@@ -4470,6 +4642,51 @@ const Admin = () => {
     const handleDrop = (e) => { e.preventDefault(); setIsDragOver(false); handleUnifiedUpload(e.dataTransfer.files); };
 
     // ── JSX ──────────────────────────────────────────────────────────────────
+    const handleAuditFilterChange = (key, value) => {
+        setAuditFilters(prev => ({
+            ...prev,
+            [key]: value,
+        }));
+    };
+
+    const formatAuditDate = (value) => {
+        if (!value) return '-';
+        return new Date(value).toLocaleString('ko-KR', {
+            year: '2-digit',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    };
+
+    const getAuditCategoryLabel = (key) => AUDIT_CATEGORY_LABELS[key] || key || '-';
+
+    const getAuditClinicLabel = (clinicId) => {
+        const clinic = adminClinics.find(item => item.id === clinicId);
+        return clinic?.name || selectedAdminClinic?.name || clinicId || '-';
+    };
+
+    const getAuditSubCategoryLabel = (logOrKey) => {
+        const log = typeof logOrKey === 'object' && logOrKey !== null ? logOrKey : null;
+        const key = log ? log.sub_category : logOrKey;
+        const summaryLabel = log?.summary?.subCategoryLabel || log?.summary?.label;
+        const metadataLabel = log?.metadata?.subCategoryLabel;
+
+        if (summaryLabel) return summaryLabel;
+        if (metadataLabel) return metadataLabel;
+        if (log?.metadata?.feature === 'lab_requests') return AUDIT_SUBCATEGORY_LABELS.lab_requests;
+
+        return AUDIT_SUBCATEGORY_LABELS[key] || key || '-';
+    };
+
+    const getAuditSummaryText = (log) => {
+        if (log.status === 'failed') return log.error_message || '저장 실패';
+        const summary = log.summary || {};
+        if (summary.mergeExisting) return '기존 데이터 병합 저장';
+        return '데이터 저장 완료';
+    };
+
     return (
         <div className="admin-container">
             <div className="page-header admin-page-header">
@@ -4513,6 +4730,23 @@ const Admin = () => {
                     </div>
                 )}
             </section>
+
+            <div className="admin-panel-tabs">
+                <button
+                    type="button"
+                    className={`admin-panel-tab ${adminPanelTab === 'upload' ? 'active' : ''}`}
+                    onClick={() => setAdminPanelTab('upload')}
+                >
+                    파일 업로드 / PDF
+                </button>
+                <button
+                    type="button"
+                    className={`admin-panel-tab ${adminPanelTab === 'history' ? 'active' : ''}`}
+                    onClick={() => setAdminPanelTab('history')}
+                >
+                    업로드 / 수정 이력
+                </button>
+            </div>
 
             {ocrProcessingFile && (
                 <div className="admin-loading-overlay">
@@ -5027,6 +5261,7 @@ const Admin = () => {
                 </div>
             )}
 
+            {adminPanelTab === 'upload' ? (
             <div className="admin-grid">
 
                 {/* PDF 보고서 다운로드 */}
@@ -5173,6 +5408,127 @@ const Admin = () => {
                 </div>
 
             </div>
+            ) : (
+                <div className="admin-card admin-history-card">
+                    <div className="admin-card-header">
+                        <FileSpreadsheet size={24} className="admin-card-icon" />
+                        <h2>업로드 / 수정 이력</h2>
+                    </div>
+                    <div className="admin-history-filters">
+                        <label>
+                            <span>상태</span>
+                            <select value={auditFilters.status} onChange={e => handleAuditFilterChange('status', e.target.value)}>
+                                <option value="all">전체</option>
+                                <option value="success">성공</option>
+                                <option value="failed">실패</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span>카테고리</span>
+                            <select value={auditFilters.category} onChange={e => handleAuditFilterChange('category', e.target.value)}>
+                                <option value="all">전체</option>
+                                {Object.entries(AUDIT_CATEGORY_LABELS).map(([key, label]) => (
+                                    <option key={key} value={key}>{label}</option>
+                                ))}
+                            </select>
+                        </label>
+                        <label>
+                            <span>연도</span>
+                            <select value={auditFilters.year} onChange={e => handleAuditFilterChange('year', e.target.value)}>
+                                <option value="all">전체</option>
+                                {availableReportYears.map(year => <option key={year} value={year}>{year}년</option>)}
+                            </select>
+                        </label>
+                        <label>
+                            <span>월</span>
+                            <select value={auditFilters.month} onChange={e => handleAuditFilterChange('month', e.target.value)}>
+                                <option value="all">전체</option>
+                                {MONTHS.map(month => <option key={month} value={month}>{month}</option>)}
+                            </select>
+                        </label>
+                        <button type="button" onClick={() => loadAuditLogList()} disabled={auditLoading}>
+                            새로고침
+                        </button>
+                    </div>
+                    {auditError && <div className="admin-history-error">{auditError}</div>}
+                    <div className="table-responsive">
+                        <table className="admin-table admin-history-table">
+                            <thead>
+                                <tr>
+                                    <th>일시</th>
+                                    <th>치과</th>
+                                    <th>상태</th>
+                                    <th>작업</th>
+                                    <th>카테고리</th>
+                                    <th>세부 탭</th>
+                                    <th>연월</th>
+                                    <th>요약</th>
+                                    <th>상세</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {auditLoading ? (
+                                    <tr><td colSpan={9} className="empty-state">이력을 불러오는 중입니다.</td></tr>
+                                ) : auditLogs.length === 0 ? (
+                                    <tr><td colSpan={9} className="empty-state">등록된 이력이 없습니다.</td></tr>
+                                ) : auditLogs.map(log => (
+                                    <tr key={log.id}>
+                                        <td>{formatAuditDate(log.created_at)}</td>
+                                        <td>{getAuditClinicLabel(log.clinic_id)}</td>
+                                        <td>
+                                            <span className={`admin-history-status ${log.status}`}>
+                                                {log.status === 'success' ? '성공' : '실패'}
+                                            </span>
+                                        </td>
+                                        <td>{log.action_type === 'update' ? '수정' : log.action_type === 'upload' ? '업로드' : log.action_type}</td>
+                                        <td>{getAuditCategoryLabel(log.category)}</td>
+                                        <td>{getAuditSubCategoryLabel(log)}</td>
+                                        <td>{log.year ? `${log.year}년 ${log.month ? `${log.month}월` : ''}` : '-'}</td>
+                                        <td className="admin-history-summary">{getAuditSummaryText(log)}</td>
+                                        <td>
+                                            <button type="button" className="admin-history-detail-btn" onClick={() => setSelectedAuditLog(log)}>
+                                                보기
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {selectedAuditLog && (
+                <div className="admin-history-modal-backdrop" onClick={() => setSelectedAuditLog(null)}>
+                    <div className="admin-history-modal" onClick={event => event.stopPropagation()}>
+                        <div className="admin-history-modal-header">
+                            <div>
+                                <h3>이력 상세</h3>
+                                <p>{formatAuditDate(selectedAuditLog.created_at)}</p>
+                            </div>
+                            <button type="button" onClick={() => setSelectedAuditLog(null)}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <dl className="admin-history-detail-grid">
+                            <dt>상태</dt>
+                            <dd>{selectedAuditLog.status === 'success' ? '성공' : '실패'}</dd>
+                            <dt>치과</dt>
+                            <dd>{getAuditClinicLabel(selectedAuditLog.clinic_id)}</dd>
+                            <dt>카테고리</dt>
+                            <dd>{getAuditCategoryLabel(selectedAuditLog.category)} / {getAuditSubCategoryLabel(selectedAuditLog)}</dd>
+                            <dt>연월</dt>
+                            <dd>{selectedAuditLog.year || '-'}년 {selectedAuditLog.month || '-'}월</dd>
+                            <dt>오류</dt>
+                            <dd>{selectedAuditLog.error_message || '-'}</dd>
+                        </dl>
+                        <pre className="admin-history-json">{JSON.stringify({
+                            summary: selectedAuditLog.summary,
+                            metadata: selectedAuditLog.metadata,
+                        }, null, 2)}</pre>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
