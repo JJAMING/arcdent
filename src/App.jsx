@@ -14,8 +14,25 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { isSupabaseConfigured } from './lib/supabaseClient';
 import './styles/Layout.css';
 
+const ACTIVE_TAB_SESSION_KEY = 'arcdent_active_tab';
+const VALID_TABS = new Set(['home', 'sales', 'treatment', 'patient', 'new-patient', 'consultation', 'insurance', 'admin']);
+
+const getInitialActiveTab = () => {
+    if (typeof window === 'undefined') return 'home';
+    const savedTab = window.sessionStorage.getItem(ACTIVE_TAB_SESSION_KEY);
+    return VALID_TABS.has(savedTab) ? savedTab : 'home';
+};
+
 function AppContent() {
-    const [activeTab, setActiveTab] = useState('home');
+    const [activeTab, setActiveTabState] = useState(getInitialActiveTab);
+
+    const setActiveTab = (tab) => {
+        const nextTab = VALID_TABS.has(tab) ? tab : 'home';
+        if (typeof window !== 'undefined') {
+            window.sessionStorage.setItem(ACTIVE_TAB_SESSION_KEY, nextTab);
+        }
+        setActiveTabState(nextTab);
+    };
 
     const renderContent = () => {
         switch (activeTab) {
