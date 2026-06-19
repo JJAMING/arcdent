@@ -75,17 +75,25 @@ const formatOneDecimalPatient = (value, empty = '-') => {
 };
 
 const getTotalReceptionPatients = (data) => {
-    const totalVisits = Number(data.totalVisits || 0);
     const workDays = Number(data.workDays || 0);
-    if (totalVisits > 0 && workDays > 0) {
-        return roundToOneDecimal(totalVisits / workDays);
+    const newPt = Number(data.newPt || 0);
+    const oldPt = Number(data.oldPt || 0);
+    const patientTotal = newPt + oldPt;
+
+    if (patientTotal > 0 && workDays > 0) {
+        return roundToOneDecimal(patientTotal / workDays);
     }
-    if (data.total != null && Number.isFinite(Number(data.total)) && Number(data.total) > 0) {
+
+    const savedTotal = Number(data.total);
+    if (data.total != null && Number.isFinite(savedTotal) && savedTotal > 0 && !(patientTotal > 0 && savedTotal < 1)) {
         return roundToOneDecimal(data.total);
     }
-    if (data.avgTotalPt != null && Number.isFinite(Number(data.avgTotalPt)) && Number(data.avgTotalPt) > 0) {
+
+    const savedAvgTotal = Number(data.avgTotalPt);
+    if (data.avgTotalPt != null && Number.isFinite(savedAvgTotal) && savedAvgTotal > 0 && !(patientTotal > 0 && savedAvgTotal < 1)) {
         return roundToOneDecimal(data.avgTotalPt);
     }
+
     return null;
 };
 
@@ -224,10 +232,7 @@ const PatientAnalysis = () => {
             case 'newOld': {
                 const totalNew = currentHalfData.reduce((s, d) => s + d.newPt, 0);
                 const totalOld = currentHalfData.reduce((s, d) => s + d.oldPt, 0);
-                const totalReceptionValues = currentHalfData
-                    .map(getTotalReceptionPatients)
-                    .filter(v => v != null);
-                const totalAll = roundToOneDecimal(totalReceptionValues.reduce((s, v) => s + v, 0)) || 0;
+                const totalAll = totalNew + totalOld;
 
                 return (
                     <div className="tab-pane">
@@ -235,8 +240,8 @@ const PatientAnalysis = () => {
                             {/* 요약 KPI 카드 3개 */}
                             <div className="patient-kpi-row">
                                 <div className="patient-kpi-card kpi-total">
-                                    <span className="kpi-label">총 환자 합계</span>
-                                    <span className="kpi-value">{formatOneDecimalPatient(totalAll, '0')}명</span>
+                                    <span className="kpi-label">총 내원 환자수</span>
+                                    <span className="kpi-value">{totalAll.toLocaleString()}명</span>
                                     <span className="kpi-sub">{half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체'}</span>
                                 </div>
                                 <div className="patient-kpi-card kpi-new">
@@ -337,12 +342,12 @@ const PatientAnalysis = () => {
                                                     <td className="font-bold">{totalOld}명</td>
                                                 </tr>
                                                 <tr className="highlight-row">
-                                                    <td className="row-header"><PlusCircle size={14} /> 총 접수 환자 수</td>
+                                                    <td className="row-header"><PlusCircle size={14} /> 총 내원 환자수</td>
                                                     {currentHalfData.map(d => {
-                                                        const totalReception = getTotalReceptionPatients(d) ?? 0;
-                                                        return <td key={d.month} className="font-bold">{formatOneDecimalPatient(totalReception, '0')}명</td>;
+                                                        const totalVisitPatients = Number(d.newPt || 0) + Number(d.oldPt || 0);
+                                                        return <td key={d.month} className="font-bold">{totalVisitPatients.toLocaleString()}명</td>;
                                                     })}
-                                                    <td className="font-bold" style={{ fontSize: '1.05rem' }}>{formatOneDecimalPatient(totalAll, '0')}명</td>
+                                                    <td className="font-bold" style={{ fontSize: '1.05rem' }}>{totalAll.toLocaleString()}명</td>
                                                 </tr>
                                             </tbody>
                                         </table>
@@ -391,31 +396,27 @@ const PatientAnalysis = () => {
                                                         구환 일평균
                                                     </td>
                                                     {currentHalfData.map(d => {
-                                                        // 신환 + 구환 / 진료일수
-                                                        const avg = d.workDays ? ((d.newPt + d.oldPt) / d.workDays).toFixed(1) : '-';
+                                                        // 구환 / 진료일수
+                                                        const avg = d.workDays ? (d.oldPt / d.workDays).toFixed(1) : '-';
                                                         return <td key={d.month}>{avg}명</td>;
                                                     })}
                                                     <td className="font-bold">
                                                         {(() => {
                                                             const totalDays = currentHalfData.reduce((s, d) => s + (d.workDays || 0), 0);
-                                                            return totalDays ? ((totalNew + totalOld) / totalDays).toFixed(1) : '-';
+                                                            return totalDays ? (totalOld / totalDays).toFixed(1) : '-';
                                                         })()}명
                                                     </td>
                                                 </tr>
                                                 <tr className="highlight-row">
-                                                    <td className="row-header"><PlusCircle size={14} /> 총 접수 환자 수</td>
+                                                    <td className="row-header"><PlusCircle size={14} /> 총 내원 일평균</td>
                                                     {currentHalfData.map(d => {
                                                         const totalDailyVisit = getTotalReceptionPatients(d);
                                                         return <td key={d.month} className="font-bold">{formatOneDecimalPatient(totalDailyVisit)}명</td>;
                                                     })}
                                                     <td className="font-bold" style={{ fontSize: '1.05rem' }}>
                                                         {(() => {
-                                                            const values = currentHalfData
-                                                                .map(getTotalReceptionPatients)
-                                                                .filter(v => v != null);
-                                                            if (values.length === 0) return '-';
-                                                            const sum = values.reduce((s, v) => s + Number(v), 0);
-                                                            return formatOneDecimalPatient(sum / values.length);
+                                                            const totalDays = currentHalfData.reduce((s, d) => s + (d.workDays || 0), 0);
+                                                            return totalDays ? formatOneDecimalPatient((totalNew + totalOld) / totalDays) : '-';
                                                         })()}명
                                                     </td>
                                                 </tr>

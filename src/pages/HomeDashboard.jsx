@@ -275,7 +275,7 @@ const HomeDashboard = () => {
     const totalSales = sum(periodData.sales, 'total');
     const netSales = sum(periodData.sales, 'netSales');
     const insuranceSales = sum(periodData.sales, 'insurance');
-    const totalPatients = periodData.ledger.reduce((acc, row) => acc + Number(row.total || row.totalVisits || 0), 0);
+    const totalPatients = periodData.ledger.reduce((acc, row) => acc + Number(row.newPt || 0) + Number(row.oldPt || 0), 0);
     const newPatients = periodData.ledger.reduce((acc, row) => acc + Number(row.newPt || 0), 0) || sum(periodData.sales, 'newPatient');
     const consultationAmount = sum(periodData.consultationOverall, 'consultationAmount');
     const agreedAmount = sum(periodData.consultationOverall, 'agreedAmount');
@@ -299,7 +299,7 @@ const HomeDashboard = () => {
 
     const monthlyPatientChart = periodData.ledger.map((row, index) => ({
         month: row.month,
-        총환자수: Number(row.total || row.totalVisits || 0),
+        총환자수: Number(row.newPt || 0) + Number(row.oldPt || 0),
         신환수: Number(row.newPt || periodData.sales[index]?.newPatient || 0),
     }));
 
@@ -530,7 +530,7 @@ const HomeDashboard = () => {
                     { label: '총매출', value: formatWon(totalSales), sub: `${periodLabel} 합계`, color: '#3b82f6', icon: WalletCards },
                     { label: '순매출', value: formatWon(netSales), sub: '현금+카드+기타', color: '#10b981', icon: WalletCards },
                     { label: '보험청구', value: formatWon(insuranceSales), sub: '공단부담/청구액', color: '#f59e0b', icon: ShieldCheck },
-                    { label: '총 접수 환자 수', value: formatPeople(totalPatients), sub: `${periodLabel} 합계`, color: '#8b5cf6', icon: Users },
+                    { label: '총 내원 환자수', value: formatPeople(totalPatients), sub: `${periodLabel} 합계`, color: '#8b5cf6', icon: Users },
                     { label: '신환 수', value: formatPeople(newPatients), sub: `${periodLabel} 합계`, color: '#ec4899', icon: UserPlus },
                     { label: '상담 동의율', value: `${consultationRate.toFixed(1)}%`, sub: `상담금액 대비 ${periodLabel}`, color: '#64748b', icon: TrendingUp },
                 ].map(item => {

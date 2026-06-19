@@ -2565,14 +2565,19 @@ const Admin = () => {
                                     avgNewPt: null,
                                     avgOldPt: null,
                                 };
+                                const patientCountTotal = Number(patientLedger.newPt || 0) + Number(patientLedger.oldPt || 0);
+                                if (patientLedger.totalVisits && patientCountTotal && patientLedger.totalVisits < patientCountTotal) {
+                                    patientLedger.totalVisits = 0;
+                                    patientLedger.total = 0;
+                                }
                                 if (patientLedger.totalVisits && patientLedger.workDays) {
                                     patientLedger.total = parseFloat((patientLedger.totalVisits / patientLedger.workDays).toFixed(1));
                                 }
                                 if (patientLedger.newPt && patientLedger.workDays) {
                                     patientLedger.avgNewPt = parseFloat((patientLedger.newPt / patientLedger.workDays).toFixed(1));
                                 }
-                                if ((patientLedger.newPt || patientLedger.oldPt) && patientLedger.workDays) {
-                                    patientLedger.avgOldPt = parseFloat((((patientLedger.newPt || 0) + (patientLedger.oldPt || 0)) / patientLedger.workDays).toFixed(1));
+                                if (patientLedger.oldPt && patientLedger.workDays) {
+                                    patientLedger.avgOldPt = parseFloat((patientLedger.oldPt / patientLedger.workDays).toFixed(1));
                                 }
                                 const detectedLedger = Object.fromEntries(
                                     Object.entries(patientLedger).filter(([, value]) => value != null)
@@ -4249,10 +4254,15 @@ const Admin = () => {
                         setOcrModal(prev => prev ? { ...prev, ocrProgress: progress } : prev);
                     });
 
-                    // 구환 일평균 자동 계산: (신환 + 구환) / 진료일수
+                    // 구환 일평균 자동 계산: 구환 / 진료일수
                     const pd = result.parsedData;
-                    if ((pd.newPt || pd.oldPt) && pd.workDays && !pd.avgOldPt) {
-                        pd.avgOldPt = parseFloat((((pd.newPt || 0) + (pd.oldPt || 0)) / pd.workDays).toFixed(1));
+                    if (pd.oldPt && pd.workDays && !pd.avgOldPt) {
+                        pd.avgOldPt = parseFloat((pd.oldPt / pd.workDays).toFixed(1));
+                    }
+                    const patientCountTotal = Number(pd.newPt || 0) + Number(pd.oldPt || 0);
+                    if (pd.totalVisits && patientCountTotal && Number(pd.totalVisits) < patientCountTotal) {
+                        pd.totalVisits = '';
+                        pd.total = '';
                     }
                     if (pd.totalVisits && pd.workDays) {
                         pd.total = parseFloat((pd.totalVisits / pd.workDays).toFixed(1));
@@ -4305,11 +4315,14 @@ const Admin = () => {
             const oldPt   = parseFloat(updated.parsedData.oldPt);
             const workDays = parseFloat(updated.parsedData.workDays);
             const totalVisits = parseFloat(updated.parsedData.totalVisits);
-            if (!isNaN(totalVisits) && !isNaN(workDays) && workDays > 0) {
+            const patientCountTotal = (isNaN(newPt) ? 0 : newPt) + (isNaN(oldPt) ? 0 : oldPt);
+            if (!isNaN(totalVisits) && patientCountTotal > 0 && totalVisits < patientCountTotal) {
+                updated.parsedData.total = '';
+            } else if (!isNaN(totalVisits) && !isNaN(workDays) && workDays > 0) {
                 updated.parsedData.total = parseFloat((totalVisits / workDays).toFixed(1));
             }
             if (!isNaN(oldPt) && !isNaN(workDays) && workDays > 0) {
-                updated.parsedData.avgOldPt = parseFloat((((isNaN(newPt) ? 0 : newPt) + oldPt) / workDays).toFixed(1));
+                updated.parsedData.avgOldPt = parseFloat((oldPt / workDays).toFixed(1));
             }
             return updated;
         });
@@ -4379,6 +4392,11 @@ const Admin = () => {
             avgNewPt: safeNum(parsedData.avgNewPt),
             avgOldPt: safeNum(parsedData.avgOldPt),
         };
+        const patientCountTotal = Number(data.newPt || 0) + Number(data.oldPt || 0);
+        if (data.totalVisits && patientCountTotal && data.totalVisits < patientCountTotal) {
+            data.totalVisits = 0;
+            data.total = 0;
+        }
 
         await saveSelectedClinicAnalytics({
             category: 'patient',
