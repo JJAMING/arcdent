@@ -729,6 +729,7 @@ const Admin = () => {
     const [isDragOver, setIsDragOver]     = useState(false);
     const [pendingNewPatientUploads, setPendingNewPatientUploads] = useState([]);
     const [pendingConsultationBundle, setPendingConsultationBundle] = useState(null);
+    const [pendingClinicUpload, setPendingClinicUpload] = useState(null);
     const [reportMode, setReportMode] = useState('single');
     const [reportCategory, setReportCategory] = useState('home');
     const [reportSubTab, setReportSubTab] = useState('all');
@@ -1953,9 +1954,58 @@ const Admin = () => {
         });
     };
 
+    const formatUploadFileSize = (size) => {
+        const bytes = Number(size || 0);
+        if (!Number.isFinite(bytes) || bytes <= 0) return '-';
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    };
+
+    const requestClinicUploadConfirmation = (files) => {
+        const uploadFiles = Array.from(files || []);
+        if (uploadFiles.length === 0) return;
+        setUploadLog([]);
+
+        if (!selectedAdminClinicId) {
+            addLog('error', '업로드할 치과를 먼저 선택해 주세요.');
+            return;
+        }
+
+        setPendingClinicUpload({
+            id: `${selectedAdminClinicId}-${Date.now()}`,
+            clinicId: selectedAdminClinicId,
+            clinicName: selectedAdminClinic?.name || '선택 치과',
+            clinicCode: selectedAdminClinic?.code || '',
+            files: uploadFiles,
+        });
+    };
+
+    const cancelClinicUploadConfirmation = () => {
+        setPendingClinicUpload(null);
+    };
+
+    const confirmClinicUpload = async () => {
+        if (!pendingClinicUpload) return;
+
+        if (pendingClinicUpload.clinicId !== selectedAdminClinicId) {
+            addLog('error', '선택 치과가 변경되어 업로드를 취소했습니다. 파일을 다시 선택해 주세요.');
+            setPendingClinicUpload(null);
+            return;
+        }
+
+        const files = pendingClinicUpload.files || [];
+        setPendingClinicUpload(null);
+        await handleUnifiedUpload(files);
+    };
+
     const handleUnifiedUpload = async (files) => {
         const uploadFiles = Array.from(files || []);
         if (uploadFiles.length === 0) return;
+        if (!selectedAdminClinicId) {
+            addLog('error', '업로드할 치과를 먼저 선택해 주세요.');
+            return;
+        }
         setUploadLog([]);
 
         const excelFiles = [];
@@ -4639,7 +4689,7 @@ const Admin = () => {
 
     const handleDragOver  = (e) => { e.preventDefault(); setIsDragOver(true); };
     const handleDragLeave = ()  => setIsDragOver(false);
-    const handleDrop = (e) => { e.preventDefault(); setIsDragOver(false); handleUnifiedUpload(e.dataTransfer.files); };
+    const handleDrop = (e) => { e.preventDefault(); setIsDragOver(false); requestClinicUploadConfirmation(e.dataTransfer.files); };
 
     // ── JSX ──────────────────────────────────────────────────────────────────
     const handleAuditFilterChange = (key, value) => {
@@ -4755,6 +4805,53 @@ const Admin = () => {
                         <div className="admin-loading-file">{ocrProcessingFile}</div>
                         <div className="admin-loading-bar">
                             <div className="admin-loading-bar-fill" />
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {pendingClinicUpload && (
+                <div className="admin-upload-confirm-backdrop" onClick={cancelClinicUploadConfirmation}>
+                    <div className="admin-upload-confirm-modal" onClick={event => event.stopPropagation()}>
+                        <div className="admin-upload-confirm-header">
+                            <div>
+                                <h3>업로드 대상 치과 확인</h3>
+                                <p>아래 치과에 파일 데이터가 저장됩니다. 치과명이 맞는지 확인해 주세요.</p>
+                            </div>
+                            <button type="button" className="admin-upload-confirm-close" onClick={cancelClinicUploadConfirmation}>
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div className="admin-upload-confirm-clinic">
+                            <span>선택 치과</span>
+                            <strong>{pendingClinicUpload.clinicName}</strong>
+                            {pendingClinicUpload.clinicCode && <small>{pendingClinicUpload.clinicCode}</small>}
+                        </div>
+
+                        <div className="admin-upload-confirm-files">
+                            <div className="admin-upload-confirm-files-title">
+                                <span>업로드 파일</span>
+                                <strong>{pendingClinicUpload.files.length}개</strong>
+                            </div>
+                            <ul>
+                                {pendingClinicUpload.files.map((file, index) => (
+                                    <li key={`${file.name}-${index}`}>
+                                        <FileSpreadsheet size={16} />
+                                        <span>{file.name}</span>
+                                        <small>{formatUploadFileSize(file.size)}</small>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        <div className="admin-upload-confirm-actions">
+                            <button type="button" className="admin-upload-confirm-cancel" onClick={cancelClinicUploadConfirmation}>
+                                취소
+                            </button>
+                            <button type="button" className="admin-upload-confirm-submit" onClick={confirmClinicUpload}>
+                                이 치과에 업로드
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -5379,7 +5476,7 @@ const Admin = () => {
                             type="file"
                             multiple
                             ref={fileInputRef}
-                            onChange={(e) => { handleUnifiedUpload(e.target.files); e.target.value = ''; }}
+                            onChange={(e) => { requestClinicUploadConfirmation(e.target.files); e.target.value = ''; }}
                             accept=".xlsx,.xls,.csv,.md,text/markdown,image/*"
                             style={{ display: 'none' }}
                         />

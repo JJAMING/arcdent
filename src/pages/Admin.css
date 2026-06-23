@@ -597,6 +597,187 @@
     }
 }
 
+.admin-upload-confirm-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1300;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(15, 23, 42, 0.48);
+    backdrop-filter: blur(3px);
+}
+
+.admin-upload-confirm-modal {
+    width: min(560px, 100%);
+    max-height: 86vh;
+    overflow: auto;
+    padding: 1.25rem;
+    border: 1px solid var(--border-color);
+    border-radius: 1rem;
+    background: var(--card-bg);
+    box-shadow: 0 22px 60px rgba(15, 23, 42, 0.24);
+}
+
+.admin-upload-confirm-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.9rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.admin-upload-confirm-header h3 {
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    font-weight: 900;
+}
+
+.admin-upload-confirm-header p {
+    margin-top: 0.25rem;
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+    line-height: 1.45;
+}
+
+.admin-upload-confirm-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 0.55rem;
+    color: var(--text-secondary);
+    transition: var(--transition);
+}
+
+.admin-upload-confirm-close:hover {
+    background: var(--bg-color);
+    color: var(--text-primary);
+}
+
+.admin-upload-confirm-clinic {
+    display: grid;
+    gap: 0.25rem;
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid rgba(59, 130, 246, 0.24);
+    border-radius: 0.8rem;
+    background: rgba(59, 130, 246, 0.08);
+}
+
+.admin-upload-confirm-clinic span,
+.admin-upload-confirm-files-title span {
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 900;
+}
+
+.admin-upload-confirm-clinic strong {
+    color: var(--text-primary);
+    font-size: 1.08rem;
+    font-weight: 900;
+}
+
+.admin-upload-confirm-clinic small {
+    color: var(--accent-primary);
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.admin-upload-confirm-files {
+    margin-top: 1rem;
+}
+
+.admin-upload-confirm-files-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.55rem;
+}
+
+.admin-upload-confirm-files-title strong {
+    color: var(--accent-primary);
+    font-size: 0.86rem;
+    font-weight: 900;
+}
+
+.admin-upload-confirm-files ul {
+    display: grid;
+    gap: 0.45rem;
+    max-height: 220px;
+    overflow: auto;
+}
+
+.admin-upload-confirm-files li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.7rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.6rem;
+    background: var(--bg-color);
+    color: var(--text-primary);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.admin-upload-confirm-files li svg {
+    color: var(--accent-primary);
+}
+
+.admin-upload-confirm-files li span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-upload-confirm-files li small {
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.admin-upload-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.65rem;
+    margin-top: 1.2rem;
+}
+
+.admin-upload-confirm-cancel,
+.admin-upload-confirm-submit {
+    min-height: 40px;
+    padding: 0 1rem;
+    border-radius: 0.6rem;
+    font-size: 0.88rem;
+    font-weight: 900;
+}
+
+.admin-upload-confirm-cancel {
+    border: 1px solid var(--border-color);
+    background: var(--bg-color);
+    color: var(--text-secondary);
+}
+
+.admin-upload-confirm-submit {
+    background: var(--accent-primary);
+    color: #fff;
+}
+
+@media (max-width: 560px) {
+    .admin-upload-confirm-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+}
+
 /* Uploaded Files List */
 .uploaded-files-list {
     margin-top: 1rem;
