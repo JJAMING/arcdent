@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import {
     Calendar, ChevronDown, Users, UserPlus, UserCheck,
-    Wrench, PlusCircle, Stethoscope, RefreshCw
+    Wrench, PlusCircle, Stethoscope
 } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
 import ManagementInsight from '../components/ManagementInsight';
@@ -833,22 +833,6 @@ const PatientAnalysis = () => {
                         <button className={half === 'second' ? 'active' : ''} onClick={() => setHalf('second')}>하반기</button>
                     </div>
 
-                    {/* 데이터 새로고침 */}
-                    <button
-                        onClick={() => setRefreshTick(t => t + 1)}
-                        title="데이터 새로고침"
-                        style={{
-                            display: 'flex', alignItems: 'center', gap: '0.4rem',
-                            padding: '0.4rem 0.8rem', borderRadius: '0.5rem',
-                            border: '1px solid var(--border-color)',
-                            background: 'var(--card-bg)', color: 'var(--text-secondary)',
-                            fontSize: '0.8rem', cursor: 'pointer', transition: 'all 0.2s',
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent-primary)'; e.currentTarget.style.borderColor = 'var(--accent-primary)'; }}
-                        onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border-color)'; }}
-                    >
-                        🔄 새로고침
-                    </button>
                 </div>
             </header>
 
