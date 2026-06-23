@@ -127,6 +127,7 @@ const NEW_PATIENT_STORAGE_KEY = 'new_patient_analysis_data';
 const CONSULTATION_CONSULTANT_STORAGE_KEY = 'consultation_consultant_data';
 const CONSULTATION_REJECTED_STORAGE_KEY = 'consultation_rejected_data';
 const ADMIN_AUTH_SESSION_KEY = 'arcdent_admin_authenticated';
+const ADMIN_AUTH_PENDING_KEY = 'arcdent_admin_auth_pending';
 const AGE_RANGES = ['0대', '10대', '20대', '30대', '40대', '50대', '60대', '70대+'];
 const normalizeAdminLoginId = (value) => {
     const loginId = value.trim();
@@ -767,6 +768,7 @@ const Admin = () => {
 
     useEffect(() => {
         if (!isAdmin) {
+            if (sessionStorage.getItem(ADMIN_AUTH_PENDING_KEY) === 'true') return;
             sessionStorage.removeItem(ADMIN_AUTH_SESSION_KEY);
             setIsAdminAuthenticated(false);
         }
@@ -894,12 +896,15 @@ const Admin = () => {
             return;
         }
 
+        sessionStorage.setItem(ADMIN_AUTH_PENDING_KEY, 'true');
+
         const { data, error } = await supabase.auth.signInWithPassword({
             email,
             password: adminLoginPassword,
         });
 
         if (error || !data?.user?.id) {
+            sessionStorage.removeItem(ADMIN_AUTH_PENDING_KEY);
             setAdminLoginError('관리자 계정 아이디 또는 비밀번호가 올바르지 않습니다.');
             return;
         }
@@ -912,6 +917,7 @@ const Admin = () => {
 
         if (profileFetchError || profileData?.role !== 'admin') {
             await supabase.auth.signOut();
+            sessionStorage.removeItem(ADMIN_AUTH_PENDING_KEY);
             sessionStorage.removeItem(ADMIN_AUTH_SESSION_KEY);
             sessionStorage.removeItem('arcdent_admin_selected_clinic_id');
             setIsAdminAuthenticated(false);
@@ -919,6 +925,7 @@ const Admin = () => {
             return;
         }
 
+        sessionStorage.removeItem(ADMIN_AUTH_PENDING_KEY);
         sessionStorage.setItem(ADMIN_AUTH_SESSION_KEY, 'true');
         setIsAdminAuthenticated(true);
         setAdminLoginError('');
@@ -926,6 +933,7 @@ const Admin = () => {
     };
 
     const handleAdminLogout = async () => {
+        sessionStorage.removeItem(ADMIN_AUTH_PENDING_KEY);
         sessionStorage.removeItem(ADMIN_AUTH_SESSION_KEY);
         sessionStorage.removeItem('arcdent_admin_selected_clinic_id');
         setIsAdminAuthenticated(false);
