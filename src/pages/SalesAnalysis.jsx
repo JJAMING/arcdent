@@ -11,6 +11,7 @@ import {
   Users, ChevronRight, Calculator, Calendar, ChevronDown
 } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import ManagementInsight from '../components/ManagementInsight';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
@@ -249,6 +250,44 @@ const SalesAnalysis = () => {
     half === 'all' ? (Array.isArray(salesData) ? salesData : []) :
     half === 'first' ? (Array.isArray(salesData) ? salesData.slice(0, 6) : []) : 
     (Array.isArray(salesData) ? salesData.slice(6, 12) : []);
+  const insightPeriodLabel = half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
+  const insightSalesTotal = currentHalfData.reduce((sum, row) => sum + Number(row?.total || 0), 0);
+  const insightNetSales = currentHalfData.reduce((sum, row) => sum + Number(row?.netSales || 0), 0);
+  const insightInsurance = currentHalfData.reduce((sum, row) => sum + Number(row?.insurance || 0), 0);
+  const insightNewPatients = currentHalfData.reduce((sum, row) => sum + Number(row?.newPatient || 0), 0);
+  const salesInsightText = (() => {
+    const cashTotal = currentHalfData.reduce((sum, row) => sum + Number(row?.cash || 0), 0);
+    const cardTotal = currentHalfData.reduce((sum, row) => sum + Number(row?.card || 0), 0);
+    const otherTotal = currentHalfData.reduce((sum, row) => sum + Number(row?.other || 0), 0);
+    const newPatientSales = currentHalfData.reduce((sum, row) => sum + Number(row?.newPatientSales || 0), 0);
+    const agreedCount = currentHalfData.reduce((sum, row) => sum + Number(row?.agreed || 0), 0);
+    const doctorTotals = {};
+    currentHalfData.forEach(row => {
+      Object.entries(row?.doctorData || {}).forEach(([name, values]) => {
+        doctorTotals[name] = (doctorTotals[name] || 0) + Number(values?.pure || 0) + Number(values?.insurance || 0);
+      });
+    });
+    const topDoctor = Object.entries(doctorTotals).sort((a, b) => b[1] - a[1])[0];
+    const newPatientSalesRate = insightNetSales > 0 ? (newPatientSales / insightNetSales) * 100 : 0;
+
+    switch (subTab) {
+      case 'payment':
+        return `${selectedYear}년 ${insightPeriodLabel} 기준 결제 구성은 카드 ${Math.round(cardTotal).toLocaleString()}원, 현금 ${Math.round(cashTotal).toLocaleString()}원, 기타 ${Math.round(otherTotal).toLocaleString()}원입니다. 카드·현금·기타 수입 비중을 함께 보면서 결제 채널 편중 여부를 점검해 주세요.`;
+      case 'newPatient':
+        return `${selectedYear}년 ${insightPeriodLabel} 기준 신환 수는 ${Math.round(insightNewPatients).toLocaleString()}명, 신환 매출은 ${Math.round(newPatientSales).toLocaleString()}원입니다. 순매출 대비 신환 매출 비중은 ${newPatientSalesRate.toFixed(1)}%로, 신규 유입이 실제 매출로 연결되는 흐름을 확인해 주세요.`;
+      case 'agreed':
+        return `${selectedYear}년 ${insightPeriodLabel} 기준 동의 환자 수는 ${Math.round(agreedCount).toLocaleString()}명입니다. 동의 환자 수납액과 미수 잔액을 함께 보면서 상담 후 수납 전환 속도를 점검해 주세요.`;
+      case 'topFee':
+        return `${selectedYear}년 ${insightPeriodLabel} 기준 진료비 상위 데이터는 고액 진료 환자 구성을 확인하는 탭입니다. 상위 진료비 환자의 진료 항목과 수납 상태를 함께 확인해 매출 집중도를 점검해 주세요.`;
+      case 'doctor':
+        return `${selectedYear}년 ${insightPeriodLabel} 기준 의사별 매출 상위는 ${topDoctor ? `${topDoctor[0]}(${Math.round(topDoctor[1]).toLocaleString()}원)` : '데이터 없음'}입니다. 의사별 총 수납액과 공단부담금 흐름을 함께 비교해 주세요.`;
+      case 'summary':
+        return `${selectedYear}년 ${insightPeriodLabel} 기준 매출 요약은 총매출 ${Math.round(insightSalesTotal).toLocaleString()}원, 순매출 ${Math.round(insightNetSales).toLocaleString()}원, 보험청구 ${Math.round(insightInsurance).toLocaleString()}원입니다. 전체 매출 구조와 세부 지표의 방향성이 일치하는지 점검해 주세요.`;
+      case 'total':
+      default:
+        return `${selectedYear}년 ${insightPeriodLabel} 기준 총매출은 ${Math.round(insightSalesTotal).toLocaleString()}원, 순매출은 ${Math.round(insightNetSales).toLocaleString()}원입니다. 보험청구는 ${Math.round(insightInsurance).toLocaleString()}원이며 신환 수는 ${Math.round(insightNewPatients).toLocaleString()}명입니다. 순매출 흐름과 신환 수익 비중을 함께 확인해 주세요.`;
+    }
+  })();
 
   
   // --- 연도 정규화 및 필터링 유틸리티 ---
@@ -1398,6 +1437,14 @@ const SalesAnalysis = () => {
             </motion.div>
         </AnimatePresence>
       </div>
+      <ManagementInsight
+        categoryKey="sales"
+        subCategoryKey={subTab}
+        year={selectedYear}
+        period={half}
+        periodLabel={insightPeriodLabel}
+        defaultInsight={salesInsightText}
+      />
     </div>
   );
 };

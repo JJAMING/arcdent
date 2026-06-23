@@ -9,6 +9,7 @@ import {
     Stethoscope, Smile                          // 임플 탭 아이콘: Stethoscope / 틀니: Smile
 } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import ManagementInsight from '../components/ManagementInsight';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
@@ -143,6 +144,20 @@ const TreatmentAnalysis = () => {
         if (half === 'all') return perfData;
         return half === 'first' ? perfData.slice(0, 6) : perfData.slice(6, 12);
     }, [half, perfData]);
+    const insightPeriodLabel = half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
+    const insightImplants = currentHalfData.reduce((sum, row) => (
+        sum + Number(row?.osstem || 0) + Number(row?.dentium || 0) + Number(row?.dio || 0)
+        + Number(row?.straumann || 0) + Number(row?.crestal || 0) + Number(row?.lateral || 0)
+        + Number(row?.gbr || 0)
+    ), 0);
+    const insightInsuranceImplants = currentHalfData.reduce((sum, row) => sum + Number(row?.insImp || 0), 0);
+    const insightInsuranceDentures = currentHalfData.reduce((sum, row) => sum + Number(row?.insDent || 0), 0);
+    const treatmentInsightText = (() => {
+        if (subTab === 'insurance') {
+            return `${selectedYear}년 ${insightPeriodLabel} 기준 보험 임플란트는 ${insightInsuranceImplants.toLocaleString()}건, 보험 틀니는 ${insightInsuranceDentures.toLocaleString()}건입니다. 단계별 사용량을 함께 보면서 보험 진료 진행 단계와 미완료 구간을 점검해 주세요.`;
+        }
+        return `${selectedYear}년 ${insightPeriodLabel} 기준 임플란트 관련 수술/처치 건수는 ${insightImplants.toLocaleString()}건입니다. 제조사·수술 방식별 변화를 함께 보면서 주력 진료 항목과 변동 폭을 확인해 주세요.`;
+    })();
 
     const renderTabContent = () => {
         switch (subTab) {
@@ -459,6 +474,14 @@ const TreatmentAnalysis = () => {
             <div className="tab-content" style={{ marginTop: '1.5rem' }}>
                 {renderTabContent()}
             </div>
+            <ManagementInsight
+                categoryKey="treatment"
+                subCategoryKey={subTab}
+                year={selectedYear}
+                period={half}
+                periodLabel={insightPeriodLabel}
+                defaultInsight={treatmentInsightText}
+            />
         </div>
     );
 };

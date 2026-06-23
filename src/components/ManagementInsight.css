@@ -1,0 +1,113 @@
+.management-insight-card {
+    margin-top: 1.5rem;
+    padding: 1.15rem 1.25rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.85rem;
+    background: var(--card-bg);
+    box-shadow: var(--shadow);
+}
+
+.management-insight-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.85rem;
+}
+
+.management-insight-header h3 {
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+.management-insight-header p {
+    margin-top: 0.2rem;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.management-insight-text {
+    color: var(--text-primary);
+    font-size: 0.94rem;
+    font-weight: 600;
+    line-height: 1.75;
+    white-space: pre-line;
+}
+
+.management-insight-editor {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.management-insight-editor textarea {
+    width: 100%;
+    min-height: 120px;
+    resize: vertical;
+    padding: 0.85rem 0.95rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.65rem;
+    background: var(--bg-color);
+    color: var(--text-primary);
+    font: inherit;
+    line-height: 1.65;
+    outline: none;
+}
+
+.management-insight-editor textarea:focus {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.management-insight-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.55rem;
+}
+
+.insight-edit-btn,
+.insight-save-btn,
+.insight-cancel-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    min-height: 34px;
+    padding: 0 0.75rem;
+    border-radius: 0.55rem;
+    font-size: 0.82rem;
+    font-weight: 800;
+    transition: var(--transition);
+}
+
+.insight-edit-btn {
+    color: var(--accent-primary);
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.insight-save-btn {
+    color: #fff;
+    background: var(--accent-primary);
+    border: 1px solid var(--accent-primary);
+}
+
+.insight-cancel-btn {
+    color: var(--text-secondary);
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+}
+
+.insight-save-btn:disabled,
+.insight-cancel-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.management-insight-error {
+    margin-top: 0.75rem;
+    color: #ef4444;
+    font-size: 0.82rem;
+    font-weight: 700;
+}

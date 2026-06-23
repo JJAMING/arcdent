@@ -6,6 +6,7 @@ import {
 } from 'recharts';
 import { Calendar, ChevronDown, ClipboardCheck, UserCheck, UserX, Users } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import ManagementInsight from '../components/ManagementInsight';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
@@ -641,6 +642,18 @@ const ConsultationAnalysis = () => {
     }, [consultationRejectedData, selectedYear, selectedMonth, selectedMonthPlans]);
 
     const rejectedTotalAmount = rejectedRows.reduce((sum, row) => sum + row.rejectedAmount, 0);
+    const consultationInsightText = (() => {
+        if (subTab === 'consultant') {
+            const topConsultant = consultantRows.slice().sort((a, b) => Number(b.amountAgreementRate || 0) - Number(a.amountAgreementRate || 0))[0];
+            return `${selectedYear}년 ${periodLabel} 기준 상담자별 금액대비 동의율 상위는 ${topConsultant ? `${topConsultant.name}(${formatPercent(topConsultant.amountAgreementRate)})` : '데이터 없음'}입니다. 상담자별 환자수, 상담금액, 동의금액을 함께 보면서 성과 차이를 점검해 주세요.`;
+        }
+
+        if (subTab === 'rejected') {
+            return `${selectedYear}년 ${periodLabel} 기준 미동의 환자는 ${rejectedRows.length.toLocaleString()}명이며 비동의금액 합계는 ${formatWon(rejectedTotalAmount)}입니다. 미동의 사유와 담당 상담자, 진단금액을 함께 보면서 후속 상담 우선순위를 정리해 주세요.`;
+        }
+
+        return `${selectedYear}년 ${periodLabel} 기준 최종동의금액은 ${formatWon(monthSummary.agreedAmount)}, 상담금액 대비 동의율은 ${formatPercent(monthSummary.consultationAgreementRate)}입니다. 전체상담건수는 ${Number(monthSummary.totalConsultations || 0).toLocaleString()}건입니다. 상담 전환율과 금액 흐름을 함께 점검해 주세요.`;
+    })();
     const rejectedNewPatientCount = rejectedRows.filter(row => String(row.newPatient || '').trim()).length;
     const rejectedOldPatientCount = rejectedRows.filter(row => String(row.oldPatient || '').trim()).length;
     const rejectedTotalPages = Math.max(1, Math.ceil(rejectedRows.length / REJECTED_ROWS_PER_PAGE));
@@ -1314,6 +1327,15 @@ const ConsultationAnalysis = () => {
             {subTab === 'overall' && renderOverallTab()}
             {subTab === 'consultant' && renderConsultantTab()}
             {subTab === 'rejected' && renderRejectedTab()}
+
+            <ManagementInsight
+                categoryKey="consultation"
+                subCategoryKey={subTab}
+                year={selectedYear}
+                period={half}
+                periodLabel={periodLabel}
+                defaultInsight={consultationInsightText}
+            />
         </div>
     );
 };

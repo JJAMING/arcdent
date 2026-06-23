@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { Calendar, ChevronDown, ClipboardCheck, MapPin, Users, WalletCards } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import ManagementInsight from '../components/ManagementInsight';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
@@ -410,6 +411,10 @@ const NewPatientAnalysis = () => {
     ), [currentHalfData, sourceSummary]);
 
     const totalNewPatients = sourceSummary.reduce((sum, item) => sum + item.value, 0);
+    const insightPeriodLabel = half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
+    const insightTopSource = sourceSummary[0];
+    const insightTopAge = ageSummary.slice().sort((a, b) => b.count - a.count)[0];
+    const insightTopUnitPrice = unitPriceBySource[0];
 
     const treatmentRankByTotalRatio = useMemo(() => {
         const treatmentCounts = new Map();
@@ -434,6 +439,23 @@ const NewPatientAnalysis = () => {
             })
             .sort((a, b) => b.totalRatio - a.totalRatio || b.value - a.value);
     }, [currentHalfData, sourceSummary]);
+
+    const newPatientInsightText = (() => {
+        if (subTab === 'treatmentConversion') {
+            const topTreatment = treatmentRankByTotalRatio[0];
+            return `${selectedYear}년 ${insightPeriodLabel} 기준 치료 이행 관련 주요 경로는 ${topTreatment?.name || '-'}입니다. 해당 경로의 총 비율은 ${Number(topTreatment?.totalRatio || 0).toFixed(1)}%이며, 보험/비보험 비율과 신환 수를 함께 확인해 실제 진료 전환 흐름을 점검해 주세요.`;
+        }
+
+        if (subTab === 'age') {
+            return `${selectedYear}년 ${insightPeriodLabel} 기준 주요 신환 연령대는 ${insightTopAge?.range || '-'}(${Number(insightTopAge?.count || 0).toLocaleString()}명)입니다. 연령대별 비중과 월별 변화를 함께 보면서 주력 연령층과 신규 유입 변화를 확인해 주세요.`;
+        }
+
+        if (subTab === 'unitPrice') {
+            return `${selectedYear}년 ${insightPeriodLabel} 기준 객단가 상위 내원경로는 ${insightTopUnitPrice?.name || '-'}(${Math.round(Number(insightTopUnitPrice?.unitPrice || 0)).toLocaleString()}원)입니다. 환자수와 총진료비, 평균진료비를 함께 비교해 유입 경로별 수익성을 확인해 주세요.`;
+        }
+
+        return `${selectedYear}년 ${insightPeriodLabel} 기준 신환 수는 ${totalNewPatients.toLocaleString()}명입니다. 주요 내원경로는 ${insightTopSource?.name || '-'}(${Number(insightTopSource?.value || 0).toLocaleString()}명)입니다. 경로별 신환수와 비중을 함께 보면서 유입 채널의 강약을 확인해 주세요.`;
+    })();
 
     const monthlyUnitPriceChartData = useMemo(() => (
         currentHalfData.map(month => {
@@ -1209,6 +1231,14 @@ const NewPatientAnalysis = () => {
             <div className="tab-content">
                 {renderTabContent()}
             </div>
+            <ManagementInsight
+                categoryKey="new_patient"
+                subCategoryKey={subTab}
+                year={selectedYear}
+                period={half}
+                periodLabel={insightPeriodLabel}
+                defaultInsight={newPatientInsightText}
+            />
         </div>
     );
 };

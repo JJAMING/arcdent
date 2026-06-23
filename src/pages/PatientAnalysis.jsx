@@ -8,6 +8,7 @@ import {
     Wrench, PlusCircle, Stethoscope, RefreshCw
 } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import ManagementInsight from '../components/ManagementInsight';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
@@ -220,6 +221,38 @@ const PatientAnalysis = () => {
         if (half === 'all') return patientData;
         return half === 'first' ? patientData.slice(0, 6) : patientData.slice(6, 12);
     }, [half, patientData]);
+    const insightPeriodLabel = half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
+    const insightNewPatients = currentHalfData.reduce((sum, row) => sum + Number(row?.newPt || 0), 0);
+    const insightOldPatients = currentHalfData.reduce((sum, row) => sum + Number(row?.oldPt || 0), 0);
+    const insightTotalPatients = insightNewPatients + insightOldPatients;
+    const insightWorkDays = currentHalfData.reduce((sum, row) => sum + Number(row?.workDays || 0), 0);
+    const insightAvgDaily = insightWorkDays > 0 ? insightTotalPatients / insightWorkDays : 0;
+    const patientInsightText = (() => {
+        if (subTab === 'byDoctor') {
+            const doctorTotals = {};
+            currentHalfData.forEach(row => {
+                Object.entries(row?.doctorPatients || {}).forEach(([name, count]) => {
+                    doctorTotals[name] = (doctorTotals[name] || 0) + Number(count || 0);
+                });
+            });
+            const topDoctor = Object.entries(doctorTotals).sort((a, b) => b[1] - a[1])[0];
+            return `${selectedYear}년 ${insightPeriodLabel} 기준 의사별 환자수 상위는 ${topDoctor ? `${topDoctor[0]}(${Math.round(topDoctor[1]).toLocaleString()}명)` : '데이터 없음'}입니다. 의사별 환자 분포와 전체 합계를 함께 보면서 진료 배분 흐름을 확인해 주세요.`;
+        }
+
+        if (subTab === 'labRequest') {
+            const labTotals = {};
+            currentHalfData.forEach(row => {
+                (row?.labRequests || []).forEach(item => {
+                    const key = `${item.category || '미분류'} - ${item.type || item.name || '미분류'}`;
+                    labTotals[key] = (labTotals[key] || 0) + Number(item.count || item.value || 0);
+                });
+            });
+            const topLab = Object.entries(labTotals).sort((a, b) => b[1] - a[1])[0];
+            return `${selectedYear}년 ${insightPeriodLabel} 기준 기공물 의뢰 상위 항목은 ${topLab ? `${topLab[0]}(${Math.round(topLab[1]).toLocaleString()}건)` : '데이터 없음'}입니다. 의뢰 건수가 많은 항목과 월별 편차를 함께 확인해 기공물 흐름을 점검해 주세요.`;
+        }
+
+        return `${selectedYear}년 ${insightPeriodLabel} 기준 총 내원 환자수는 ${insightTotalPatients.toLocaleString()}명입니다. 신환은 ${insightNewPatients.toLocaleString()}명, 구환은 ${insightOldPatients.toLocaleString()}명이며 일평균 총 내원 환자수는 ${formatOneDecimalPatient(insightAvgDaily, '0')}명입니다. 신환 비중과 구환 유지 흐름을 함께 확인해 주세요.`;
+    })();
 
     useEffect(() => {
         setLabPage(1);
@@ -841,6 +874,14 @@ const PatientAnalysis = () => {
             <div className="tab-content">
                 {renderTabContent()}
             </div>
+            <ManagementInsight
+                categoryKey="patient"
+                subCategoryKey={subTab}
+                year={selectedYear}
+                period={half}
+                periodLabel={insightPeriodLabel}
+                defaultInsight={patientInsightText}
+            />
         </div>
     );
 };

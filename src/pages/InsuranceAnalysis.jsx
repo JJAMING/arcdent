@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { Calendar, ChevronDown, ListChecks, ShieldCheck, WalletCards } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import ManagementInsight from '../components/ManagementInsight';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
@@ -243,6 +244,15 @@ const InsuranceAnalysis = () => {
 
     const topPatientFees = feeRows.slice().sort((a, b) => b.patients - a.patients).slice(0, 5);
     const topVisitFees = feeRows.slice().sort((a, b) => b.visits - a.visits).slice(0, 5);
+    const insuranceInsightText = (() => {
+        if (subTab === 'fee') {
+            const topPatientFee = topPatientFees[0];
+            const topVisitFee = topVisitFees[0];
+            return `${selectedYear}년 ${periodLabel} 기준 보험수가별 통계는 ${feeRows.length.toLocaleString()}개 항목입니다. 환자수 상위는 ${topPatientFee ? `${topPatientFee.name}(${Number(topPatientFee.patients || 0).toLocaleString()}명)` : '데이터 없음'}, 진료횟수 상위는 ${topVisitFee ? `${topVisitFee.name}(${Number(topVisitFee.visits || 0).toLocaleString()}회)` : '데이터 없음'}입니다. 환자수와 진료횟수 상위 항목을 함께 확인해 주세요.`;
+        }
+
+        return `${selectedYear}년 ${periodLabel} 기준 보험청구액은 ${formatWon(totalClaim)}입니다. 건강보험은 ${formatWon(healthTotal)}, 의료급여는 ${formatWon(medicalAidTotal)}이며 월평균 청구액은 ${formatWon(averageClaim)}입니다. 월별 청구액 변동과 건강보험/의료급여 비중을 함께 점검해 주세요.`;
+    })();
     const selectedFeeMonth = feeYearData[selectedFeeMonthIndex] || { month: MONTHS[selectedFeeMonthIndex] || '-', fees: [] };
     const selectedFeeMonthRows = (selectedFeeMonth.fees || [])
         .slice()
@@ -567,6 +577,15 @@ const InsuranceAnalysis = () => {
             </nav>
 
             {subTab === 'claim' ? renderClaimTab() : renderFeeTab()}
+
+            <ManagementInsight
+                categoryKey="insurance"
+                subCategoryKey={subTab}
+                year={selectedYear}
+                period={half}
+                periodLabel={periodLabel}
+                defaultInsight={insuranceInsightText}
+            />
         </div>
     );
 };

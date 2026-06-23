@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { Calendar, ChevronDown, WalletCards, Users, UserPlus, ShieldCheck, TrendingDown, TrendingUp, Percent } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import ManagementInsight from '../components/ManagementInsight';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
@@ -438,6 +439,9 @@ const HomeDashboard = () => {
     }, [selectedYear, stores.sales, stores.ledger, half, monthFilter]);
 
     const periodLabel = monthFilter !== 'all' ? monthFilter : half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
+    const insightPeriod = monthFilter !== 'all' ? 'month' : half;
+    const insightMonth = monthFilter !== 'all' ? Number(String(monthFilter).replace(/\D/g, '')) : null;
+    const homeInsightText = `${selectedYear}년 ${periodLabel} 기준 총매출은 ${formatWon(totalSales)}, 순매출은 ${formatWon(netSales)}입니다. 총 내원 환자수는 ${formatPeople(totalPatients)}, 신환 수는 ${formatPeople(newPatients)}이며 상담금액 대비 동의율은 ${consultationRate.toFixed(1)}%입니다. 매출 흐름과 신환 유입, 상담 전환율을 함께 점검해 주세요.`;
 
     const renderRanking = (title, subtitle, rows, formatter) => (
         <DashboardCard title={title} subtitle={subtitle}>
@@ -643,6 +647,15 @@ const HomeDashboard = () => {
                 {renderRanking('객단가 상위 경로 TOP 5', `${periodLabel} 평균진료비`, unitPriceRanking, formatWon)}
                 {renderRanking('보험수가 환자수 TOP 5', `${periodLabel} 합계`, insuranceFeeRanking, formatPeople)}
             </div>
+            <ManagementInsight
+                categoryKey="home"
+                subCategoryKey="dashboard"
+                year={selectedYear}
+                period={insightPeriod}
+                month={insightMonth}
+                periodLabel={periodLabel}
+                defaultInsight={homeInsightText}
+            />
         </div>
     );
 };
