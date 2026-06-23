@@ -79,3 +79,253 @@
         grid-column: span 1;
     }
 }
+
+/* Shared responsive rules for analytics pages */
+.dashboard-card,
+.stat-card,
+.patient-kpi-card,
+.admin-card,
+.management-insight-card {
+    min-width: 0;
+}
+
+.dashboard-card,
+.dashboard-card *,
+.stat-card,
+.patient-kpi-card {
+    word-break: keep-all;
+}
+
+.sales-data-table-container,
+.treatment-data-table-container,
+.table-responsive {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.sales-data-table,
+.treatment-data-table,
+.admin-table {
+    min-width: max-content;
+}
+
+.tab-navigation,
+.period-tabs,
+.month-filter-container,
+.header-filters,
+.admin-panel-tabs {
+    max-width: 100%;
+}
+
+.tab-list,
+.period-tabs,
+.month-filter-container,
+.header-filters {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.recharts-responsive-container,
+.recharts-wrapper {
+    max-width: 100%;
+}
+
+.recharts-surface {
+    overflow: visible;
+}
+
+@media (max-width: 1024px) {
+    .analysis-page {
+        gap: 1rem;
+    }
+
+    .page-header {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start !important;
+        gap: 0.75rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .page-header > div,
+    .header-filters {
+        max-width: 100%;
+    }
+
+    .header-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        justify-content: flex-start !important;
+    }
+
+    .dashboard-grid {
+        grid-template-columns: 1fr !important;
+        gap: 1rem;
+    }
+
+    .stats-row,
+    .patient-kpi-row,
+    .stats-header-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.85rem;
+    }
+
+    .stat-card {
+        min-width: 0;
+    }
+
+    .card-content {
+        min-height: 280px;
+    }
+
+    .period-tabs,
+    .month-filter-container {
+        width: 100%;
+        flex-wrap: nowrap;
+    }
+
+    .period-tabs button,
+    .filter-btn,
+    .month-filter-btn {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    .tab-list li {
+        flex: 0 0 auto;
+    }
+}
+
+@media (max-width: 640px) {
+    .analysis-page {
+        gap: 0.85rem;
+    }
+
+    .page-header h1 {
+        font-size: 1.25rem;
+        line-height: 1.25;
+    }
+
+    .page-header p {
+        font-size: 0.8rem;
+        line-height: 1.4;
+    }
+
+    .dashboard-grid,
+    .dashboard-stack {
+        gap: 0.85rem !important;
+    }
+
+    .dashboard-card {
+        padding: 0.85rem;
+        border-radius: 0.75rem;
+    }
+
+    .card-header {
+        flex-direction: column;
+        gap: 0.55rem;
+        margin-bottom: 0.55rem;
+    }
+
+    .card-header-right {
+        width: 100%;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .card-title {
+        font-size: 0.95rem;
+        line-height: 1.35;
+    }
+
+    .card-subtitle {
+        font-size: 0.72rem;
+    }
+
+    .card-content {
+        min-height: 240px;
+    }
+
+    .stats-row,
+    .patient-kpi-row,
+    .stats-header-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .stat-card,
+    .patient-kpi-card {
+        padding: 0.95rem;
+        border-radius: 0.75rem;
+    }
+
+    .kpi-value,
+    .stat-value,
+    .stat-card .value {
+        font-size: 1.35rem;
+        line-height: 1.15;
+    }
+
+    .tab-navigation {
+        margin-top: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .tab-list li {
+        min-width: 6.75rem;
+        padding: 0.65rem 0.45rem;
+        font-size: 0.76rem;
+    }
+
+    .period-tabs,
+    .month-filter-container {
+        padding: 0.3rem;
+        gap: 0.35rem;
+    }
+
+    .period-tabs button,
+    .filter-btn,
+    .month-filter-btn {
+        min-height: 36px;
+        padding: 0.45rem 0.75rem;
+        font-size: 0.78rem;
+    }
+
+    .sales-data-table,
+    .treatment-data-table,
+    .admin-table {
+        font-size: 0.74rem;
+    }
+
+    .sales-data-table th,
+    .sales-data-table td,
+    .treatment-data-table th,
+    .treatment-data-table td,
+    .admin-table th,
+    .admin-table td {
+        padding: 0.55rem 0.45rem;
+        white-space: nowrap;
+    }
+
+    .sales-data-table .row-header,
+    .treatment-data-table .row-header {
+        min-width: 7rem;
+        padding-left: 0.65rem;
+    }
+}
+
+@media (max-width: 420px) {
+    .dashboard-card {
+        padding: 0.75rem;
+    }
+
+    .card-content {
+        min-height: 220px;
+    }
+
+    .tab-list li {
+        min-width: 6rem;
+    }
+}

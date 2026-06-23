@@ -318,6 +318,79 @@
     }
 }
 
+@media (max-width: 1024px) {
+    .admin-container {
+        gap: 1rem;
+    }
+
+    .admin-page-header {
+        align-items: stretch;
+    }
+
+    .admin-card {
+        padding: 1rem;
+    }
+
+    .admin-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    .admin-history-summary {
+        max-width: 220px;
+    }
+}
+
+@media (max-width: 640px) {
+    .admin-card {
+        padding: 0.85rem;
+        border-radius: 0.8rem;
+    }
+
+    .admin-card-header {
+        align-items: flex-start;
+        gap: 0.55rem;
+    }
+
+    .admin-card-header h2 {
+        font-size: 1.05rem;
+        line-height: 1.35;
+    }
+
+    .admin-auth-container {
+        min-height: calc(100vh - 10rem);
+        padding: 1rem 0;
+    }
+
+    .admin-auth-card {
+        padding: 1.25rem;
+    }
+
+    .admin-auth-header h1 {
+        font-size: 1.28rem;
+    }
+
+    .upload-area {
+        padding: 1.6rem 0.8rem;
+    }
+
+    .file-item,
+    .file-info {
+        align-items: flex-start;
+    }
+
+    .file-item {
+        gap: 0.75rem;
+    }
+
+    .admin-history-detail-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .admin-history-summary {
+        max-width: 160px;
+    }
+}
+
 .admin-auth-container {
     min-height: calc(100vh - 4rem);
     display: flex;
