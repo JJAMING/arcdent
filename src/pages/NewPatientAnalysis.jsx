@@ -411,6 +411,68 @@ const NewPatientAnalysis = () => {
     ), [currentHalfData, sourceSummary]);
 
     const totalNewPatients = sourceSummary.reduce((sum, item) => sum + item.value, 0);
+    const sourcePieLabelLayout = useMemo(() => {
+        const total = sourceSummary.reduce((sum, item) => sum + Number(item.value || 0), 0);
+        if (total <= 0) return new Map();
+
+        const RADIAN = Math.PI / 180;
+        let currentAngle = 0;
+        const labels = [];
+
+        sourceSummary.forEach((item) => {
+            const percent = Number(item.value || 0) / total;
+            const ratio = percent * 100;
+            const isUnspecified = String(item.name || '').includes('미입력');
+            const angle = percent * 360;
+            const midAngle = currentAngle + angle / 2;
+            currentAngle += angle;
+
+            if (ratio < 3 && !isUnspecified) return;
+
+            labels.push({
+                name: item.name,
+                ratio,
+                side: Math.cos(-midAngle * RADIAN) >= 0 ? 'right' : 'left',
+                yFactor: Math.sin(-midAngle * RADIAN),
+            });
+        });
+
+        const spreadSide = (sideLabels) => {
+            if (sideLabels.length <= 1) return sideLabels;
+
+            const sorted = [...sideLabels].sort((a, b) => a.yFactor - b.yFactor);
+            const minY = -1.06;
+            const maxY = 1.06;
+            const minGap = Math.min(0.24, (maxY - minY) / Math.max(sorted.length - 1, 1));
+
+            sorted.forEach((item, index) => {
+                const previousY = index === 0 ? minY - minGap : sorted[index - 1].labelY;
+                item.labelY = Math.max(Math.max(item.yFactor, minY), previousY + minGap);
+            });
+
+            const overflow = sorted[sorted.length - 1].labelY - maxY;
+            if (overflow > 0) {
+                sorted.forEach(item => {
+                    item.labelY -= overflow;
+                });
+            }
+
+            const underflow = minY - sorted[0].labelY;
+            if (underflow > 0) {
+                sorted.forEach(item => {
+                    item.labelY += underflow;
+                });
+            }
+
+            return sorted;
+        };
+
+        return new Map([
+            ...spreadSide(labels.filter(item => item.side === 'left')),
+            ...spreadSide(labels.filter(item => item.side === 'right')),
+        ].map(item => [item.name, item]));
+    }, [sourceSummary]);
+
     const insightPeriodLabel = half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
     const insightTopSource = sourceSummary[0];
     const insightTopAge = ageSummary.slice().sort((a, b) => b.count - a.count)[0];
@@ -593,21 +655,40 @@ const NewPatientAnalysis = () => {
         const ratio = (percent || 0) * 100;
         const isUnspecified = String(name || '').includes('미입력');
         if (ratio < 3 && !isUnspecified) return null;
+        const layout = sourcePieLabelLayout.get(name);
+        if (!layout) return null;
         const RADIAN = Math.PI / 180;
-        const radius = outerRadius + (isUnspecified ? 34 : 26);
-        const x = cx + radius * Math.cos(-midAngle * RADIAN);
-        const y = cy + radius * Math.sin(-midAngle * RADIAN);
+        const edgeRadius = outerRadius + 5;
+        const elbowRadius = outerRadius + 18;
+        const labelRadius = outerRadius + 62;
+        const sideSign = layout.side === 'right' ? 1 : -1;
+        const startX = cx + edgeRadius * Math.cos(-midAngle * RADIAN);
+        const startY = cy + edgeRadius * Math.sin(-midAngle * RADIAN);
+        const elbowX = cx + elbowRadius * Math.cos(-midAngle * RADIAN);
+        const labelX = cx + sideSign * labelRadius;
+        const labelY = cy + layout.labelY * (outerRadius + 32);
+        const lineEndX = labelX - sideSign * 8;
+
         return (
-            <text
-                x={x}
-                y={y}
-                fill={fill}
-                textAnchor={x > cx ? 'start' : 'end'}
-                dominantBaseline="central"
-                style={{ fontSize: isUnspecified ? 11 : 12, fontWeight: 700 }}
-            >
-                {`${name} ${ratio.toFixed(1)}%`}
-            </text>
+            <g>
+                <polyline
+                    points={`${startX},${startY} ${elbowX},${labelY} ${lineEndX},${labelY}`}
+                    fill="none"
+                    stroke={fill}
+                    strokeOpacity={0.35}
+                    strokeWidth={1}
+                />
+                <text
+                    x={labelX}
+                    y={labelY}
+                    fill={fill}
+                    textAnchor={layout.side === 'right' ? 'start' : 'end'}
+                    dominantBaseline="central"
+                    style={{ fontSize: isUnspecified ? 11 : 12, fontWeight: 700 }}
+                >
+                    {`${name} ${ratio.toFixed(1)}%`}
+                </text>
+            </g>
         );
     };
 
@@ -1071,7 +1152,7 @@ const NewPatientAnalysis = () => {
                                                     paddingAngle={4}
                                                     dataKey="value"
                                                     label={renderSourcePieLabel}
-                                                    labelLine={{ stroke: 'var(--border-color)', strokeWidth: 1 }}
+                                                    labelLine={false}
                                                 >
                                                     {sourceSummary.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
                                                 </Pie>
