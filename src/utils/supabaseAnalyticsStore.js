@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabaseClient';
+import { DEFAULT_IMPLANT_TYPES, normalizeImplantTypes } from './implantTypes';
 
 export const getActiveAnalyticsClinicId = (clinicId = '') => {
     if (clinicId) return clinicId;
@@ -147,4 +148,56 @@ export const loadAnalyticsAuditLogs = async ({
     const { data, error } = await query;
     if (error) throw error;
     return data || [];
+};
+
+export const loadClinicImplantTypes = async (clinicId) => {
+    if (!clinicId) return normalizeImplantTypes(DEFAULT_IMPLANT_TYPES);
+
+    const { data, error } = await supabase
+        .from('clinic_implant_types')
+        .select('id, name, color, sort_order, is_active')
+        .eq('clinic_id', clinicId)
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true });
+
+    if (error) {
+        console.warn('[Supabase] clinic_implant_types load fallback:', error.message);
+        return normalizeImplantTypes(DEFAULT_IMPLANT_TYPES);
+    }
+
+    return normalizeImplantTypes((data && data.length > 0) ? data : DEFAULT_IMPLANT_TYPES);
+};
+
+export const replaceClinicImplantTypes = async ({ clinicId, types = [] }) => {
+    if (!clinicId) throw new Error('임플란트 종류를 저장할 치과를 선택해 주세요.');
+
+    const normalizedTypes = normalizeImplantTypes(types);
+    if (normalizedTypes.length === 0) {
+        throw new Error('임플란트 종류를 1개 이상 입력해 주세요.');
+    }
+
+    const { error: deleteError } = await supabase
+        .from('clinic_implant_types')
+        .delete()
+        .eq('clinic_id', clinicId);
+
+    if (deleteError) throw deleteError;
+
+    const rows = normalizedTypes.map((type, index) => ({
+        clinic_id: clinicId,
+        name: type.name,
+        color: type.color,
+        sort_order: index + 1,
+        is_active: true,
+        updated_at: new Date().toISOString(),
+    }));
+
+    const { data, error } = await supabase
+        .from('clinic_implant_types')
+        .insert(rows)
+        .select('id, name, color, sort_order, is_active');
+
+    if (error) throw error;
+    return normalizeImplantTypes(data || rows);
 };

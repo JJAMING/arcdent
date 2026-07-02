@@ -220,6 +220,126 @@
     font-weight: 800;
 }
 
+.admin-helper-text {
+    color: var(--text-secondary);
+    font-size: 0.86rem;
+    line-height: 1.55;
+    margin-bottom: 0.9rem;
+}
+
+.admin-implant-clinic-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    width: fit-content;
+    padding: 0.55rem 0.75rem;
+    border-radius: 0.65rem;
+    border: 1px solid var(--border-color);
+    background: var(--bg-color);
+    color: var(--text-secondary);
+    font-size: 0.86rem;
+    font-weight: 800;
+    margin-bottom: 1rem;
+}
+
+.admin-implant-success {
+    padding: 0.75rem 0.9rem;
+    border-radius: 0.65rem;
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    background: rgba(16, 185, 129, 0.1);
+    color: #047857;
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+.admin-implant-type-list {
+    display: grid;
+    gap: 0.65rem;
+}
+
+.admin-implant-type-row {
+    display: grid;
+    grid-template-columns: 44px minmax(180px, 1fr) 54px auto;
+    gap: 0.65rem;
+    align-items: center;
+    padding: 0.65rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.75rem;
+    background: var(--bg-color);
+}
+
+.admin-implant-type-order {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 0.55rem;
+    background: var(--card-bg);
+    color: var(--accent-primary);
+    font-weight: 900;
+}
+
+.admin-implant-type-row input[type="text"] {
+    min-height: 40px;
+    padding: 0 0.75rem;
+    border-radius: 0.55rem;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-primary);
+    font-weight: 800;
+}
+
+.admin-implant-type-row input[type="color"] {
+    width: 48px;
+    height: 40px;
+    padding: 0.2rem;
+    border-radius: 0.55rem;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+}
+
+.admin-implant-type-remove,
+.admin-implant-secondary-btn,
+.admin-implant-primary-btn {
+    min-height: 40px;
+    padding: 0 0.9rem;
+    border-radius: 0.55rem;
+    font-size: 0.86rem;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.admin-implant-type-remove {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.admin-implant-type-remove:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.admin-implant-type-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.65rem;
+    margin-top: 1rem;
+}
+
+.admin-implant-secondary-btn {
+    color: var(--accent-primary);
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.18);
+}
+
+.admin-implant-primary-btn {
+    color: #fff;
+    background: var(--accent-primary);
+    border: 1px solid var(--accent-primary);
+}
+
 .admin-history-modal-backdrop {
     position: fixed;
     inset: 0;

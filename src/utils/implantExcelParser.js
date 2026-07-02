@@ -14,6 +14,11 @@
  */
 
 import * as XLSX from 'xlsx';
+import {
+  getImplantTypeAliases,
+  normalizeImplantText,
+  normalizeImplantTypes,
+} from './implantTypes';
 
 // ─── 합계 키워드 ─────────────────────────────────────────────────
 const TOTAL_KEYWORDS = ['합계', '총계', '소계', '총합', 'total'];
@@ -37,8 +42,8 @@ const isHeaderRow = (row) => {
   return str.includes('픽스처') || str.includes('품목') || str.includes('fixture');
 };
 
-// ─── 첫 번째 셀에서 브랜드 감지 ──────────────────────────────────
-const detectBrand = (firstCell) => {
+// ─── 첫 번째 셀에서 기존 브랜드 감지 ──────────────────────────────
+const detectLegacyBrand = (firstCell) => {
   const s = String(firstCell || '').trim().toLowerCase();
   if (!s) return null;
   if (s.includes('straumann') || s.includes('스트라우만')) return 'straumann';
@@ -47,6 +52,15 @@ const detectBrand = (firstCell) => {
   // 디오: 단독 단어로만 매칭 (다른 브랜드 안에 포함 방지)
   if (/(?<![a-z])dio(?![a-z])/.test(s) || s.startsWith('디오')) return 'dio';
   return null;
+};
+
+const detectConfiguredImplantType = (firstCell, implantTypes = []) => {
+  const source = normalizeImplantText(firstCell);
+  if (!source) return null;
+
+  return normalizeImplantTypes(implantTypes).find(type => (
+    getImplantTypeAliases(type).some(alias => alias && source.includes(alias))
+  )) || null;
 };
 
 // ─── 첫 번째 셀에서 수술법 감지 ──────────────────────────────────
@@ -79,10 +93,15 @@ const findUsageColIdx = (headerRow, dataRows) => {
 };
 
 // ─── "임플란트 사용개수" 시트 파싱 ───────────────────────────────
-const parseImplantSheet = (sheet) => {
+const parseImplantSheet = (sheet, implantTypes = []) => {
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
   const counts = { osstem: 0, dentium: 0, dio: 0, straumann: 0, implantTotal: 0 };
+  const configuredTypes = normalizeImplantTypes(implantTypes);
+  const dynamicCounts = configuredTypes.reduce((acc, type) => {
+    acc[type.name] = 0;
+    return acc;
+  }, {});
 
   // 헤더 행 찾기
   let headerRow = null;
@@ -112,8 +131,14 @@ const parseImplantSheet = (sheet) => {
     const usage = usageIdx >= 0 ? toNum(row[usageIdx]) : 1;
     if (usage <= 0) continue;
 
-    // 브랜드 감지 후 합산
-    const brand = detectBrand(firstCell);
+    // 관리자 설정 종류 감지 후 합산
+    const configuredType = detectConfiguredImplantType(firstCell, configuredTypes);
+    if (configuredType) {
+      dynamicCounts[configuredType.name] += usage;
+    }
+
+    // 기존 브랜드 필드도 호환용으로 유지
+    const brand = detectLegacyBrand(firstCell);
     if (brand) {
       counts[brand] += usage;
     }
@@ -121,10 +146,11 @@ const parseImplantSheet = (sheet) => {
 
   // implantTotal이 합계 셀에서 못 왔으면 브랜드 합산으로 대체
   if (counts.implantTotal === 0) {
-    counts.implantTotal = counts.osstem + counts.dentium + counts.dio + counts.straumann;
+    const dynamicTotal = Object.values(dynamicCounts).reduce((sum, value) => sum + Number(value || 0), 0);
+    counts.implantTotal = dynamicTotal || counts.osstem + counts.dentium + counts.dio + counts.straumann;
   }
 
-  return counts;
+  return { ...counts, implantTypes: dynamicCounts };
 };
 
 // ─── "수술 기타건수" 시트 파싱 ───────────────────────────────────
@@ -207,7 +233,7 @@ const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','
 const upsertToStorage = () => [];
 
 // ─── 메인 파서 ───────────────────────────────────────────────────
-export const parseImplantExcel = (file) => {
+export const parseImplantExcel = (file, implantTypes = []) => {
   return new Promise((resolve, reject) => {
     const ym = extractYearMonth(file.name);
     if (!ym) {
@@ -240,7 +266,7 @@ export const parseImplantExcel = (file) => {
           return;
         }
 
-        const implantData = parseImplantSheet(implantFound.sheet);
+        const implantData = parseImplantSheet(implantFound.sheet, implantTypes);
         const surgeryData = parseSurgerySheet(surgeryFound.sheet);
         const combined = { ...implantData, ...surgeryData, surg1: implantData.implantTotal };
 

@@ -11,7 +11,8 @@ import {
 import DashboardCard from '../components/DashboardCard';
 import ManagementInsight from '../components/ManagementInsight';
 import { useAuth } from '../context/AuthContext';
-import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
+import { getActiveAnalyticsClinicId, loadAnalyticsData, loadClinicImplantTypes } from '../utils/supabaseAnalyticsStore';
+import { getImplantTypeCounts, getImplantTypeStorageKey, normalizeImplantTypes } from '../utils/implantTypes';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
 import './TreatmentAnalysis.css';
 import './SalesAnalysis.css';
@@ -53,7 +54,7 @@ const createEmptyTreatmentData = () => MOCK_TREATMENT_DATA.map(row => ({
     insDentStep6: 0,
 }));
 
-const buildTreatmentMapFromSupabaseRows = (implantRows = [], insuranceRows = []) => {
+const buildTreatmentMapFromSupabaseRows = (implantRows = [], insuranceRows = [], implantTypes = []) => {
     const map = {};
     const ensureMonth = (year, monthNumber) => {
         const yearKey = String(year || '');
@@ -67,6 +68,9 @@ const buildTreatmentMapFromSupabaseRows = (implantRows = [], insuranceRows = [])
         const target = ensureMonth(row.year, row.month);
         if (!target) return;
         Object.assign(target, row.payload || {});
+        if (row.sub_category === 'implant_surgery') {
+            target.implantTypes = getImplantTypeCounts(row.payload || {}, implantTypes);
+        }
     });
 
     return map;
@@ -84,6 +88,7 @@ const TreatmentAnalysis = () => {
     
     const [perfDataMap, setPerfDataMap] = useState(() => ({ [getCurrentYearString()]: createEmptyTreatmentData() }));
     const [perfData, setPerfData] = useState(() => createEmptyTreatmentData());
+    const [implantTypes, setImplantTypes] = useState(() => normalizeImplantTypes());
 
 
     useEffect(() => {
@@ -95,11 +100,14 @@ const TreatmentAnalysis = () => {
 
             try {
                 if (activeClinicId) {
-                    const [implantRows, insuranceRows] = await Promise.all([
+                    const [implantRows, insuranceRows, clinicImplantTypes] = await Promise.all([
                         loadAnalyticsData({ clinicId: activeClinicId, category: 'treatment', subCategory: 'implant_surgery' }),
                         loadAnalyticsData({ clinicId: activeClinicId, category: 'treatment', subCategory: 'insurance_treatment' }),
+                        loadClinicImplantTypes(activeClinicId),
                     ]);
-                    const supabaseMap = buildTreatmentMapFromSupabaseRows(implantRows, insuranceRows);
+                    const normalizedTypes = normalizeImplantTypes(clinicImplantTypes);
+                    setImplantTypes(normalizedTypes);
+                    const supabaseMap = buildTreatmentMapFromSupabaseRows(implantRows, insuranceRows, normalizedTypes);
                     if (Object.keys(supabaseMap).length > 0) {
                         finalMap = supabaseMap;
                     }
@@ -123,10 +131,13 @@ const TreatmentAnalysis = () => {
 
         loadTreatmentData();
         const handleClinicChange = () => setRefreshTick(tick => tick + 1);
+        const handleImplantTypesChange = () => setRefreshTick(tick => tick + 1);
         window.addEventListener('activeClinicChanged', handleClinicChange);
+        window.addEventListener('implantTypesUpdated', handleImplantTypesChange);
         return () => {
             cancelled = true;
             window.removeEventListener('activeClinicChanged', handleClinicChange);
+            window.removeEventListener('implantTypesUpdated', handleImplantTypesChange);
         };
     }, [activeClinicId, refreshTick]);
 
@@ -146,9 +157,8 @@ const TreatmentAnalysis = () => {
     }, [half, perfData]);
     const insightPeriodLabel = half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
     const insightImplants = currentHalfData.reduce((sum, row) => (
-        sum + Number(row?.osstem || 0) + Number(row?.dentium || 0) + Number(row?.dio || 0)
-        + Number(row?.straumann || 0) + Number(row?.crestal || 0) + Number(row?.lateral || 0)
-        + Number(row?.gbr || 0)
+        sum + Number(row?.implantTotal || 0) + Number(row?.crestal || 0)
+        + Number(row?.lateral || 0) + Number(row?.gbr || 0)
     ), 0);
     const insightInsuranceImplants = currentHalfData.reduce((sum, row) => sum + Number(row?.insImp || 0), 0);
     const insightInsuranceDentures = currentHalfData.reduce((sum, row) => sum + Number(row?.insDent || 0), 0);
@@ -163,15 +173,34 @@ const TreatmentAnalysis = () => {
         switch (subTab) {
             case 'implant': {
                 // 종류 및 수술법 항목 정의
-                const allSeries = [
-                    { key: 'osstem',    name: '오스템',     color: '#4472c4' },
-                    { key: 'dentium',   name: '덴티움',     color: '#ed7d31' },
-                    { key: 'dio',       name: '디오',       color: '#a9d18e' },
-                    { key: 'straumann', name: '스트라우만', color: '#9dc3e6' },
+                const implantTypeSeries = normalizeImplantTypes(implantTypes).map((type, index) => ({
+                    key: getImplantTypeStorageKey(index),
+                    name: type.name,
+                    color: type.color,
+                    implantTypeName: type.name,
+                }));
+                const surgerySeries = [
                     { key: 'crestal',   name: 'Crestal',    color: '#70ad47' },
                     { key: 'lateral',   name: 'Lateral',    color: '#7030a0' },
                     { key: 'gbr',       name: 'GBR',        color: '#17becf' },
                 ];
+                const allSeries = [...implantTypeSeries, ...surgerySeries];
+                const chartData = currentHalfData.map(row => {
+                    const counts = getImplantTypeCounts(row, implantTypes);
+                    return {
+                        ...row,
+                        ...implantTypeSeries.reduce((acc, series) => {
+                            acc[series.key] = Number(counts[series.implantTypeName] || 0);
+                            return acc;
+                        }, {}),
+                    };
+                });
+                const getSeriesValue = (row, series) => {
+                    if (series.implantTypeName) {
+                        return Number(getImplantTypeCounts(row, implantTypes)[series.implantTypeName] || 0);
+                    }
+                    return Number(row?.[series.key] || 0);
+                };
 
                 return (
                     <div className="tab-pane">
@@ -204,12 +233,12 @@ const TreatmentAnalysis = () => {
                                 {/* 우측: 종류 및 수술법 통합 그룹형 바차트 */}
                                 <DashboardCard
                                     title="종류 및 수술법별 사용량"
-                                    subtitle="오스템·덴티움·디오·스트라우만 / Crestal·Lateral·GBR"
+                                    subtitle="치과별 등록 종류 / Crestal·Lateral·GBR"
                                 >
                                     <div style={{ height: 420, width: '100%' }}>
                                         <ResponsiveContainer>
                                             <BarChart
-                                                data={currentHalfData}
+                                                data={chartData}
                                                 margin={{ top: 28, right: 20, left: 0, bottom: 0 }}
                                                 barCategoryGap="10%"
                                                 barGap={1}
@@ -250,17 +279,17 @@ const TreatmentAnalysis = () => {
                                                 {currentHalfData.map(d => <td key={d.month} className="font-bold">{d.implantTotal}개</td>)}
                                                 <td className="font-bold" style={{ fontSize: '1.1rem' }}>{currentHalfData.reduce((s, d) => s + d.implantTotal, 0)}개</td>
                                             </tr>
-                                            {allSeries.map(({ key, name, color }) => (
-                                                <tr key={key}>
+                                            {allSeries.map((series) => (
+                                                <tr key={series.key}>
                                                     <td className="row-header">
                                                         <span style={{
                                                             display: 'inline-block', width: 10, height: 10,
-                                                            borderRadius: '2px', background: color, marginRight: 6, verticalAlign: 'middle'
+                                                            borderRadius: '2px', background: series.color, marginRight: 6, verticalAlign: 'middle'
                                                         }} />
-                                                        {name}
+                                                        {series.name}
                                                     </td>
-                                                    {currentHalfData.map(d => <td key={d.month}>{Number(d[key] || 0)}개</td>)}
-                                                    <td className="font-bold">{currentHalfData.reduce((s, d) => s + (Number(d[key]) || 0), 0)}개</td>
+                                                    {currentHalfData.map(d => <td key={d.month}>{getSeriesValue(d, series)}개</td>)}
+                                                    <td className="font-bold">{currentHalfData.reduce((s, d) => s + getSeriesValue(d, series), 0)}개</td>
                                                 </tr>
                                             ))}
                                         </tbody>

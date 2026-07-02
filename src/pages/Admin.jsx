@@ -7,11 +7,14 @@ import { parseInsuranceExcel } from '../utils/insuranceExcelParser';
 import { parseLedgerImage, parseLedgerText, extractYearMonthFromFileName } from '../utils/ledgerImageParser';
 import { supabase } from '../lib/supabaseClient';
 import {
+    loadClinicImplantTypes,
     loadAnalyticsAuditLogs,
     loadAnalyticsData,
+    replaceClinicImplantTypes,
     saveAnalyticsAuditLog,
     saveAnalyticsData,
 } from '../utils/supabaseAnalyticsStore';
+import { DEFAULT_IMPLANT_TYPES, IMPLANT_TYPE_COLORS, getImplantTypeCounts, normalizeImplantTypes } from '../utils/implantTypes';
 import { getCurrentYearString, getRollingYearOptions } from '../utils/dateUtils';
 import { useAuth } from '../context/AuthContext';
 import './Admin.css';
@@ -747,6 +750,11 @@ const Admin = () => {
     const [clinicSelectLoading, setClinicSelectLoading] = useState(false);
     const [clinicSelectError, setClinicSelectError] = useState('');
     const [adminPanelTab, setAdminPanelTab] = useState('upload');
+    const [implantTypeRows, setImplantTypeRows] = useState([]);
+    const [implantTypeLoading, setImplantTypeLoading] = useState(false);
+    const [implantTypeSaving, setImplantTypeSaving] = useState(false);
+    const [implantTypeError, setImplantTypeError] = useState('');
+    const [implantTypeSuccess, setImplantTypeSuccess] = useState('');
     const [auditLogs, setAuditLogs] = useState([]);
     const [auditLoading, setAuditLoading] = useState(false);
     const [auditError, setAuditError] = useState('');
@@ -886,6 +894,36 @@ const Admin = () => {
         };
     }, [isAdminAuthenticated, isAdmin, selectedAdminClinicId, auditFilters]);
 
+    useEffect(() => {
+        if (!isAdminAuthenticated || !isAdmin || !selectedAdminClinicId) {
+            setImplantTypeRows([]);
+            return;
+        }
+
+        let isMounted = true;
+        const loadTypes = async () => {
+            setImplantTypeLoading(true);
+            setImplantTypeError('');
+            setImplantTypeSuccess('');
+            try {
+                const rows = await loadClinicImplantTypes(selectedAdminClinicId);
+                if (isMounted) setImplantTypeRows(normalizeImplantTypes(rows));
+            } catch (err) {
+                if (isMounted) {
+                    setImplantTypeRows(normalizeImplantTypes());
+                    setImplantTypeError(err.message || '임플란트 종류를 불러오지 못했습니다.');
+                }
+            } finally {
+                if (isMounted) setImplantTypeLoading(false);
+            }
+        };
+
+        loadTypes();
+        return () => {
+            isMounted = false;
+        };
+    }, [isAdminAuthenticated, isAdmin, selectedAdminClinicId]);
+
     const handleAdminLogin = async (event) => {
         event.preventDefault();
         setAdminLoginError('');
@@ -994,6 +1032,68 @@ const Admin = () => {
     };
 
     const selectedAdminClinic = adminClinics.find(item => item.id === selectedAdminClinicId) || null;
+
+    const updateImplantTypeRow = (index, patch) => {
+        setImplantTypeRows(prev => prev.map((row, rowIndex) => (
+            rowIndex === index ? { ...row, ...patch } : row
+        )));
+        setImplantTypeSuccess('');
+    };
+
+    const addImplantTypeRow = () => {
+        setImplantTypeRows(prev => [
+            ...prev,
+            {
+                name: '',
+                color: IMPLANT_TYPE_COLORS[prev.length % IMPLANT_TYPE_COLORS.length],
+                sort_order: prev.length + 1,
+                is_active: true,
+            },
+        ]);
+        setImplantTypeSuccess('');
+    };
+
+    const removeImplantTypeRow = (index) => {
+        setImplantTypeRows(prev => prev.filter((_, rowIndex) => rowIndex !== index));
+        setImplantTypeSuccess('');
+    };
+
+    const saveImplantTypeRows = async () => {
+        if (!selectedAdminClinicId) {
+            setImplantTypeError('임플란트 종류를 저장할 치과를 먼저 선택해 주세요.');
+            return;
+        }
+
+        const rows = implantTypeRows
+            .map((row, index) => ({
+                ...row,
+                name: String(row.name || '').trim(),
+                sort_order: index + 1,
+            }))
+            .filter(row => row.name);
+
+        if (rows.length === 0) {
+            setImplantTypeError('임플란트 종류를 1개 이상 입력해 주세요.');
+            return;
+        }
+
+        setImplantTypeSaving(true);
+        setImplantTypeError('');
+        setImplantTypeSuccess('');
+        try {
+            const savedRows = await replaceClinicImplantTypes({
+                clinicId: selectedAdminClinicId,
+                types: rows,
+            });
+            setImplantTypeRows(savedRows);
+            setImplantTypeSuccess(`${selectedAdminClinic?.name || '선택 치과'} 임플란트 종류를 저장했습니다.`);
+            window.dispatchEvent(new Event('implantTypesUpdated'));
+        } catch (err) {
+            setImplantTypeError(err.message || '임플란트 종류 저장에 실패했습니다.');
+        } finally {
+            setImplantTypeSaving(false);
+        }
+    };
 
     const loadAuditLogList = async (filters = auditFilters) => {
         if (!selectedAdminClinicId) {
@@ -1504,6 +1604,14 @@ const Admin = () => {
         }
 
         if (category === 'treatment') {
+            const implantTypeNames = Array.from(new Set(
+                treatmentRows.flatMap(row => Object.keys(row.implantTypes || {}))
+            ));
+            const reportImplantTypes = normalizeImplantTypes(
+                implantTypeNames.length > 0
+                    ? implantTypeNames.map(name => ({ name }))
+                    : DEFAULT_IMPLANT_TYPES
+            );
             return `
                 ${reportCards([
                     ...(includeTab('implant') ? [{ label: '임플란트 총계', value: `${reportNumber(reportSum(treatmentRows, 'implantTotal'))}건`, sub: reportPeriodLabel }] : []),
@@ -1512,8 +1620,11 @@ const Admin = () => {
                 ])}
                 ${includeTab('implant') ? `
                     <h2>임플란트</h2>
-                    ${reportTable(['월', '수술 1차', '임플란트 총계', '오스템', '덴티움', '디오', '스트라우만'], treatmentRows.map(row => [
-                        row.month, reportNumber(row.surg1), reportNumber(row.implantTotal), reportNumber(row.osstem), reportNumber(row.dentium), reportNumber(row.dio), reportNumber(row.straumann),
+                    ${reportTable(['월', '수술 1차', '임플란트 총계', ...reportImplantTypes.map(type => type.name)], treatmentRows.map(row => [
+                        row.month,
+                        reportNumber(row.surg1),
+                        reportNumber(row.implantTotal),
+                        ...reportImplantTypes.map(type => reportNumber(getImplantTypeCounts(row, reportImplantTypes)[type.name] || 0)),
                     ]))}
                 ` : ''}
                 ${includeTab('insuranceImplant') ? `
@@ -2895,7 +3006,8 @@ const Admin = () => {
                 const flag = await processFile();
                 if (flag === 'implant') {
                     try {
-                        const result = await parseImplantExcel(file);
+                        const implantTypes = await loadClinicImplantTypes(selectedAdminClinicId);
+                        const result = await parseImplantExcel(file, implantTypes);
                         await saveSelectedClinicAnalytics({
                             category: 'treatment',
                             subCategory: 'implant_surgery',
@@ -2903,7 +3015,12 @@ const Admin = () => {
                             month: result.month,
                             payload: result.data,
                         });
-                        addLog('success', `✅ [임플란트] ${result.year}년 ${result.month} 업로드 완료 (오스템 ${result.data.osstem}개 / 덴티움 ${result.data.dentium}개 / 합계 ${result.data.implantTotal}개)`);
+                        const typeSummary = Object.entries(result.data.implantTypes || {})
+                            .filter(([, value]) => Number(value || 0) > 0)
+                            .slice(0, 4)
+                            .map(([name, value]) => `${name} ${value}개`)
+                            .join(' / ');
+                        addLog('success', `✅ [임플란트] ${result.year}년 ${result.month} 업로드 완료 (${typeSummary || '종류별 0개'} / 합계 ${result.data.implantTotal}개)`);
                         updatedCount++;
                     } catch (implantErr) { addLog('error', `❌ [임플란트] ${file.name}: ${implantErr.message}`); }
                 } else if (flag === 'insurance') {
@@ -4799,6 +4916,13 @@ const Admin = () => {
                 </button>
                 <button
                     type="button"
+                    className={`admin-panel-tab ${adminPanelTab === 'implantTypes' ? 'active' : ''}`}
+                    onClick={() => setAdminPanelTab('implantTypes')}
+                >
+                    임플란트 종류
+                </button>
+                <button
+                    type="button"
                     className={`admin-panel-tab ${adminPanelTab === 'history' ? 'active' : ''}`}
                     onClick={() => setAdminPanelTab('history')}
                 >
@@ -5366,7 +5490,7 @@ const Admin = () => {
                 </div>
             )}
 
-            {adminPanelTab === 'upload' ? (
+            {adminPanelTab === 'upload' && (
             <div className="admin-grid">
 
                 {/* PDF 보고서 다운로드 */}
@@ -5513,7 +5637,63 @@ const Admin = () => {
                 </div>
 
             </div>
-            ) : (
+            )}
+
+            {adminPanelTab === 'implantTypes' && (
+                <div className="admin-card admin-implant-types-card">
+                    <div className="admin-card-header">
+                        <FileSpreadsheet size={24} className="admin-card-icon" />
+                        <h2>임플란트 종류 설정</h2>
+                    </div>
+                    <p className="admin-helper-text">
+                        선택한 치과에서 사용하는 임플란트 종류를 입력해 주세요. 엑셀 업로드 시 이 목록과 같은 이름을 찾아 임플란트 수술통계에 반영합니다.
+                    </p>
+                    <div className="admin-implant-clinic-note">
+                        대상 치과: <strong>{selectedAdminClinic?.name || '치과 미선택'}</strong>
+                    </div>
+                    {implantTypeError && <div className="admin-history-error">{implantTypeError}</div>}
+                    {implantTypeSuccess && <div className="admin-implant-success">{implantTypeSuccess}</div>}
+                    <div className="admin-implant-type-list">
+                        {implantTypeLoading ? (
+                            <div className="empty-state">임플란트 종류를 불러오는 중입니다.</div>
+                        ) : implantTypeRows.map((row, index) => (
+                            <div className="admin-implant-type-row" key={`${row.id || row.name || 'new'}-${index}`}>
+                                <span className="admin-implant-type-order">{index + 1}</span>
+                                <input
+                                    type="text"
+                                    value={row.name || ''}
+                                    onChange={event => updateImplantTypeRow(index, { name: event.target.value })}
+                                    placeholder="예: 오스템, 덴티움, 네오"
+                                />
+                                <input
+                                    type="color"
+                                    value={row.color || IMPLANT_TYPE_COLORS[index % IMPLANT_TYPE_COLORS.length]}
+                                    onChange={event => updateImplantTypeRow(index, { color: event.target.value })}
+                                    aria-label={`${row.name || index + 1} 색상`}
+                                />
+                                <button
+                                    type="button"
+                                    className="admin-implant-type-remove"
+                                    onClick={() => removeImplantTypeRow(index)}
+                                    disabled={implantTypeRows.length <= 1}
+                                >
+                                    삭제
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="admin-implant-type-actions">
+                        <button type="button" onClick={addImplantTypeRow} className="admin-implant-secondary-btn">
+                            종류 추가
+                        </button>
+                        <button type="button" onClick={saveImplantTypeRows} className="admin-implant-primary-btn" disabled={implantTypeSaving || !selectedAdminClinicId}>
+                            {implantTypeSaving ? '저장 중...' : '저장'}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {adminPanelTab === 'history' && (
                 <div className="admin-card admin-history-card">
                     <div className="admin-card-header">
                         <FileSpreadsheet size={24} className="admin-card-icon" />
