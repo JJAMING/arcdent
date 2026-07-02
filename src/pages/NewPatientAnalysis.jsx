@@ -659,14 +659,26 @@ const NewPatientAnalysis = () => {
         if (!layout) return null;
         const RADIAN = Math.PI / 180;
         const edgeRadius = outerRadius + 5;
-        const elbowRadius = outerRadius + 18;
-        const labelRadius = outerRadius + 62;
+        const elbowRadius = outerRadius + 14;
+        const labelRadius = outerRadius + 48;
         const sideSign = layout.side === 'right' ? 1 : -1;
+        const labelName = String(name || '');
+        const labelValue = `${ratio.toFixed(1)}%`;
+        const isStackedLabel = labelName.length >= 9;
+        const estimatedLabelWidth = (
+            Math.max(labelName.length, isStackedLabel ? labelValue.length : `${labelName} ${labelValue}`.length) * 8
+        ) + 4;
+        const chartWidth = Math.max(cx * 2, 1);
+        const horizontalPadding = 14;
         const startX = cx + edgeRadius * Math.cos(-midAngle * RADIAN);
         const startY = cy + edgeRadius * Math.sin(-midAngle * RADIAN);
         const elbowX = cx + elbowRadius * Math.cos(-midAngle * RADIAN);
-        const labelX = cx + sideSign * labelRadius;
-        const labelY = cy + layout.labelY * (outerRadius + 32);
+        const rawLabelX = cx + sideSign * labelRadius;
+        const labelX = layout.side === 'right'
+            ? Math.min(rawLabelX, chartWidth - estimatedLabelWidth - horizontalPadding)
+            : Math.max(rawLabelX, estimatedLabelWidth + horizontalPadding);
+        const rawLabelY = cy + layout.labelY * (outerRadius + 32);
+        const labelY = Math.max(18, Math.min(rawLabelY, (cy * 2) - 58));
         const lineEndX = labelX - sideSign * 8;
 
         return (
@@ -686,7 +698,14 @@ const NewPatientAnalysis = () => {
                     dominantBaseline="central"
                     style={{ fontSize: isUnspecified ? 11 : 12, fontWeight: 700 }}
                 >
-                    {`${name} ${ratio.toFixed(1)}%`}
+                    {isStackedLabel ? (
+                        <>
+                            <tspan x={labelX} dy="-0.45em">{labelName}</tspan>
+                            <tspan x={labelX} dy="1.15em">{labelValue}</tspan>
+                        </>
+                    ) : (
+                        `${labelName} ${labelValue}`
+                    )}
                 </text>
             </g>
         );
