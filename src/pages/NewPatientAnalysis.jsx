@@ -411,67 +411,6 @@ const NewPatientAnalysis = () => {
     ), [currentHalfData, sourceSummary]);
 
     const totalNewPatients = sourceSummary.reduce((sum, item) => sum + item.value, 0);
-    const sourcePieLabelLayout = useMemo(() => {
-        const total = sourceSummary.reduce((sum, item) => sum + Number(item.value || 0), 0);
-        if (total <= 0) return new Map();
-
-        const RADIAN = Math.PI / 180;
-        let currentAngle = 0;
-        const labels = [];
-
-        sourceSummary.forEach((item) => {
-            const percent = Number(item.value || 0) / total;
-            const ratio = percent * 100;
-            const isUnspecified = String(item.name || '').includes('미입력');
-            const angle = percent * 360;
-            const midAngle = currentAngle + angle / 2;
-            currentAngle += angle;
-
-            if (ratio < 3 && !isUnspecified) return;
-
-            labels.push({
-                name: item.name,
-                ratio,
-                side: Math.cos(-midAngle * RADIAN) >= 0 ? 'right' : 'left',
-                yFactor: Math.sin(-midAngle * RADIAN),
-            });
-        });
-
-        const spreadSide = (sideLabels) => {
-            if (sideLabels.length <= 1) return sideLabels;
-
-            const sorted = [...sideLabels].sort((a, b) => a.yFactor - b.yFactor);
-            const minY = -1.06;
-            const maxY = 1.06;
-            const minGap = Math.min(0.24, (maxY - minY) / Math.max(sorted.length - 1, 1));
-
-            sorted.forEach((item, index) => {
-                const previousY = index === 0 ? minY - minGap : sorted[index - 1].labelY;
-                item.labelY = Math.max(Math.max(item.yFactor, minY), previousY + minGap);
-            });
-
-            const overflow = sorted[sorted.length - 1].labelY - maxY;
-            if (overflow > 0) {
-                sorted.forEach(item => {
-                    item.labelY -= overflow;
-                });
-            }
-
-            const underflow = minY - sorted[0].labelY;
-            if (underflow > 0) {
-                sorted.forEach(item => {
-                    item.labelY += underflow;
-                });
-            }
-
-            return sorted;
-        };
-
-        return new Map([
-            ...spreadSide(labels.filter(item => item.side === 'left')),
-            ...spreadSide(labels.filter(item => item.side === 'right')),
-        ].map(item => [item.name, item]));
-    }, [sourceSummary]);
 
     const insightPeriodLabel = half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
     const insightTopSource = sourceSummary[0];
@@ -651,63 +590,61 @@ const NewPatientAnalysis = () => {
         { key: 'average', label: '평균', values: unitPriceSummary.average || {} },
     ];
 
-    const renderSourcePieLabel = ({ cx, cy, midAngle, outerRadius, percent, name, fill }) => {
-        const ratio = (percent || 0) * 100;
-        const isUnspecified = String(name || '').includes('미입력');
-        if (ratio < 3 && !isUnspecified) return null;
-        const layout = sourcePieLabelLayout.get(name);
-        if (!layout) return null;
-        const RADIAN = Math.PI / 180;
-        const edgeRadius = outerRadius + 5;
-        const elbowRadius = outerRadius + 14;
-        const labelRadius = outerRadius + 48;
-        const sideSign = layout.side === 'right' ? 1 : -1;
-        const labelName = String(name || '');
-        const labelValue = `${ratio.toFixed(1)}%`;
-        const isStackedLabel = labelName.length >= 9;
-        const estimatedLabelWidth = (
-            Math.max(labelName.length, isStackedLabel ? labelValue.length : `${labelName} ${labelValue}`.length) * 8
-        ) + 4;
-        const chartWidth = Math.max(cx * 2, 1);
-        const horizontalPadding = 14;
-        const startX = cx + edgeRadius * Math.cos(-midAngle * RADIAN);
-        const startY = cy + edgeRadius * Math.sin(-midAngle * RADIAN);
-        const elbowX = cx + elbowRadius * Math.cos(-midAngle * RADIAN);
-        const rawLabelX = cx + sideSign * labelRadius;
-        const labelX = layout.side === 'right'
-            ? Math.min(rawLabelX, chartWidth - estimatedLabelWidth - horizontalPadding)
-            : Math.max(rawLabelX, estimatedLabelWidth + horizontalPadding);
-        const rawLabelY = cy + layout.labelY * (outerRadius + 32);
-        const labelY = Math.max(18, Math.min(rawLabelY, (cy * 2) - 58));
-        const lineEndX = labelX - sideSign * 8;
+    const renderSourcePieTooltip = ({ active, payload }) => {
+        if (!active || sourceSummary.length === 0) return null;
+        const activeName = payload?.[0]?.payload?.name;
+        const rows = sourceSummary
+            .filter(item => Number(item.value || 0) > 0)
+            .sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
 
         return (
-            <g>
-                <polyline
-                    points={`${startX},${startY} ${elbowX},${labelY} ${lineEndX},${labelY}`}
-                    fill="none"
-                    stroke={fill}
-                    strokeOpacity={0.35}
-                    strokeWidth={1}
-                />
-                <text
-                    x={labelX}
-                    y={labelY}
-                    fill={fill}
-                    textAnchor={layout.side === 'right' ? 'start' : 'end'}
-                    dominantBaseline="central"
-                    style={{ fontSize: isUnspecified ? 11 : 12, fontWeight: 700 }}
-                >
-                    {isStackedLabel ? (
-                        <>
-                            <tspan x={labelX} dy="-0.45em">{labelName}</tspan>
-                            <tspan x={labelX} dy="1.15em">{labelValue}</tspan>
-                        </>
-                    ) : (
-                        `${labelName} ${labelValue}`
-                    )}
-                </text>
-            </g>
+            <div style={{
+                minWidth: '220px',
+                maxWidth: '280px',
+                background: 'var(--card-bg)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '12px',
+                boxShadow: 'var(--shadow)',
+                padding: '0.75rem',
+                color: 'var(--text-primary)',
+            }}>
+                <div style={{ fontSize: '12px', fontWeight: 800, marginBottom: '0.55rem' }}>
+                    내원경로 비중
+                </div>
+                <div style={{ display: 'grid', gap: '0.35rem' }}>
+                    {rows.map(item => {
+                        const ratio = totalNewPatients > 0 ? (Number(item.value || 0) / totalNewPatients) * 100 : 0;
+                        const isActive = item.name === activeName;
+                        return (
+                            <div
+                                key={item.name}
+                                style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: '10px minmax(0, 1fr) auto',
+                                    gap: '0.45rem',
+                                    alignItems: 'center',
+                                    padding: isActive ? '0.3rem 0.35rem' : '0.15rem 0',
+                                    borderRadius: '8px',
+                                    background: isActive ? 'rgba(59, 130, 246, 0.08)' : 'transparent',
+                                }}
+                            >
+                                <span style={{ width: 9, height: 9, borderRadius: 2, background: item.color }} />
+                                <span style={{ fontSize: '12px', fontWeight: isActive ? 800 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {item.name}
+                                </span>
+                                <span style={{ fontSize: '12px', fontWeight: 800, color: item.color, whiteSpace: 'nowrap' }}>
+                                    {Number(item.value || 0).toLocaleString()}명 · {ratio.toFixed(1)}%
+                                </span>
+                            </div>
+                        );
+                    })}
+                </div>
+                {rows.length === 0 && (
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                        표시할 데이터가 없습니다.
+                    </div>
+                )}
+            </div>
         );
     };
 
@@ -1170,12 +1107,11 @@ const NewPatientAnalysis = () => {
                                                     outerRadius={78}
                                                     paddingAngle={4}
                                                     dataKey="value"
-                                                    label={renderSourcePieLabel}
                                                     labelLine={false}
                                                 >
                                                     {sourceSummary.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
                                                 </Pie>
-                                                <Tooltip formatter={(v, name) => [`${v}명`, name]} />
+                                                <Tooltip content={renderSourcePieTooltip} />
                                                 <Legend verticalAlign="bottom" height={24} iconSize={10} wrapperStyle={{ fontSize: '11px' }} />
                                             </PieChart>
                                         </ResponsiveContainer>

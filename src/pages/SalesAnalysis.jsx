@@ -72,6 +72,15 @@ const buildSalesMapFromSupabaseRows = (rows = []) => {
   }, {});
 };
 
+const hasRevenueSummary = (target = {}) => (
+  Number(target.cash || 0) !== 0 ||
+  Number(target.card || 0) !== 0 ||
+  Number(target.other || 0) !== 0 ||
+  Number(target.netSales || 0) !== 0 ||
+  Number(target.insurance || 0) !== 0 ||
+  Number(target.total || 0) !== 0
+);
+
 const mergeSalesMonthlyPayloadRows = (map, rows = [], mapper = payload => payload) => {
   rows.forEach(row => {
     const year = String(row.year || '');
@@ -83,7 +92,7 @@ const mergeSalesMonthlyPayloadRows = (map, rows = [], mapper = payload => payloa
     const target = map[year].find(item => item.month === monthLabel);
     if (!target) return;
 
-    Object.assign(target, mapper(row.payload || {}, row));
+    Object.assign(target, mapper(row.payload || {}, row, target));
   });
 };
 
@@ -166,11 +175,15 @@ const SalesAnalysis = () => {
             loadAnalyticsData({ clinicId: activeClinicId, category: 'sales', subCategory: 'top_patients' }),
           ]);
           const supabaseMap = buildSalesMapFromSupabaseRows(totalRows);
-          mergeSalesMonthlyPayloadRows(supabaseMap, doctorRows, payload => ({
+          mergeSalesMonthlyPayloadRows(supabaseMap, doctorRows, (payload, row, target) => ({
             doctorData: payload.doctorData || {},
-            netSales: Number(payload.netSales || 0),
-            insurance: Number(payload.insurance || 0),
-            total: Number(payload.total || 0),
+            ...(hasRevenueSummary(target)
+              ? {}
+              : {
+                  netSales: Number(payload.netSales || 0),
+                  insurance: Number(payload.insurance || 0),
+                  total: Number(payload.total || 0),
+                }),
           }));
           mergeSalesMonthlyPayloadRows(supabaseMap, newPatientRevenueRows, payload => ({
             newPatient: Number(payload.newPatient || 0),

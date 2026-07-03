@@ -80,6 +80,15 @@ const ensureSalesMonth = (store, year, monthNumber) => {
     return store[yearKey].find(item => item.month === month);
 };
 
+const hasRevenueSummary = (target = {}) => (
+    Number(target.cash || 0) !== 0 ||
+    Number(target.card || 0) !== 0 ||
+    Number(target.other || 0) !== 0 ||
+    Number(target.netSales || 0) !== 0 ||
+    Number(target.insurance || 0) !== 0 ||
+    Number(target.total || 0) !== 0
+);
+
 const buildSalesDashboardStore = (totalRows = [], doctorRows = [], newPatientRows = []) => {
     const store = {};
     totalRows.forEach(row => {
@@ -91,9 +100,13 @@ const buildSalesDashboardStore = (totalRows = [], doctorRows = [], newPatientRow
         if (!target) return;
         Object.assign(target, {
             doctorData: row.payload?.doctorData || {},
-            netSales: Number(row.payload?.netSales || target.netSales || 0),
-            insurance: Number(row.payload?.insurance || target.insurance || 0),
-            total: Number(row.payload?.total || target.total || 0),
+            ...(hasRevenueSummary(target)
+                ? {}
+                : {
+                    netSales: Number(row.payload?.netSales || 0),
+                    insurance: Number(row.payload?.insurance || 0),
+                    total: Number(row.payload?.total || 0),
+                }),
         });
     });
     newPatientRows.forEach(row => {
