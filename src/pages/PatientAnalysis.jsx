@@ -653,6 +653,64 @@ const PatientAnalysis = () => {
                     return row;
                 });
                 const grandTotal = totalByLab.reduce((s, v) => s + v.total, 0);
+                const renderLabPieTooltip = ({ active, payload }) => {
+                    if (!active || topLabSeries.length === 0) return null;
+
+                    const activeName = payload?.[0]?.payload?.name || payload?.[0]?.name;
+                    const rows = topLabSeries
+                        .filter(item => Number(item.total || 0) > 0)
+                        .sort((a, b) => Number(b.total || 0) - Number(a.total || 0));
+
+                    return (
+                        <div style={{
+                            minWidth: '220px',
+                            maxWidth: '300px',
+                            background: 'var(--card-bg)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '12px',
+                            boxShadow: 'var(--shadow)',
+                            padding: '0.75rem',
+                            color: 'var(--text-primary)',
+                        }}>
+                            <div style={{ fontSize: '12px', fontWeight: 800, marginBottom: '0.55rem' }}>
+                                기공물 비중
+                            </div>
+                            <div style={{ display: 'grid', gap: '0.35rem' }}>
+                                {rows.map(item => {
+                                    const ratio = grandTotal > 0 ? (Number(item.total || 0) / grandTotal) * 100 : 0;
+                                    const isActive = item.name === activeName;
+                                    return (
+                                        <div
+                                            key={item.key}
+                                            style={{
+                                                display: 'grid',
+                                                gridTemplateColumns: '10px minmax(0, 1fr) auto',
+                                                gap: '0.45rem',
+                                                alignItems: 'center',
+                                                padding: isActive ? '0.3rem 0.35rem' : '0.15rem 0',
+                                                borderRadius: '8px',
+                                                background: isActive ? 'rgba(59, 130, 246, 0.08)' : 'transparent',
+                                            }}
+                                        >
+                                            <span style={{ width: 9, height: 9, borderRadius: 2, background: item.color }} />
+                                            <span style={{ fontSize: '12px', fontWeight: isActive ? 800 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {item.name}
+                                            </span>
+                                            <span style={{ fontSize: '12px', fontWeight: 800, color: item.color, whiteSpace: 'nowrap' }}>
+                                                {Number(item.total || 0).toLocaleString()}건 · {ratio.toFixed(1)}%
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            {rows.length === 0 && (
+                                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                    데이터가 없습니다.
+                                </div>
+                            )}
+                        </div>
+                    );
+                };
 
                 return (
                     <div className="tab-pane">
@@ -697,7 +755,7 @@ const PatientAnalysis = () => {
                                                 <Pie data={topLabSeries} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="total">
                                                     {topLabSeries.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                                                 </Pie>
-                                                <Tooltip formatter={(v, name) => [`${v}건`, name]} />
+                                                <Tooltip content={renderLabPieTooltip} />
                                                 <Legend verticalAlign="bottom" height={20} iconSize={10} wrapperStyle={{ fontSize: '11px' }} />
                                             </PieChart>
                                         </ResponsiveContainer>

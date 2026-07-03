@@ -90,6 +90,7 @@ const normalizeYearData = (rawYearData) => {
             sourceInsurancePatients: found.sourceInsurancePatients || found.newPatientSourceInsurancePatients || found.insurancePatientsBySource || {},
             sourceNonInsurancePatients: found.sourceNonInsurancePatients || found.newPatientSourceNonInsurancePatients || found.nonInsurancePatientsBySource || {},
             sourceInsuranceRatios: found.sourceInsuranceRatios || found.newPatientSourceInsuranceRatios || {},
+            sourceNonInsuranceRatios: found.sourceNonInsuranceRatios || found.newPatientSourceNonInsuranceRatios || {},
             sourceAvgFee: found.sourceAvgFee || found.newPatientSourceAvgFee || found.averageFeeBySource || {},
             pathDistributionSummary: found.pathDistributionSummary || {},
             ages: normalizeAgeBuckets(found.ages || found.newPatientAges || {}),
@@ -156,6 +157,12 @@ const buildNewPatientMapFromSupabaseRows = (pathRows = [], ageRows = []) => {
             target.sourceInsuranceRatios = {
                 ...(target.sourceInsuranceRatios || {}),
                 ...payload.insuranceRatios,
+            };
+        }
+        if (payload.nonInsuranceRatios && Object.keys(payload.nonInsuranceRatios).length > 0) {
+            target.sourceNonInsuranceRatios = {
+                ...(target.sourceNonInsuranceRatios || {}),
+                ...payload.nonInsuranceRatios,
             };
         }
     });
@@ -321,12 +328,18 @@ const NewPatientAnalysis = () => {
 
     const getInsuranceRatioInfo = (month, name) => {
         const ratio = month.sourceInsuranceRatios?.[name] ?? month.newPatientSourceInsuranceRatios?.[name];
-        if (ratio != null) {
-            const insuranceRatio = Math.max(0, Math.min(100, normalizePercent(ratio)));
+        const nonRatio = month.sourceNonInsuranceRatios?.[name] ?? month.newPatientSourceNonInsuranceRatios?.[name];
+        if (ratio != null || nonRatio != null) {
+            const insuranceRatio = ratio != null
+                ? Math.max(0, Math.min(100, normalizePercent(ratio)))
+                : Math.max(0, 100 - Math.max(0, Math.min(100, normalizePercent(nonRatio))));
+            const nonInsuranceRatio = nonRatio != null
+                ? Math.max(0, Math.min(100, normalizePercent(nonRatio)))
+                : Math.max(0, 100 - insuranceRatio);
             return {
                 hasData: true,
                 insuranceRatio,
-                nonInsuranceRatio: Math.max(0, 100 - insuranceRatio),
+                nonInsuranceRatio,
             };
         }
 
@@ -366,6 +379,25 @@ const NewPatientAnalysis = () => {
     const getInsuranceRatio = (month, name) => getInsuranceRatioInfo(month, name).insuranceRatio;
     const getNonInsuranceRatio = (month, name) => getInsuranceRatioInfo(month, name).nonInsuranceRatio;
 
+    const treatmentSourceSummary = useMemo(() => {
+        const byName = new Map(sourceSummary.map(item => [item.name, { ...item }]));
+        currentHalfData.forEach(month => {
+            [
+                ...Object.keys(month.sourceInsuranceRatios || {}),
+                ...Object.keys(month.sourceNonInsuranceRatios || {}),
+            ].forEach(name => {
+                if (!name || byName.has(name)) return;
+                byName.set(name, {
+                    name,
+                    value: currentHalfData.reduce((sum, item) => sum + Number((item.sources || {})[name] || 0), 0),
+                    color: COLORS[byName.size % COLORS.length],
+                });
+            });
+        });
+        return Array.from(byName.values())
+            .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name, 'ko'));
+    }, [currentHalfData, sourceSummary]);
+
     const treatmentConversionBySource = useMemo(() => {
         const counts = new Map();
         const ratioSums = new Map();
@@ -401,14 +433,14 @@ const NewPatientAnalysis = () => {
             const row = { month: month.month };
             const monthTotal = Object.values(month.sources || {})
                 .reduce((sum, count) => sum + Number(count || 0), 0);
-            sourceSummary.forEach(({ name }) => {
+            treatmentSourceSummary.forEach(({ name }) => {
                 const ratioInfo = getInsuranceRatioInfo(month, name);
                 const count = Number((month.sources || {})[name] || 0);
                 row[name] = ratioInfo.hasData && monthTotal > 0 ? Number(((count / monthTotal) * 100).toFixed(1)) : 0;
             });
             return row;
         })
-    ), [currentHalfData, sourceSummary]);
+    ), [currentHalfData, treatmentSourceSummary]);
 
     const totalNewPatients = sourceSummary.reduce((sum, item) => sum + item.value, 0);
 
@@ -429,7 +461,7 @@ const NewPatientAnalysis = () => {
         const treatmentTotal = Array.from(treatmentCounts.values())
             .reduce((sum, count) => sum + Number(count || 0), 0);
 
-        return sourceSummary
+        return treatmentSourceSummary
             .map(item => {
                 const value = Number(treatmentCounts.get(item.name) || 0);
                 return {
@@ -439,7 +471,7 @@ const NewPatientAnalysis = () => {
                 };
             })
             .sort((a, b) => b.totalRatio - a.totalRatio || b.value - a.value);
-    }, [currentHalfData, sourceSummary]);
+    }, [currentHalfData, treatmentSourceSummary]);
 
     const newPatientInsightText = (() => {
         if (subTab === 'treatmentConversion') {
@@ -505,12 +537,18 @@ const NewPatientAnalysis = () => {
     const selectedTreatmentDetailMonth = yearData[selectedTreatmentDetailMonthIndex] || {};
     const selectedTreatmentDetailTotal = Object.values(selectedTreatmentDetailMonth.sources || {})
         .reduce((sum, count) => sum + Number(count || 0), 0);
-    const selectedTreatmentInsuranceTotal = Object.entries(selectedTreatmentDetailMonth.sources || {})
-        .reduce((sum, [name, count]) => sum + (Number(count || 0) * (getInsuranceRatio(selectedTreatmentDetailMonth, name) / 100)), 0);
-    const selectedTreatmentNonInsuranceTotal = Object.entries(selectedTreatmentDetailMonth.sources || {})
-        .reduce((sum, [name, count]) => sum + (Number(count || 0) * (getNonInsuranceRatio(selectedTreatmentDetailMonth, name) / 100)), 0);
-    const selectedTreatmentHasData = Object.keys(selectedTreatmentDetailMonth.sources || {})
-        .some(name => getInsuranceRatioInfo(selectedTreatmentDetailMonth, name).hasData);
+    const selectedTreatmentInsuranceTotal = treatmentSourceSummary
+        .reduce((sum, { name }) => {
+            const count = Number((selectedTreatmentDetailMonth.sources || {})[name] || 0);
+            return sum + (count * (getInsuranceRatio(selectedTreatmentDetailMonth, name) / 100));
+        }, 0);
+    const selectedTreatmentNonInsuranceTotal = treatmentSourceSummary
+        .reduce((sum, { name }) => {
+            const count = Number((selectedTreatmentDetailMonth.sources || {})[name] || 0);
+            return sum + (count * (getNonInsuranceRatio(selectedTreatmentDetailMonth, name) / 100));
+        }, 0);
+    const selectedTreatmentHasData = treatmentSourceSummary
+        .some(({ name }) => getInsuranceRatioInfo(selectedTreatmentDetailMonth, name).hasData);
     const selectedTreatmentInsuranceRatio = selectedTreatmentDetailTotal > 0
         ? (selectedTreatmentInsuranceTotal / selectedTreatmentDetailTotal) * 100
         : 0;
@@ -765,7 +803,7 @@ const NewPatientAnalysis = () => {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {sourceSummary.map(({ name, color }) => {
+                                            {treatmentSourceSummary.map(({ name, color }) => {
                                                 const count = Number((selectedTreatmentDetailMonth.sources || {})[name] || 0);
                                                 const ratioInfo = getInsuranceRatioInfo(selectedTreatmentDetailMonth, name);
                                                 const insuranceRatio = ratioInfo.hasData ? ratioInfo.insuranceRatio : 0;
@@ -791,7 +829,7 @@ const NewPatientAnalysis = () => {
                                                 </td>
                                                 <td>{selectedTreatmentInsuranceRatio.toFixed(1)}%</td>
                                                 <td>{selectedTreatmentNonInsuranceRatio.toFixed(1)}%</td>
-                                                <td className="font-bold">{selectedTreatmentHasData ? '100.0%' : '0.0%'}</td>
+                                                <td className="font-bold">{selectedTreatmentHasData && selectedTreatmentDetailTotal > 0 ? '100.0%' : '0.0%'}</td>
                                             </tr>
                                         </tbody>
                                     </table>

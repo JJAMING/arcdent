@@ -393,8 +393,17 @@ const SalesAnalysis = () => {
         doctorValues.push({ name, value: entry[name] });
       });
 
-      // 의사별 데이터가 있을 경우, 기본 지표들을 의사 합계로 갱신 (의사별 매출 -> 전체 매출 동기화)
-      if (hasDoctorData) {
+      const hasRevenueSummary = (
+        Number(month.cash || 0) !== 0 ||
+        Number(month.card || 0) !== 0 ||
+        Number(month.other || 0) !== 0 ||
+        Number(month.netSales || 0) !== 0 ||
+        Number(month.insurance || 0) !== 0 ||
+        Number(month.total || 0) !== 0
+      );
+
+      // 월간장부 매출 요약이 없는 경우에만 의사별 매출 합계로 보완합니다.
+      if (hasDoctorData && !hasRevenueSummary) {
         entry.netSales = totalPure;
         entry.insurance = totalInsurance;
         entry.total = totalPure + totalInsurance;
@@ -1131,15 +1140,7 @@ const SalesAnalysis = () => {
                       strokeWidth={3} 
                       dot={{ r: 5, fill: '#6366f1' }}
                       isAnimationActive={false}
-                    >
-                      <LabelList 
-                        dataKey="total" 
-                        position="top" 
-                        offset={15}
-                        formatter={(v) => `${Number(v || 0).toLocaleString()}원`} 
-                        style={{ fill: '#6366f1', fontSize: '11px', fontWeight: 'bold' }}
-                      />
-                    </Line>
+                    />
                   </ComposedChart>
                 </ResponsiveContainer>
               </DashboardCard>

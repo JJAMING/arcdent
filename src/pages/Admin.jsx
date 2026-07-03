@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, FileSpreadsheet, CheckCircle, XCircle, X, FileDown, LockKeyhole, LogOut } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle, XCircle, AlertTriangle, X, FileDown, LockKeyhole, LogOut } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Tesseract from 'tesseract.js';
 import { parseImplantExcel } from '../utils/implantExcelParser';
@@ -184,6 +184,13 @@ const normalizeHeader = (val) => String(val ?? '').trim().replace(/\s+/g, '');
 const isNewPatientPathDistributionFile = (filename) => (
     /^[12]\d{3}년\d{1,2}월내원환자내원경로분포/.test(normalizeHeader(filename))
 );
+
+const isNewPatientTreatmentRateFile = (filename) => {
+    const normalized = normalizeHeader(filename);
+    return /^[12]\d{3}년?\d{1,2}월/.test(normalized) &&
+        normalized.includes('내원경로') &&
+        /(?:치료)?이행[율률]/.test(normalized);
+};
 
 const isNewPatientAgeDistributionFile = (filename) => (
     /^[12]\d{3}년\d{1,2}월내원환자연령분포/.test(normalizeHeader(filename))
@@ -407,6 +414,100 @@ const readFirstPercentLikeNumber = (value) => {
     return match ? readRatioNumber(match[1]) : null;
 };
 
+const readPercentCellValue = (value) => {
+    if (typeof value === 'number') {
+        const percent = value > 0 && value <= 1 ? value * 100 : value;
+        const clamped = Math.max(0, Math.min(100, percent));
+        return Math.trunc(clamped * 10) / 10;
+    }
+    const text = String(value ?? '').trim();
+    if (!text) return null;
+
+    if (text.includes('%')) {
+        return readRatioNumber(text);
+    }
+
+    const numericText = text.replace(/[^0-9.,-]/g, '');
+    if (!numericText) return null;
+    const normalizedText = numericText.includes(',') && !numericText.includes('.') && /,\d{1,3}$/.test(numericText)
+        ? numericText.replace(',', '.')
+        : numericText.replace(/,/g, '');
+    const parsed = parseFloat(normalizedText);
+    if (!Number.isFinite(parsed)) return null;
+
+    const percent = parsed > 0 && parsed <= 1 ? parsed * 100 : parsed;
+    const clamped = Math.max(0, Math.min(100, percent));
+    return Math.trunc(clamped * 10) / 10;
+};
+
+const parseNewPatientPathTreatmentRatioRows = (rows, fileName) => {
+    const yearMonth = extractYearMonthFromFileName(fileName);
+    if (!yearMonth) {
+        throw new Error(`파일명에서 연월을 찾을 수 없습니다. 예: 2026년06월내원경로별치료이행율.xlsx`);
+    }
+
+    let headerIdx = -1;
+    let columns = { path: -1, insurance: -1, nonInsurance: [] };
+
+    for (let i = 0; i < Math.min(rows.length, 60); i++) {
+        const headers = (rows[i] || []).map(normalizeHeader);
+        const path = findColumn(headers, ['내원경로', '유입경로']);
+        const insurance = findColumn(headers, ['보험항목', '보험항목비율', '보험']);
+        if (path === -1 || insurance === -1) continue;
+
+        const nonInsurance = headers
+            .map((header, index) => ({ header, index }))
+            .filter(({ header, index }) => (
+                index !== path &&
+                index !== insurance &&
+                header &&
+                /임플란트|보철|보존|미용|기타|비보험/.test(header)
+            ))
+            .map(({ index }) => index);
+
+        if (nonInsurance.length > 0) {
+            headerIdx = i;
+            columns = { path, insurance, nonInsurance };
+            break;
+        }
+    }
+
+    if (headerIdx === -1) {
+        throw new Error('내원경로/보험항목/비보험 항목 비율 컬럼을 찾을 수 없습니다.');
+    }
+
+    const insuranceRatios = {};
+    const nonInsuranceRatios = {};
+    const ratioRows = [];
+
+    for (let i = headerIdx + 1; i < rows.length; i++) {
+        const row = rows[i] || [];
+        const path = String(row[columns.path] || '').trim();
+        const normalizedPath = normalizeHeader(path);
+        if (!normalizedPath || ['합계', '총합계', '평균', '월평균', '일평균'].includes(normalizedPath)) continue;
+
+        const insuranceRatio = readPercentCellValue(row[columns.insurance]) ?? 0;
+        const nonInsuranceRatio = columns.nonInsurance.reduce((sum, index) => (
+            sum + (readPercentCellValue(row[index]) ?? 0)
+        ), 0);
+        const normalizedNonInsurance = Math.trunc(Math.max(0, Math.min(100, nonInsuranceRatio)) * 10) / 10;
+
+        insuranceRatios[path] = insuranceRatio;
+        nonInsuranceRatios[path] = normalizedNonInsurance;
+        ratioRows.push({
+            path,
+            insuranceRatio,
+            nonInsuranceRatio: normalizedNonInsurance,
+        });
+    }
+
+    if (ratioRows.length === 0) {
+        throw new Error('저장할 내원경로별 보험/비보험 비율 데이터가 없습니다.');
+    }
+
+    return { ...yearMonth, rows: ratioRows, insuranceRatios, nonInsuranceRatios };
+};
+
 const extractInsuranceRatioFromOcrText = (text, words = []) => {
     const compactText = text.replace(/\s+/g, ' ');
     const noSpaceText = text.replace(/\s+/g, '');
@@ -590,17 +691,35 @@ const parseNewPatientPathRows = (rows, fileName) => {
         totalVisits: columns.totalVisits !== -1 ? parseNumber(row[columns.totalVisits]) : 0,
         totalFee: columns.totalFee !== -1 ? parseNumber(row[columns.totalFee]) : 0,
     });
+    const headerPathLabel = normalizeHeader(rows[headerIdx]?.[columns.path]);
+    let hasReadPatientPathRows = false;
+    let blankRowsAfterData = 0;
 
     for (let i = headerIdx + 1; i < rows.length; i++) {
         const row = rows[i] || [];
+        const isBlankRow = row.every(cell => String(cell ?? '').trim() === '');
+        if (isBlankRow) {
+            if (hasReadPatientPathRows) {
+                blankRowsAfterData += 1;
+                if (blankRowsAfterData >= 2) break;
+            }
+            continue;
+        }
+        blankRowsAfterData = 0;
+
         const path = String(row[columns.path] || '').trim();
         const normalizedPath = normalizeHeader(path);
+        if (hasReadPatientPathRows && headerPathLabel && normalizedPath === headerPathLabel) {
+            break;
+        }
         if (['합계', '총합계'].includes(normalizedPath)) {
             summary.total = readSummaryValues(row);
+            hasReadPatientPathRows = true;
             continue;
         }
         if (['평균', '월평균', '일평균'].includes(normalizedPath)) {
             summary.average = readSummaryValues(row);
+            hasReadPatientPathRows = true;
             continue;
         }
         if (shouldSkipPath(path)) continue;
@@ -636,6 +755,7 @@ const parseNewPatientPathRows = (rows, fileName) => {
                 grouped[path].nonInsurancePatients += unitCount;
             }
         }
+        hasReadPatientPathRows = true;
     }
 
     const parsedRows = Object.values(grouped)
@@ -660,11 +780,59 @@ const parseNewPatientPathExcel = (file) => new Promise((resolve, reject) => {
             const targetSheetName = workbook.SheetNames.find(sheetName => (
                 normalizeHeader(sheetName).includes('내원경로분포')
             ));
-            if (!targetSheetName) {
-                throw new Error('엑셀 파일에서 "내원경로 분포" 시트를 찾을 수 없습니다.');
+            const candidateSheetNames = targetSheetName ? [targetSheetName] : workbook.SheetNames;
+            let firstError = null;
+
+            for (const sheetName of candidateSheetNames) {
+                const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 });
+                try {
+                    resolve(parseNewPatientPathRows(rows, file.name));
+                    return;
+                } catch (err) {
+                    if (!firstError) firstError = err;
+                }
             }
-            const rows = XLSX.utils.sheet_to_json(workbook.Sheets[targetSheetName], { header: 1 });
-            resolve(parseNewPatientPathRows(rows, file.name));
+
+            throw firstError || new Error('엑셀 파일에서 내원경로 분포 데이터를 찾을 수 없습니다.');
+        } catch (err) {
+            reject(err);
+        }
+    };
+    reader.onerror = () => reject(new Error('파일을 읽을 수 없습니다.'));
+    reader.readAsBinaryString(file);
+});
+
+const parseNewPatientTreatmentRateExcel = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        try {
+            const workbook = XLSX.read(event.target.result, { type: 'binary' });
+            const targetSheetName = workbook.SheetNames.find(sheetName => {
+                const normalized = normalizeHeader(sheetName);
+                return normalized.includes('치료이행') || normalized.includes('보험항목');
+            });
+            const candidateSheetNames = targetSheetName ? [targetSheetName] : workbook.SheetNames;
+            let firstError = null;
+
+            for (const sheetName of candidateSheetNames) {
+                const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 });
+                try {
+                    const parsed = parseNewPatientPathTreatmentRatioRows(rows, file.name);
+                    resolve({
+                        year: parsed.year,
+                        month: parsed.month,
+                        rows: [],
+                        summary: {},
+                        insuranceRatios: parsed.insuranceRatios || {},
+                        nonInsuranceRatios: parsed.nonInsuranceRatios || {},
+                    });
+                    return;
+                } catch (err) {
+                    if (!firstError) firstError = err;
+                }
+            }
+
+            throw firstError || new Error('엑셀 파일에서 내원경로별 치료이행율 데이터를 찾을 수 없습니다.');
         } catch (err) {
             reject(err);
         }
@@ -711,6 +879,9 @@ const parseNewPatientPathText = (text, fileName, words = []) => {
             summary: {},
             insuranceRatios: {
                 [path]: insuranceRatio,
+            },
+            nonInsuranceRatios: {
+                [path]: Math.max(0, 100 - insuranceRatio),
             },
         };
     }
@@ -1198,6 +1369,12 @@ const Admin = () => {
                 ...(nextPayload?.insuranceRatios || {}),
             };
         }
+        if (existingPayload?.nonInsuranceRatios || nextPayload?.nonInsuranceRatios) {
+            merged.nonInsuranceRatios = {
+                ...(existingPayload?.nonInsuranceRatios || {}),
+                ...(nextPayload?.nonInsuranceRatios || {}),
+            };
+        }
 
         return merged;
     };
@@ -1406,6 +1583,7 @@ const Admin = () => {
             sourceInsurancePatients,
             sourceNonInsurancePatients,
             sourceInsuranceRatios: payload.insuranceRatios || {},
+            sourceNonInsuranceRatios: payload.nonInsuranceRatios || {},
             pathDistributionSummary: payload.summary || {},
             rows,
         };
@@ -1907,6 +2085,7 @@ const Admin = () => {
             rows: parsed.rows || [],
             summary: parsed.summary,
             insuranceRatios: parsed.insuranceRatios || {},
+            nonInsuranceRatios: parsed.nonInsuranceRatios || {},
         }]);
     };
 
@@ -1924,6 +2103,7 @@ const Admin = () => {
                         rows: upload.rows || [],
                         summary: upload.summary,
                         insuranceRatios: upload.insuranceRatios || {},
+                        nonInsuranceRatios: upload.nonInsuranceRatios || {},
                     },
                     mergeExisting: true,
                 });
@@ -2211,6 +2391,13 @@ const Admin = () => {
                     addLog('success', `✅ [신환분석/연령별] ${parsed.year}년 ${parsed.month} 연령별 신환수 반영 완료 (${total.toLocaleString()}명)`);
                 } catch (err) {
                     addLog('error', `❌ [신환분석/연령별 파싱 오류] ${file.name}: ${err.message}`);
+                }
+            } else if (isNewPatientTreatmentRateFile(file.name) && !isImage) {
+                try {
+                    showNewPatientPreview(file, await parseNewPatientTreatmentRateExcel(file));
+                    addLog('success', `✅ [신환분석/치료이행율 미리보기] ${file.name} 파싱 완료 - 승인 시 반영됩니다.`);
+                } catch (err) {
+                    addLog('error', `❌ [신환분석/치료이행율 파싱 오류] ${file.name}: ${err.message}`);
                 }
             } else if (isNewPatientPathDistributionFile(file.name)) {
                 try {
@@ -2819,6 +3006,61 @@ const Admin = () => {
                             const month = extractMonth(fileName);
                             let cashVal = 0, cardVal = 0, otherVal = 0, insuranceVal = 0;
                             let cashCol = -1, cardCol = -1, otherCol = -1, insuranceCol = -1, tonghapIdx = -1;
+                            const compactCell = (value) => String(value ?? '').replace(/\s+/g, '');
+                            const isTotalRow = (row = []) => row.some(cell => {
+                                const text = compactCell(cell);
+                                return (text.includes('합계') || text.includes('통합')) &&
+                                    (!month || text.includes(month) || text.includes(month.replace('월', '')));
+                            });
+                            const findHeaderAndTotalRows = () => {
+                                let headerRowIndex = -1;
+                                let totalRowIndex = -1;
+                                const columns = { cash: -1, card: -1, other: -1, insurance: -1 };
+
+                                for (let r = 0; r < rawData.length; r++) {
+                                    const row = rawData[r] || [];
+                                    const rowColumns = { cash: -1, card: -1, other: -1, insurance: -1 };
+                                    row.forEach((cell, idx) => {
+                                        const text = compactCell(cell);
+                                        if (!text) return;
+                                        if (text.includes('현금수입')) rowColumns.cash = idx;
+                                        if (text.includes('카드수입')) rowColumns.card = idx;
+                                        if (
+                                            text.includes('기타(온라인)수입') ||
+                                            text.includes('기타온라인수입') ||
+                                            (text.includes('기타') && text.includes('온라인') && text.includes('수입'))
+                                        ) rowColumns.other = idx;
+                                        if (
+                                            text.includes('공단부담(청구액)') ||
+                                            (text.includes('공단부담') && text.includes('청구액')) ||
+                                            (text.includes('공단부담') && text.includes('청구')) ||
+                                            text.includes('보험청구')
+                                        ) rowColumns.insurance = idx;
+                                    });
+
+                                    if (rowColumns.cash !== -1 || rowColumns.card !== -1 || rowColumns.other !== -1 || rowColumns.insurance !== -1) {
+                                        headerRowIndex = r;
+                                        Object.assign(columns, rowColumns);
+                                    }
+                                    if (isTotalRow(row)) {
+                                        totalRowIndex = r;
+                                    }
+                                }
+
+                                return { headerRowIndex, totalRowIndex, columns };
+                            };
+                            const sumColumnBelowHeader = (columnIndex, headerRowIndex, totalRowIndex) => {
+                                if (columnIndex === -1) return 0;
+                                const start = headerRowIndex === -1 ? 0 : headerRowIndex + 1;
+                                const end = totalRowIndex === -1 ? rawData.length : totalRowIndex;
+                                let total = 0;
+                                for (let r = start; r < end; r++) {
+                                    const row = rawData[r] || [];
+                                    if (isTotalRow(row)) continue;
+                                    total += parseNum(row[columnIndex]);
+                                }
+                                return total;
+                            };
                             const parseMaybeNum = (val) => {
                                 if (typeof val === 'number') return val;
                                 if (typeof val === 'string') {
@@ -2872,7 +3114,7 @@ const Admin = () => {
                                 const row = rawData[r] || [];
                                 row.forEach((cell, idx) => {
                                     if (!cell) return;
-                                    const t = String(cell).replace(/\s+/g, '');
+                                    const t = compactCell(cell);
                                     if (t.includes('현금수입')) cashCol = idx;
                                     else if (t.includes('카드수입')) cardCol = idx;
                                     else if (
@@ -2888,15 +3130,28 @@ const Admin = () => {
                                 });
                             }
                             for (let r = 0; r < rawData.length; r++) {
-                                if ((rawData[r] || []).some(c => String(c).includes(month) && (String(c).includes('합계') || String(c).includes('통합')))) {
+                                if (isTotalRow(rawData[r] || [])) {
                                     tonghapIdx = r; break;
                                 }
+                            }
+                            const ledgerTable = findHeaderAndTotalRows();
+                            if (ledgerTable.headerRowIndex !== -1) {
+                                cashCol = ledgerTable.columns.cash !== -1 ? ledgerTable.columns.cash : cashCol;
+                                cardCol = ledgerTable.columns.card !== -1 ? ledgerTable.columns.card : cardCol;
+                                otherCol = ledgerTable.columns.other !== -1 ? ledgerTable.columns.other : otherCol;
+                                insuranceCol = ledgerTable.columns.insurance !== -1 ? ledgerTable.columns.insurance : insuranceCol;
+                            }
+                            if (ledgerTable.totalRowIndex !== -1) {
+                                tonghapIdx = ledgerTable.totalRowIndex;
                             }
                             if (tonghapIdx !== -1) {
                                 if (cashCol !== -1) cashVal = parseNum(rawData[tonghapIdx][cashCol]);
                                 if (cardCol !== -1) cardVal = parseNum(rawData[tonghapIdx][cardCol]);
                                 if (otherCol !== -1) otherVal = parseNum(rawData[tonghapIdx][otherCol]);
                                 if (insuranceCol !== -1) insuranceVal = parseNum(rawData[tonghapIdx][insuranceCol]);
+                            }
+                            if (!insuranceVal && insuranceCol !== -1) {
+                                insuranceVal = sumColumnBelowHeader(insuranceCol, ledgerTable.headerRowIndex, ledgerTable.totalRowIndex);
                             }
                             if (!cashVal) {
                                 cashVal = findMetric(['현금수입', '현금']) || 0;
@@ -2985,7 +3240,7 @@ const Admin = () => {
                                 } else {
                                     addLog('warning', `⚠️ [환자분석/총환자수] ${fileName}: 월간장부에서 진료일수/신환/구환/총내원횟수 값을 찾지 못했습니다.`);
                                 }
-                                updatedCount++; resolve();
+                                updatedCount++; resolve('monthlyLedger');
                             } else { reject(`${month} 데이터를 찾을 수 없습니다.`); }
                         }
                         // 임플란트 수술통계
@@ -3059,6 +3314,8 @@ const Admin = () => {
                 } else if (flag === 'insuranceClaim') {
                     // handled inside processFile
                 } else if (flag === 'treatmentPlan') {
+                    // handled inside processFile
+                } else if (flag === 'monthlyLedger') {
                     // handled inside processFile
                 } else {
                     addLog('error', `[미지원 파일] ${file.name}: 등록된 업로드 규칙과 일치하지 않습니다.`);
@@ -5273,7 +5530,9 @@ const Admin = () => {
                                                     <tr key={`${upload.id}-${path}`}>
                                                         <td>{path}</td>
                                                         <td>{Number(ratio || 0).toFixed(1)}%</td>
-                                                        <td>{Math.max(0, 100 - Number(ratio || 0)).toFixed(1)}%</td>
+                                                        <td>{Number(
+                                                            upload.nonInsuranceRatios?.[path] ?? Math.max(0, 100 - Number(ratio || 0))
+                                                        ).toFixed(1)}%</td>
                                                     </tr>
                                                 ))}
                                             </tbody>
@@ -5281,7 +5540,7 @@ const Admin = () => {
                                     </div>
                                 )}
 
-                                {upload.summary && (
+                                {upload.summary && (upload.summary.total || upload.summary.average) && (
                                     <div className="table-responsive" style={{ marginTop: '1rem' }}>
                                         <table className="admin-table">
                                             <thead>
@@ -5615,23 +5874,28 @@ const Admin = () => {
                     </div>
                     {uploadLog.length > 0 && (
                         <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                            {uploadLog.map((log) => (
+                            {uploadLog.map((log) => {
+                                const tone = log.type === 'success'
+                                    ? { bg: '#f0fdf4', border: '#86efac', color: '#15803d', icon: CheckCircle }
+                                    : log.type === 'warning'
+                                        ? { bg: '#fffbeb', border: '#fcd34d', color: '#b45309', icon: AlertTriangle }
+                                        : { bg: '#fef2f2', border: '#fca5a5', color: '#dc2626', icon: XCircle };
+                                const LogIcon = tone.icon;
+                                return (
                                 <div key={log.id} style={{
                                     display: 'flex', alignItems: 'flex-start', gap: '0.6rem',
                                     padding: '0.75rem 1rem', borderRadius: '10px',
-                                    background: log.type === 'success' ? '#f0fdf4' : '#fef2f2',
-                                    border: `1px solid ${log.type === 'success' ? '#86efac' : '#fca5a5'}`,
+                                    background: tone.bg,
+                                    border: `1px solid ${tone.border}`,
                                     fontSize: '0.85rem',
-                                    color: log.type === 'success' ? '#15803d' : '#dc2626',
+                                    color: tone.color,
                                     lineHeight: 1.5,
                                 }}>
-                                    {log.type === 'success'
-                                        ? <CheckCircle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
-                                        : <XCircle    size={16} style={{ flexShrink: 0, marginTop: 2 }} />
-                                    }
+                                    <LogIcon size={16} style={{ flexShrink: 0, marginTop: 2 }} />
                                     <span>{log.msg}</span>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </div>
