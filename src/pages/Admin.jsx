@@ -2566,7 +2566,7 @@ const Admin = () => {
                         }
                         // 동의환자/치료비용계획
                         else if (fileName.includes('치료비용') || fileName.includes('동의') || fileName.includes('치료비')) {
-                            const ci = { patientName: -1, chartNo: -1, createdAt: -1, status: -1, payStatus: -1, contractAmount: -1, paidAmount: -1 };
+                            const ci = { patientName: -1, chartNo: -1, createdAt: -1, status: -1, payStatus: -1, contractAmount: -1, paidAmount: -1, remainingAmount: -1 };
                             let headerIdx = -1;
                             for (let i = 0; i < Math.min(20, rawData.length); i++) {
                                 const row = rawData[i] || [];
@@ -2580,6 +2580,7 @@ const Admin = () => {
                                     else if (s.includes('진행상태')) { ci.status = idx; found++; }
                                     else if (s.includes('계약금액') || s.includes('계획금액')) { ci.contractAmount = idx; found++; }
                                     else if (s.includes('현재수납') || s.includes('수납금액')) { ci.paidAmount = idx; found++; }
+                                    else if (s.includes('남은금액') || s.includes('남은금') || s.includes('잔액') || s.includes('미수금액') || s.includes('미수금')) { ci.remainingAmount = idx; found++; }
                                 });
                                 if (found >= 2) { headerIdx = i; break; }
                             }
@@ -2589,11 +2590,20 @@ const Admin = () => {
                                     const row = rawData[i] || [];
                                     const name = ci.patientName !== -1 ? String(row[ci.patientName] || '').trim() : '';
                                     if (!name || name === '합계') continue;
+                                    const contractAmount = ci.contractAmount !== -1 ? parseNum(row[ci.contractAmount]) : 0;
+                                    const remainingAmount = ci.remainingAmount !== -1 ? parseNum(row[ci.remainingAmount]) : 0;
+                                    const paidCell = ci.paidAmount !== -1 ? row[ci.paidAmount] : null;
+                                    const hasPaidCell = paidCell !== null && paidCell !== undefined && String(paidCell).trim() !== '';
+                                    const paidAmount = hasPaidCell
+                                        ? parseNum(paidCell)
+                                        : Math.max(contractAmount - remainingAmount, 0);
+
                                     plans.push({
                                         chartNo: ci.chartNo !== -1 ? String(row[ci.chartNo] || '').trim() : '',
                                         patientName: name, year: yearFromFile, month: monthFromFile,
-                                        contractAmount: ci.contractAmount !== -1 ? parseNum(row[ci.contractAmount]) : 0,
-                                        paidAmount: ci.paidAmount !== -1 ? parseNum(row[ci.paidAmount]) : 0,
+                                        contractAmount,
+                                        paidAmount,
+                                        remainingAmount,
                                         status: ci.status !== -1 ? String(row[ci.status] || '').trim() : '',
                                         createdAt: ci.createdAt !== -1 ? String(row[ci.createdAt] || '').trim() : `${yearFromFile}-${monthFromFile}`,
                                     });
