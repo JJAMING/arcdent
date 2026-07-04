@@ -717,13 +717,24 @@ const PatientAnalysis = () => {
                         <div className="dashboard-stack">
                             {/* KPI 요약 */}
                             <div className="patient-kpi-row">
-                                {topLabSeries.map(({ name, total, color }) => (
-                                    <div key={name} className="patient-kpi-card lab-request-kpi-card" style={{ borderTop: `3px solid ${color}` }}>
-                                        <span className="kpi-label">{name}</span>
-                                        <span className="kpi-value" style={{ color }}>{total}건</span>
-                                        <span className="kpi-sub">비율 {((total / grandTotal) * 100).toFixed(1)}%</span>
-                                    </div>
-                                ))}
+                                {topLabSeries.map(({ name, category, type, total, color }) => {
+                                    const categoryLabel = category && category !== '기본' ? category : '';
+                                    const itemLabel = type || name;
+                                    const fullLabel = categoryLabel ? `${categoryLabel} - ${itemLabel}` : itemLabel;
+
+                                    return (
+                                        <div key={name} className="patient-kpi-card lab-request-kpi-card" style={{ borderTop: `3px solid ${color}` }} title={fullLabel}>
+                                            {categoryLabel && (
+                                                <span className="lab-request-kpi-category" style={{ color, backgroundColor: `${color}14` }}>
+                                                    {categoryLabel}
+                                                </span>
+                                            )}
+                                            <span className="lab-request-kpi-title">{itemLabel}</span>
+                                            <span className="kpi-value" style={{ color }}>{total}건</span>
+                                            <span className="kpi-sub">비율 {((total / grandTotal) * 100).toFixed(1)}%</span>
+                                        </div>
+                                    );
+                                })}
                             </div>
 
                             <div className="dashboard-grid" style={{ gridTemplateColumns: '2fr 1fr' }}>

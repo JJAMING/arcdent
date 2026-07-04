@@ -900,6 +900,7 @@ const Admin = () => {
     const [adminLoginId, setAdminLoginId] = useState('');
     const [adminLoginPassword, setAdminLoginPassword] = useState('');
     const [adminLoginError, setAdminLoginError] = useState('');
+    const [verifiedAdminUserId, setVerifiedAdminUserId] = useState('');
     const [uploadLog, setUploadLog]       = useState([]);
     const [isDragOver, setIsDragOver]     = useState(false);
     const [pendingNewPatientUploads, setPendingNewPatientUploads] = useState([]);
@@ -936,6 +937,7 @@ const Admin = () => {
         month: 'all',
     });
     const [selectedAuditLog, setSelectedAuditLog] = useState(null);
+    const hasAdminPanelAccess = isAdminAuthenticated && (isAdmin || Boolean(verifiedAdminUserId));
 
     // OCR 모달
     const [ocrModal, setOcrModal]   = useState(null);
@@ -947,14 +949,18 @@ const Admin = () => {
 
     useEffect(() => {
         if (!isAdmin) {
+            if (verifiedAdminUserId) return;
             if (sessionStorage.getItem(ADMIN_AUTH_PENDING_KEY) === 'true') return;
             sessionStorage.removeItem(ADMIN_AUTH_SESSION_KEY);
             setIsAdminAuthenticated(false);
+            setVerifiedAdminUserId('');
+            return;
         }
-    }, [isAdmin]);
+        sessionStorage.removeItem(ADMIN_AUTH_PENDING_KEY);
+    }, [isAdmin, verifiedAdminUserId]);
 
     useEffect(() => {
-        if (!isAdminAuthenticated || !isAdmin) return;
+        if (!hasAdminPanelAccess) return;
 
         let isMounted = true;
 
@@ -999,10 +1005,10 @@ const Admin = () => {
         return () => {
             isMounted = false;
         };
-    }, [isAdminAuthenticated, isAdmin]);
+    }, [hasAdminPanelAccess]);
 
     useEffect(() => {
-        if (!isAdminAuthenticated || !isAdmin || !selectedAdminClinicId) {
+        if (!hasAdminPanelAccess || !selectedAdminClinicId) {
             setAvailableReportYears(YEARS);
             return;
         }
@@ -1034,10 +1040,10 @@ const Admin = () => {
         return () => {
             isMounted = false;
         };
-    }, [isAdminAuthenticated, isAdmin, selectedAdminClinicId, reportYear]);
+    }, [hasAdminPanelAccess, selectedAdminClinicId, reportYear]);
 
     useEffect(() => {
-        if (!isAdminAuthenticated || !isAdmin || !selectedAdminClinicId) {
+        if (!hasAdminPanelAccess || !selectedAdminClinicId) {
             setAuditLogs([]);
             return;
         }
@@ -1063,10 +1069,10 @@ const Admin = () => {
         return () => {
             isMounted = false;
         };
-    }, [isAdminAuthenticated, isAdmin, selectedAdminClinicId, auditFilters]);
+    }, [hasAdminPanelAccess, selectedAdminClinicId, auditFilters]);
 
     useEffect(() => {
-        if (!isAdminAuthenticated || !isAdmin || !selectedAdminClinicId) {
+        if (!hasAdminPanelAccess || !selectedAdminClinicId) {
             setImplantTypeRows([]);
             return;
         }
@@ -1093,7 +1099,7 @@ const Admin = () => {
         return () => {
             isMounted = false;
         };
-    }, [isAdminAuthenticated, isAdmin, selectedAdminClinicId]);
+    }, [hasAdminPanelAccess, selectedAdminClinicId]);
 
     const handleAdminLogin = async (event) => {
         event.preventDefault();
@@ -1134,6 +1140,7 @@ const Admin = () => {
             return;
         }
 
+        setVerifiedAdminUserId(data.user.id);
         sessionStorage.removeItem(ADMIN_AUTH_PENDING_KEY);
         sessionStorage.setItem(ADMIN_AUTH_SESSION_KEY, 'true');
         setIsAdminAuthenticated(true);
@@ -1146,13 +1153,14 @@ const Admin = () => {
         sessionStorage.removeItem(ADMIN_AUTH_SESSION_KEY);
         sessionStorage.removeItem('arcdent_admin_selected_clinic_id');
         setIsAdminAuthenticated(false);
+        setVerifiedAdminUserId('');
         setAdminLoginId('');
         setAdminLoginPassword('');
         setAdminLoginError('');
         await supabase.auth.signOut();
     };
 
-    if (!isAdmin || !isAdminAuthenticated) {
+    if (!hasAdminPanelAccess) {
         return (
             <div className="admin-auth-container">
                 <form className="admin-auth-card" onSubmit={handleAdminLogin}>

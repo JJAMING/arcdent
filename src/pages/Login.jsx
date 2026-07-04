@@ -29,6 +29,12 @@ const Login = () => {
 
         if (!result.success) {
             setError(result.message);
+            return;
+        }
+
+        if (typeof window !== 'undefined') {
+            window.sessionStorage.setItem('arcdent_active_tab', 'home');
+            window.sessionStorage.removeItem('arcdent_admin_tab_requested');
         }
     };
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import HomeDashboard from './pages/HomeDashboard';
 import SalesAnalysis from './pages/SalesAnalysis';
@@ -15,24 +15,52 @@ import { isSupabaseConfigured } from './lib/supabaseClient';
 import './styles/Layout.css';
 
 const ACTIVE_TAB_SESSION_KEY = 'arcdent_active_tab';
+const ADMIN_TAB_REQUESTED_SESSION_KEY = 'arcdent_admin_tab_requested';
 const VALID_TABS = new Set(['home', 'sales', 'treatment', 'patient', 'new-patient', 'consultation', 'insurance', 'admin']);
 
 const getInitialActiveTab = () => {
     if (typeof window === 'undefined') return 'home';
     const savedTab = window.sessionStorage.getItem(ACTIVE_TAB_SESSION_KEY);
+    if (savedTab === 'admin') {
+        window.sessionStorage.removeItem(ACTIVE_TAB_SESSION_KEY);
+        window.sessionStorage.removeItem(ADMIN_TAB_REQUESTED_SESSION_KEY);
+        return 'home';
+    }
     return VALID_TABS.has(savedTab) ? savedTab : 'home';
 };
 
 function AppContent() {
+    const { isAuthenticated } = useAuth();
     const [activeTab, setActiveTabState] = useState(getInitialActiveTab);
+    const wasAuthenticatedRef = useRef(isAuthenticated);
 
     const setActiveTab = (tab) => {
         const nextTab = VALID_TABS.has(tab) ? tab : 'home';
         if (typeof window !== 'undefined') {
             window.sessionStorage.setItem(ACTIVE_TAB_SESSION_KEY, nextTab);
+            if (nextTab === 'admin') {
+                window.sessionStorage.setItem(ADMIN_TAB_REQUESTED_SESSION_KEY, 'true');
+            } else {
+                window.sessionStorage.removeItem(ADMIN_TAB_REQUESTED_SESSION_KEY);
+            }
         }
         setActiveTabState(nextTab);
     };
+
+    useEffect(() => {
+        if (!wasAuthenticatedRef.current && isAuthenticated) {
+            setActiveTab('home');
+        }
+        wasAuthenticatedRef.current = isAuthenticated;
+    }, [isAuthenticated]);
+
+    useEffect(() => {
+        if (activeTab !== 'admin' || typeof window === 'undefined') return;
+        const wasAdminRequested = window.sessionStorage.getItem(ADMIN_TAB_REQUESTED_SESSION_KEY) === 'true';
+        if (!wasAdminRequested) {
+            setActiveTab('home');
+        }
+    }, [activeTab]);
 
     const renderContent = () => {
         switch (activeTab) {
@@ -47,8 +75,6 @@ function AppContent() {
             default: return <HomeDashboard />;
         }
     };
-
-    const { isAuthenticated } = useAuth();
 
     if (!isAuthenticated) {
         return <Login />;
