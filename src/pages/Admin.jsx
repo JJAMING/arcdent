@@ -2565,38 +2565,78 @@ const Admin = () => {
                             resolve();
                         }
                         // 동의환자/치료비용계획
-                        else if (fileName.includes('치료비용') || fileName.includes('동의') || fileName.includes('치료비')) {
+                        else if (fileName.replace(/\s+/g, '').includes('치료비용계획')) {
                             const ci = { patientName: -1, chartNo: -1, createdAt: -1, status: -1, payStatus: -1, contractAmount: -1, paidAmount: -1, remainingAmount: -1 };
                             let headerIdx = -1;
+                            const normalizeHeader = (cell) => String(cell || '').trim().replace(/\s+/g, '');
+                            const isPatientHeader = (text) => (
+                                ['환자', '환자정보', '환자명', '환자성명', '환자이름', '성명', '이름', '고객명', '고객정보'].includes(text) ||
+                                text.includes('환자정보') ||
+                                text.includes('환자명') ||
+                                text.includes('환자성명')
+                            );
+                            const isChartHeader = (text) => (
+                                text.includes('차트') ||
+                                text.includes('챠트') ||
+                                text === '환자번호' ||
+                                text === '고객번호' ||
+                                text === '번호' ||
+                                text.toUpperCase() === 'ID'
+                            );
+                            const isContractHeader = (text) => (
+                                ['계약액', '계약금액', '총계약액', '총계약금액', '계획액', '계획금액', '치료계획금액'].includes(text) ||
+                                (text.includes('계약') && (text.includes('금액') || text.endsWith('액'))) ||
+                                (text.includes('계획') && (text.includes('금액') || text.endsWith('액')))
+                            );
+                            const isPaidHeader = (text) => (
+                                ['수납액', '수납금액', '현재수납', '현재수납액', '총수납액', '실수납액', '수납합계', '납입액', '납입금액', '입금액', '입금금액'].includes(text) ||
+                                (text.includes('수납') && (text.includes('금액') || text.endsWith('액') || text.includes('합계'))) ||
+                                (text.includes('납입') && (text.includes('금액') || text.endsWith('액'))) ||
+                                (text.includes('입금') && (text.includes('금액') || text.endsWith('액')))
+                            );
+                            const isRemainingHeader = (text) => (
+                                ['잔액', '남은금액', '남은금', '남은액', '잔여금액', '잔여액', '미수금액', '미수금', '미수액'].includes(text) ||
+                                text.includes('잔액') ||
+                                text.includes('남은') ||
+                                text.includes('잔여') ||
+                                text.includes('미수')
+                            );
                             for (let i = 0; i < Math.min(20, rawData.length); i++) {
                                 const row = rawData[i] || [];
-                                let found = 0;
                                 row.forEach((cell, idx) => {
                                     if (cell == null) return;
-                                    const s = String(cell).trim().replace(/\s+/g, '');
-                                    if (s.includes('환자') || s === '성명' || s === '이름' || s === '환자명') { ci.patientName = idx; found++; }
-                                    else if (s.includes('차트') || s.includes('번호') || s.includes('ID')) { ci.chartNo = idx; found++; }
-                                    else if (s.includes('작성일') || s.includes('상담일')) { ci.createdAt = idx; found++; }
-                                    else if (s.includes('진행상태')) { ci.status = idx; found++; }
-                                    else if (s.includes('계약금액') || s.includes('계획금액')) { ci.contractAmount = idx; found++; }
-                                    else if (s.includes('현재수납') || s.includes('수납금액')) { ci.paidAmount = idx; found++; }
-                                    else if (s.includes('남은금액') || s.includes('남은금') || s.includes('잔액') || s.includes('미수금액') || s.includes('미수금')) { ci.remainingAmount = idx; found++; }
+                                    const s = normalizeHeader(cell);
+                                    if (isPatientHeader(s)) ci.patientName = idx;
+                                    else if (isChartHeader(s)) ci.chartNo = idx;
+                                    else if (s.includes('작성일') || s.includes('상담일') || s.includes('계약일')) ci.createdAt = idx;
+                                    else if (s.includes('진행상태') || s === '상태') ci.status = idx;
+                                    else if (isContractHeader(s)) ci.contractAmount = idx;
+                                    else if (isRemainingHeader(s)) ci.remainingAmount = idx;
+                                    else if (isPaidHeader(s)) ci.paidAmount = idx;
                                 });
-                                if (found >= 2) { headerIdx = i; break; }
+                                if (ci.patientName !== -1 && ci.contractAmount !== -1 && (ci.paidAmount !== -1 || ci.remainingAmount !== -1)) {
+                                    headerIdx = i;
+                                    break;
+                                }
                             }
                             if (headerIdx !== -1) {
                                 const plans = [];
                                 for (let i = headerIdx + 1; i < rawData.length; i++) {
                                     const row = rawData[i] || [];
                                     const name = ci.patientName !== -1 ? String(row[ci.patientName] || '').trim() : '';
-                                    if (!name || name === '합계') continue;
+                                    const compactName = name.replace(/\s+/g, '');
+                                    if (!name || ['합계', '총계', '소계', '평균'].includes(compactName)) continue;
                                     const contractAmount = ci.contractAmount !== -1 ? parseNum(row[ci.contractAmount]) : 0;
-                                    const remainingAmount = ci.remainingAmount !== -1 ? parseNum(row[ci.remainingAmount]) : 0;
+                                    const sourceRemainingAmount = ci.remainingAmount !== -1 ? parseNum(row[ci.remainingAmount]) : null;
                                     const paidCell = ci.paidAmount !== -1 ? row[ci.paidAmount] : null;
                                     const hasPaidCell = paidCell !== null && paidCell !== undefined && String(paidCell).trim() !== '';
                                     const paidAmount = hasPaidCell
                                         ? parseNum(paidCell)
-                                        : Math.max(contractAmount - remainingAmount, 0);
+                                        : Math.max(contractAmount - (sourceRemainingAmount || 0), 0);
+                                    const remainingAmount = sourceRemainingAmount !== null
+                                        ? sourceRemainingAmount
+                                        : Math.max(contractAmount - paidAmount, 0);
+                                    if (contractAmount === 0 && paidAmount === 0 && remainingAmount === 0) continue;
 
                                     plans.push({
                                         chartNo: ci.chartNo !== -1 ? String(row[ci.chartNo] || '').trim() : '',
@@ -2621,7 +2661,7 @@ const Admin = () => {
                                     payload: { rows: plans },
                                 });
                                 updatedCount++; resolve('treatmentPlan');
-                            } else { reject(`파일 내 헤더를 찾을 수 없습니다. (${fileName})`); }
+                            } else { reject(`치료비용계획 파일에서 환자/계약액/수납액 또는 잔액 컬럼을 찾을 수 없습니다. (${fileName})`); }
                         }
                         // 의사별 진료 환자수 + 매출분석(의사)
                         else if (/의사별.*진료비.*수납액/.test(fileName.replace(/\s+/g, ''))) {

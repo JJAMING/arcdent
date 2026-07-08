@@ -311,6 +311,36 @@ const SalesAnalysis = () => {
     return s;
   };
 
+  const getAgreedPatientMonth = React.useCallback((patient = {}) => {
+    const normalizeMonth = (value) => {
+      if (value === null || value === undefined || value === '') return null;
+      if (typeof value === 'number') {
+        return value >= 1 && value <= 12 ? `${value}월` : null;
+      }
+
+      const text = String(value).trim();
+      const compact = text.replace(/\s+/g, '');
+      const compactDate = compact.match(/(?:20\d{2})(0[1-9]|1[0-2])(?:[0-3]\d)?/);
+      if (compactDate) return `${Number(compactDate[1])}월`;
+
+      const koreanMonth = text.match(/(\d{1,2})\s*월/);
+      if (koreanMonth) return `${Number(koreanMonth[1])}월`;
+
+      const separatedDate = text.match(/(?:20\d{2}|\d{2})[.\-_/년]\s*(\d{1,2})/);
+      if (separatedDate) return `${Number(separatedDate[1])}월`;
+
+      const leadingMonth = text.match(/^(\d{1,2})(?:[.\-_/]|$)/);
+      if (leadingMonth) {
+        const month = Number(leadingMonth[1]);
+        return month >= 1 && month <= 12 ? `${month}월` : null;
+      }
+
+      return null;
+    };
+
+    return normalizeMonth(patient.month) || normalizeMonth(patient.createdAt);
+  }, []);
+
   // --- 현재 선택된 연도에 따른 필터링 데이터 (Strict Filtering) ---
   const filteredAgreedPatients = React.useMemo(() => {
     const targetY = normalizeYear(selectedYear);
@@ -411,15 +441,7 @@ const SalesAnalysis = () => {
 
       // 동의환자 데이터(치료종결, 진행중) 카운트하여 동의 건수에 연동
       entry.agreed = filteredAgreedPatients.filter(p => {
-        if (!p.createdAt) return false;
-        // Parse month from various formats
-        const mMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/[\.\-\/](\d{1,2})[\.\-\/]/) || p.createdAt.match(/^(\d{1,2})[\.\-\/]/);
-        let mStr = null;
-        if (mMatch) {
-            const mNum = parseInt(mMatch[1]);
-            if (mNum >= 1 && mNum <= 12) mStr = mNum + '월';
-        }
-        
+        const mStr = getAgreedPatientMonth(p);
         const status = (p.status || '').replace(/\s+/g, '');
         const statusMatch = status.includes('치료종결') || status.includes('진행중');
         
@@ -435,7 +457,7 @@ const SalesAnalysis = () => {
 
       return entry;
     });
-  }, [currentHalfData, doctorNames]);
+  }, [currentHalfData, doctorNames, filteredAgreedPatients, getAgreedPatientMonth]);
 
 
 
@@ -450,10 +472,8 @@ const SalesAnalysis = () => {
   ];
 
   filteredAgreedPatients.forEach(p => {
-    const monthMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/-(\d+)-/);
-    if (monthMatch) {
-      const mNum = parseInt(monthMatch[1]);
-      const mStr = mNum + '월';
+    const mStr = getAgreedPatientMonth(p);
+    if (mStr) {
       const stat = agreedMonthlyStats.find(s => s.month === mStr);
       if (stat) {
         stat.contract += (Number(p.contractAmount) || 0);
@@ -504,17 +524,14 @@ const SalesAnalysis = () => {
       metrics.topFeeRatio = d.netSales > 0 ? ((top20Sum / d.netSales) * 100).toFixed(1) : 0;
 
       // 동의환자 수납율 계산
-      const monthlyAgreed = filteredAgreedPatients.filter(p => {
-        const mMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/-(\d+)-/);
-        return mMatch && parseInt(mMatch[1]) + '월' === d.month;
-      });
+      const monthlyAgreed = filteredAgreedPatients.filter(p => getAgreedPatientMonth(p) === d.month);
       const contractSum = monthlyAgreed.reduce((sum, p) => sum + (Number(p.contractAmount) || 0), 0);
       const paidSum = monthlyAgreed.reduce((sum, p) => sum + (Number(p.paidAmount) || 0), 0);
       metrics.agreedCollectionRate = contractSum > 0 ? ((paidSum / contractSum) * 100).toFixed(1) : 0;
 
       return metrics;
     });
-  }, [doctorChartData, filteredTopPatientsRaw, filteredAgreedPatients]);
+  }, [doctorChartData, filteredTopPatientsRaw, filteredAgreedPatients, getAgreedPatientMonth]);
 
   // --- 진료비 상위 환자 (최근 월 기준) ---
   const topPatients = (currentHalfData[currentHalfData.length - 1]?.topPatients || []).slice(0, 20);
@@ -786,14 +803,10 @@ const SalesAnalysis = () => {
         const currentAgreedMonths = currentHalfData.map(d => d.month);
         const filteredAgreed = selectedAgreedMonth === '전체' 
           ? filteredAgreedPatients.filter(p => {
-              const mMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/[\.\-\/](\d{1,2})[\.\-\/]/) || p.createdAt.match(/^(\d{1,2})[\.\-\/]/);
-              const mStr = mMatch ? parseInt(mMatch[1]) + '월' : null;
+              const mStr = getAgreedPatientMonth(p);
               return mStr && currentAgreedMonths.includes(mStr);
             })
-          : filteredAgreedPatients.filter(p => {
-              const mMatch = p.createdAt.match(/(\d+)월/) || p.createdAt.match(/[\.\-\/](\d{1,2})[\.\-\/]/) || p.createdAt.match(/^(\d{1,2})[\.\-\/]/);
-              return mMatch && parseInt(mMatch[1]) + '월' === selectedAgreedMonth;
-            });
+          : filteredAgreedPatients.filter(p => getAgreedPatientMonth(p) === selectedAgreedMonth);
 
         const fTotalAgreed = filteredAgreed.reduce((sum, p) => sum + (Number(p.contractAmount) || 0), 0);
         const fTotalPaid = filteredAgreed.reduce((sum, p) => sum + (Number(p.paidAmount) || 0), 0);
@@ -821,13 +834,16 @@ const SalesAnalysis = () => {
                 {patients.length > 0 ? patients.map((p, idx) => {
                   const contract = Number(p.contractAmount) || 0;
                   const paid = Number(p.paidAmount) || 0;
+                  const remaining = Number.isFinite(Number(p.remainingAmount))
+                    ? Number(p.remainingAmount)
+                    : contract - paid;
                   return (
                     <tr key={idx}>
                       <td className="font-bold" style={{ color: 'var(--text-secondary)' }}>{startIdx + idx + 1}</td>
                       <td className="font-bold" style={{ textAlign: 'left', color: 'var(--text-primary)' }}>{p.patientName}</td>
                       <td style={{ textAlign: 'right' }}>{contract.toLocaleString()}원</td>
                       <td style={{ textAlign: 'right', color: '#3b82f6' }}>{paid.toLocaleString()}원</td>
-                      <td style={{ textAlign: 'right', color: '#ef4444', fontWeight: 'bold' }}>{(contract - paid).toLocaleString()}원</td>
+                      <td style={{ textAlign: 'right', color: '#ef4444', fontWeight: 'bold' }}>{remaining.toLocaleString()}원</td>
                     </tr>
                   );
                 }) : (
