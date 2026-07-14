@@ -299,10 +299,10 @@ const parseInsuranceFeeStatsRows = (rows, fileName) => {
     }
 
     let headerIdx = -1;
-    let columns = { code: -1, name: -1, patients: -1, visits: -1 };
+    let columns = { code: -1, name: -1, patients: -1, visits: -1, treatmentAmount: -1 };
     for (let i = 0; i < Math.min(rows.length, 60); i++) {
         const row = rows[i] || [];
-        const currentColumns = { code: -1, name: -1, patients: -1, visits: -1 };
+        const currentColumns = { code: -1, name: -1, patients: -1, visits: -1, treatmentAmount: -1 };
         row.forEach((cell, idx) => {
             const text = normalizeHeader(cell);
             if (!text) return;
@@ -317,6 +317,9 @@ const parseInsuranceFeeStatsRows = (rows, fileName) => {
             }
             if (text === '진료횟수' || text === '횟수' || text === '입력횟수' || text === '건수') {
                 currentColumns.visits = idx;
+            }
+            if (text === '진료금액' || text === '진료비' || text === '총진료금액' || text === '총진료비') {
+                currentColumns.treatmentAmount = idx;
             }
         });
         if (currentColumns.code !== -1 && currentColumns.name !== -1 && currentColumns.patients !== -1 && currentColumns.visits !== -1) {
@@ -339,12 +342,14 @@ const parseInsuranceFeeStatsRows = (rows, fileName) => {
 
         const patients = parseNumber(row[columns.patients]);
         const visits = parseNumber(row[columns.visits]);
-        if (patients <= 0 && visits <= 0) continue;
+        const treatmentAmount = columns.treatmentAmount === -1 ? 0 : parseNumber(row[columns.treatmentAmount]);
+        if (patients <= 0 && visits <= 0 && treatmentAmount <= 0) continue;
 
         const key = `${code}|||${name}`;
-        if (!grouped[key]) grouped[key] = { code, name, patients: 0, visits: 0 };
+        if (!grouped[key]) grouped[key] = { code, name, patients: 0, visits: 0, treatmentAmount: 0 };
         grouped[key].patients += patients;
         grouped[key].visits += visits;
+        grouped[key].treatmentAmount += treatmentAmount;
     }
 
     const parsedRows = Object.values(grouped);
@@ -1972,12 +1977,16 @@ const Admin = () => {
                 (row.fees || []).forEach(item => {
                     const key = `${item.code || ''} ${item.name || item.feeName || ''}`.trim();
                     if (!key) return;
-                    feeTotals[key] = feeTotals[key] || { patients: 0, visits: 0 };
+                    feeTotals[key] = feeTotals[key] || { patients: 0, visits: 0, treatmentAmount: 0 };
                     feeTotals[key].patients += Number(item.patients || 0);
                     feeTotals[key].visits += Number(item.visits || 0);
+                    feeTotals[key].treatmentAmount += Number(item.treatmentAmount || 0);
                 });
             });
-            const feeList = Object.entries(feeTotals).map(([name, value]) => ({ name, ...value })).sort((a, b) => b.patients - a.patients).slice(0, 20);
+            const feeList = Object.entries(feeTotals)
+                .map(([name, value]) => ({ name, ...value }))
+                .sort((a, b) => b.treatmentAmount - a.treatmentAmount || b.patients - a.patients || b.visits - a.visits)
+                .slice(0, 20);
             return `
                 ${includeTab('claim') ? `
                     ${reportCards([
@@ -1992,8 +2001,8 @@ const Admin = () => {
                 ` : ''}
                 ${includeTab('fee') ? `
                     <h2>보험수가별 통계 TOP 20</h2>
-                    ${reportTable(['코드 / 보험 수가명', '환자수', '진료횟수'], feeList.map(row => [
-                        row.name, `${reportNumber(row.patients)}명`, `${reportNumber(row.visits)}회`,
+                    ${reportTable(['코드 / 보험 수가명', '환자수', '진료횟수', '진료금액'], feeList.map(row => [
+                        row.name, `${reportNumber(row.patients)}명`, `${reportNumber(row.visits)}회`, reportWon(row.treatmentAmount),
                     ]))}
                 ` : ''}
             `;

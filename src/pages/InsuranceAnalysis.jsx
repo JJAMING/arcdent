@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList,
-    LineChart, Line, Legend
+    LineChart, Line
 } from 'recharts';
 import { Calendar, ChevronDown, ListChecks, ShieldCheck, WalletCards } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
@@ -53,6 +53,7 @@ const normalizeFeeYearData = (rows) => {
                 name: String(item.name || item.feeName || ''),
                 patients: Number(item.patients || 0),
                 visits: Number(item.visits || 0),
+                treatmentAmount: Number(item.treatmentAmount || 0),
             })) : [],
         };
     });
@@ -93,6 +94,7 @@ const buildFeeMapFromSupabaseRows = (rows = []) => rows.reduce((map, row) => {
             name: String(item.name || item.feeName || ''),
             patients: Number(item.patients || 0),
             visits: Number(item.visits || 0),
+            treatmentAmount: Number(item.treatmentAmount || 0),
         }));
     }
     return map;
@@ -119,6 +121,7 @@ const monthSelectStyle = {
     outline: 'none',
 };
 const feeCountCellStyle = { minWidth: '72px', whiteSpace: 'nowrap', wordBreak: 'keep-all' };
+const feeAmountCellStyle = { minWidth: '112px', whiteSpace: 'nowrap', wordBreak: 'keep-all' };
 const FEE_ROWS_PER_PAGE = 20;
 
 const InsuranceAnalysis = () => {
@@ -232,14 +235,21 @@ const InsuranceAnalysis = () => {
         currentFeeMonths.forEach(month => {
             (month.fees || []).forEach(item => {
                 const key = `${item.code}|||${item.name}`;
-                if (!grouped[key]) grouped[key] = { code: item.code, name: item.name, patients: 0, visits: 0 };
+                if (!grouped[key]) grouped[key] = {
+                    code: item.code,
+                    name: item.name,
+                    patients: 0,
+                    visits: 0,
+                    treatmentAmount: 0,
+                };
                 grouped[key].patients += Number(item.patients || 0);
                 grouped[key].visits += Number(item.visits || 0);
+                grouped[key].treatmentAmount += Number(item.treatmentAmount || 0);
             });
         });
         return Object.values(grouped)
             .filter(item => item.code || item.name)
-            .sort((a, b) => b.patients - a.patients || b.visits - a.visits);
+            .sort((a, b) => b.treatmentAmount - a.treatmentAmount || b.patients - a.patients || b.visits - a.visits);
     }, [currentFeeMonths]);
 
     const topPatientFees = feeRows.slice().sort((a, b) => b.patients - a.patients).slice(0, 5);
@@ -256,7 +266,7 @@ const InsuranceAnalysis = () => {
     const selectedFeeMonth = feeYearData[selectedFeeMonthIndex] || { month: MONTHS[selectedFeeMonthIndex] || '-', fees: [] };
     const selectedFeeMonthRows = (selectedFeeMonth.fees || [])
         .slice()
-        .sort((a, b) => Number(b.patients || 0) - Number(a.patients || 0) || Number(b.visits || 0) - Number(a.visits || 0));
+        .sort((a, b) => Number(b.treatmentAmount || 0) - Number(a.treatmentAmount || 0) || Number(b.patients || 0) - Number(a.patients || 0) || Number(b.visits || 0) - Number(a.visits || 0));
     const feeTotalPages = Math.max(1, Math.ceil(selectedFeeMonthRows.length / FEE_ROWS_PER_PAGE));
     const currentFeePage = Math.min(feePage, feeTotalPages);
     const pagedFeeRows = selectedFeeMonthRows.slice(
@@ -366,7 +376,6 @@ const InsuranceAnalysis = () => {
                 <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                 <YAxis tick={{ fontSize: 11 }} width={42} />
                 <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '12px' }} formatter={(value, name) => [`${Number(value || 0).toLocaleString()}${dataKeyLabel === '진료횟수' ? '회' : '명'}`, name]} />
-                <Legend verticalAlign="top" height={42} iconType="line" wrapperStyle={{ fontSize: '11px' }} />
                 {topFees.map((item, index) => {
                     const key = `${item.code} ${item.name}`;
                     return (
@@ -440,6 +449,7 @@ const InsuranceAnalysis = () => {
                                             <th>보험 수가명</th>
                                             <th style={feeCountCellStyle}>환자수</th>
                                             <th style={feeCountCellStyle}>진료횟수</th>
+                                            <th style={feeAmountCellStyle}>진료금액</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -452,6 +462,7 @@ const InsuranceAnalysis = () => {
                                                 <td>{row.name}</td>
                                                 <td className="font-bold" style={feeCountCellStyle}>{Number(row.patients || 0).toLocaleString()}명</td>
                                                 <td className="font-bold" style={feeCountCellStyle}>{Number(row.visits || 0).toLocaleString()}회</td>
+                                                <td className="font-bold" style={feeAmountCellStyle}>{formatWon(row.treatmentAmount)}</td>
                                             </tr>
                                         ))}
                                         {selectedFeeMonthRows.length === 0 && section.offset === 0 && (
@@ -460,6 +471,7 @@ const InsuranceAnalysis = () => {
                                                 <td>{selectedFeeMonth.month} 업로드 데이터가 없습니다.</td>
                                                 <td style={feeCountCellStyle}>0명</td>
                                                 <td style={feeCountCellStyle}>0회</td>
+                                                <td style={feeAmountCellStyle}>0원</td>
                                             </tr>
                                         )}
                                         {selectedFeeMonthRows.length > 0 && section.rows.length === 0 && (
@@ -468,6 +480,7 @@ const InsuranceAnalysis = () => {
                                                 <td>표시할 데이터가 없습니다.</td>
                                                 <td style={feeCountCellStyle}>0명</td>
                                                 <td style={feeCountCellStyle}>0회</td>
+                                                <td style={feeAmountCellStyle}>0원</td>
                                             </tr>
                                         )}
                                     </tbody>
