@@ -329,8 +329,9 @@ const ConsultationAnalysis = () => {
     };
 
     const monthSummary = useMemo(() => {
-        return getOverallSummary(selectedMonth) || buildSummary(selectedMonthPlans);
-    }, [consultationOverallData, selectedYear, selectedMonth, selectedMonthPlans]);
+        // 전체 동의율은 전용 업로드 데이터만 표시합니다. 치료비용계획은 매출 분석용 원본이라 대체값으로 사용하지 않습니다.
+        return getOverallSummary(selectedMonth) || buildSummary([]);
+    }, [consultationOverallData, selectedYear, selectedMonth]);
     const doctorDiagnosisRows = useMemo(() => {
         return (monthSummary.doctorDiagnoses || [])
             .filter(doctor => isDoctorDiagnosisName(doctor.name) && Number(doctor.count || 0) > 0)
@@ -343,7 +344,7 @@ const ConsultationAnalysis = () => {
     const periodLabel = half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
 
     const consultationTrendData = periodMonths.map(month => {
-        const summary = getOverallSummary(month) || buildSummary(treatmentPlans.filter(plan => getPlanYear(plan) === String(selectedYear) && getPlanMonth(plan) === month));
+        const summary = getOverallSummary(month) || buildSummary([]);
         return {
             month,
             최종동의금액: summary.agreedAmount,
