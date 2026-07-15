@@ -3,9 +3,11 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList,
     LineChart, Line
 } from 'recharts';
-import { Calendar, ChevronDown, ListChecks, ShieldCheck, WalletCards } from 'lucide-react';
+import { ListChecks, ShieldCheck, WalletCards } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import MonthlySnapshotBarChart from '../components/MonthlySnapshotBarChart';
 import ManagementInsight from '../components/ManagementInsight';
+import AnalysisPeriodControls from '../components/AnalysisPeriodControls';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
@@ -129,10 +131,9 @@ const InsuranceAnalysis = () => {
     const activeClinicId = getActiveAnalyticsClinicId(clinicId);
     const [selectedYear, setSelectedYear] = useState(() => getCurrentYearString());
     const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
-    const [isYearOpen, setIsYearOpen] = useState(false);
     const [half, setHalf] = useState('all');
+    const [monthFilter, setMonthFilter] = useState('all');
     const [subTab, setSubTab] = useState('claim');
-    const [selectedFeeMonthIndex, setSelectedFeeMonthIndex] = useState(0);
     const [feePage, setFeePage] = useState(1);
     const [claimYearData, setClaimYearData] = useState(() => createEmptyClaimYearData());
     const [feeYearData, setFeeYearData] = useState(() => createEmptyFeeYearData());
@@ -209,16 +210,19 @@ const InsuranceAnalysis = () => {
     }, [selectedYear, activeClinicId]);
 
     const currentClaimData = useMemo(() => {
+        if (monthFilter !== 'all') return claimYearData.filter(row => row.month === monthFilter);
         if (half === 'first') return claimYearData.slice(0, 6);
         if (half === 'second') return claimYearData.slice(6, 12);
         return claimYearData;
-    }, [half, claimYearData]);
+    }, [half, monthFilter, claimYearData]);
 
     const currentFeeMonths = useMemo(() => {
+        if (monthFilter !== 'all') return feeYearData.filter(row => row.month === monthFilter);
         if (half === 'first') return feeYearData.slice(0, 6);
         if (half === 'second') return feeYearData.slice(6, 12);
         return feeYearData;
-    }, [half, feeYearData]);
+    }, [half, monthFilter, feeYearData]);
+    const isMonthlyView = monthFilter !== 'all';
 
     const totalClaim = currentClaimData.reduce((sum, row) => sum + Number(row.amount || 0), 0);
     const healthTotal = currentClaimData.reduce((sum, row) => sum + Number(row.health || 0), 0);
@@ -228,7 +232,9 @@ const InsuranceAnalysis = () => {
     const peakMonth = currentClaimData.reduce((max, row) => (
         Number(row.amount || 0) > Number(max.amount || 0) ? row : max
     ), currentClaimData[0] || { month: '-', amount: 0 });
-    const periodLabel = half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
+    const periodLabel = monthFilter !== 'all'
+        ? monthFilter
+        : half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
 
     const feeRows = useMemo(() => {
         const grouped = {};
@@ -263,10 +269,7 @@ const InsuranceAnalysis = () => {
 
         return `${selectedYear}년 ${periodLabel} 기준 보험청구액은 ${formatWon(totalClaim)}입니다. 건강보험은 ${formatWon(healthTotal)}, 의료급여는 ${formatWon(medicalAidTotal)}이며 월평균 청구액은 ${formatWon(averageClaim)}입니다. 월별 청구액 변동과 건강보험/의료급여 비중을 함께 점검해 주세요.`;
     })();
-    const selectedFeeMonth = feeYearData[selectedFeeMonthIndex] || { month: MONTHS[selectedFeeMonthIndex] || '-', fees: [] };
-    const selectedFeeMonthRows = (selectedFeeMonth.fees || [])
-        .slice()
-        .sort((a, b) => Number(b.treatmentAmount || 0) - Number(a.treatmentAmount || 0) || Number(b.patients || 0) - Number(a.patients || 0) || Number(b.visits || 0) - Number(a.visits || 0));
+    const selectedFeeMonthRows = feeRows;
     const feeTotalPages = Math.max(1, Math.ceil(selectedFeeMonthRows.length / FEE_ROWS_PER_PAGE));
     const currentFeePage = Math.min(feePage, feeTotalPages);
     const pagedFeeRows = selectedFeeMonthRows.slice(
@@ -275,6 +278,10 @@ const InsuranceAnalysis = () => {
     );
     const leftFeeRows = pagedFeeRows.slice(0, 10);
     const rightFeeRows = pagedFeeRows.slice(10, 20);
+
+    useEffect(() => {
+        setFeePage(1);
+    }, [selectedYear, half, monthFilter]);
 
     const makeFeeChartData = (topFees, key) => (
         currentFeeMonths.map(month => {
@@ -318,6 +325,18 @@ const InsuranceAnalysis = () => {
             <div className="dashboard-stack">
                 <DashboardCard title="월별 보험청구액" subtitle="건강보험 + 의료급여 합산">
                     <div style={{ height: 360, width: '100%' }}>
+                        {isMonthlyView ? (
+                            <MonthlySnapshotBarChart
+                                data={[
+                                    { name: '보험청구액', value: Number(currentClaimData[0]?.amount || 0), color: '#3b82f6' },
+                                    { name: '건강보험', value: Number(currentClaimData[0]?.health || 0), color: '#10b981' },
+                                    { name: '의료급여', value: Number(currentClaimData[0]?.medicalAid || 0), color: '#f59e0b' },
+                                ]}
+                                valueLabel="청구액"
+                                formatValue={formatWon}
+                                height={330}
+                            />
+                        ) : (
                         <ResponsiveContainer>
                             <BarChart data={currentClaimData} margin={{ top: 28, right: 24, left: 20, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -329,6 +348,7 @@ const InsuranceAnalysis = () => {
                                 </Bar>
                             </BarChart>
                         </ResponsiveContainer>
+                        )}
                     </div>
                 </DashboardCard>
 
@@ -370,6 +390,19 @@ const InsuranceAnalysis = () => {
     );
 
     const renderFeeLines = (topFees, data, dataKeyLabel) => (
+        isMonthlyView ? (
+            <MonthlySnapshotBarChart
+                data={topFees.map((item, index) => ({
+                    name: item.name || item.code,
+        value: Number(dataKeyLabel === '진료횟수' ? (item.visits || 0) : (item.patients || 0)),
+                    color: COLORS[index % COLORS.length],
+                    detail: item.code ? `코드 ${item.code}` : '',
+                }))}
+                valueLabel={dataKeyLabel}
+                formatValue={(value) => `${Number(value || 0).toLocaleString()}${dataKeyLabel === '진료횟수' ? '회' : '명'}`}
+                height={290}
+            />
+        ) : (
         <ResponsiveContainer>
             <LineChart data={data} margin={{ top: 24, right: 24, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -394,6 +427,7 @@ const InsuranceAnalysis = () => {
                 })}
             </LineChart>
         </ResponsiveContainer>
+        )
     );
 
     const renderFeeTab = () => (
@@ -413,22 +447,11 @@ const InsuranceAnalysis = () => {
 
             <DashboardCard
                 title="보험수가별 통계 상세 데이터"
-                subtitle="선택 월 기준"
+                subtitle={`${periodLabel} 기준`}
                 headerRight={
                     <div style={monthSelectWrapStyle}>
-                        <span style={monthSelectLabelStyle}>조회 월</span>
-                        <select
-                            value={selectedFeeMonthIndex}
-                            onChange={(e) => {
-                                setSelectedFeeMonthIndex(Number(e.target.value));
-                                setFeePage(1);
-                            }}
-                            style={monthSelectStyle}
-                        >
-                            {MONTHS.map((month, index) => (
-                                <option key={month} value={index}>{month}</option>
-                            ))}
-                        </select>
+                        <span style={monthSelectLabelStyle}>표시 범위</span>
+                        <span style={{ ...monthSelectStyle, display: 'inline-flex', alignItems: 'center' }}>{periodLabel}</span>
                     </div>
                 }
             >
@@ -468,7 +491,7 @@ const InsuranceAnalysis = () => {
                                         {selectedFeeMonthRows.length === 0 && section.offset === 0 && (
                                             <tr>
                                                 <td className="row-header">-</td>
-                                                <td>{selectedFeeMonth.month} 업로드 데이터가 없습니다.</td>
+                                                <td>{periodLabel} 업로드 데이터가 없습니다.</td>
                                                 <td style={feeCountCellStyle}>0명</td>
                                                 <td style={feeCountCellStyle}>0회</td>
                                                 <td style={feeAmountCellStyle}>0원</td>
@@ -542,38 +565,15 @@ const InsuranceAnalysis = () => {
                     <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>월별 보험청구액과 보험수가별 통계를 분석합니다.</p>
                 </div>
 
-                <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
-                    <div className="year-selector-container">
-                        <button className="year-select-btn" onClick={() => setIsYearOpen(!isYearOpen)}>
-                            <Calendar size={16} />
-                            {selectedYear}년
-                            <ChevronDown size={14} style={{ transform: isYearOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-                        </button>
-
-                        {isYearOpen && (
-                            <div className="year-dropdown">
-                                {availableYears.map(year => (
-                                    <button
-                                        key={year}
-                                        className={`year-item ${selectedYear === year ? 'active' : ''}`}
-                                        onClick={() => {
-                                            setSelectedYear(year);
-                                            setIsYearOpen(false);
-                                        }}
-                                    >
-                                        {year}년
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="period-tabs">
-                        <button className={half === 'all' ? 'active' : ''} onClick={() => setHalf('all')}>전체보기</button>
-                        <button className={half === 'first' ? 'active' : ''} onClick={() => setHalf('first')}>상반기</button>
-                        <button className={half === 'second' ? 'active' : ''} onClick={() => setHalf('second')}>하반기</button>
-                    </div>
-                </div>
+                <AnalysisPeriodControls
+                    selectedYear={selectedYear}
+                    availableYears={availableYears}
+                    onYearChange={setSelectedYear}
+                    half={half}
+                    onHalfChange={setHalf}
+                    monthFilter={monthFilter}
+                    onMonthFilterChange={setMonthFilter}
+                />
             </header>
 
             <nav className="tab-navigation">
@@ -595,7 +595,7 @@ const InsuranceAnalysis = () => {
                 categoryKey="insurance"
                 subCategoryKey={subTab}
                 year={selectedYear}
-                period={half}
+                period={monthFilter !== 'all' ? `month-${monthFilter}` : half}
                 periodLabel={periodLabel}
                 defaultInsight={insuranceInsightText}
             />

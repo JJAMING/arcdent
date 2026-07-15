@@ -187,9 +187,9 @@
         flex-wrap: nowrap;
     }
 
-    .period-tabs button,
-    .filter-btn,
-    .month-filter-btn {
+.period-tabs button,
+.filter-btn,
+.month-filter-btn {
         flex: 0 0 auto;
         white-space: nowrap;
     }
@@ -199,7 +199,35 @@
     }
 }
 
+.analysis-period-controls {
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+}
+
+.period-month-dropdown {
+    max-height: 19rem;
+    overflow-y: auto;
+}
+
+@media (max-width: 1024px) {
+    .analysis-period-controls {
+        width: 100%;
+        gap: 0.65rem;
+        flex-wrap: wrap;
+    }
+}
+
 @media (max-width: 640px) {
+    .analysis-period-controls {
+        gap: 0.45rem;
+    }
+
+    .analysis-period-controls .period-tabs {
+        order: 3;
+        width: 100%;
+    }
+
     .analysis-page {
         gap: 0.85rem;
     }

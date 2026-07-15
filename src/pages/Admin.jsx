@@ -491,11 +491,9 @@ const parseNewPatientPathTreatmentRatioRows = (rows, fileName) => {
         const normalizedPath = normalizeHeader(path);
         if (!normalizedPath || ['합계', '총합계', '평균', '월평균', '일평균'].includes(normalizedPath)) continue;
 
-        const insuranceRatio = readPercentCellValue(row[columns.insurance]) ?? 0;
-        const nonInsuranceRatio = columns.nonInsurance.reduce((sum, index) => (
-            sum + (readPercentCellValue(row[index]) ?? 0)
-        ), 0);
-        const normalizedNonInsurance = Math.trunc(Math.max(0, Math.min(100, nonInsuranceRatio)) * 10) / 10;
+        const insuranceRatio = Math.max(0, Math.min(100, readPercentCellValue(row[columns.insurance]) ?? 0));
+        // The insurance item is explicitly supplied by the report. Everything outside that item is non-insurance.
+        const normalizedNonInsurance = Math.round((100 - insuranceRatio) * 10) / 10;
 
         insuranceRatios[path] = insuranceRatio;
         nonInsuranceRatios[path] = normalizedNonInsurance;
@@ -1913,7 +1911,7 @@ const Admin = () => {
                 ` : ''}
                 ${includeTab('treatmentRate') ? `
                     <h2>내원 경로별 치료 이행율</h2>
-                    ${reportTable(['내원경로', '보험환자 비율'], Object.entries(treatmentRates).map(([name, value]) => [
+                    ${reportTable(['내원경로', '보험 항목 비율'], Object.entries(treatmentRates).map(([name, value]) => [
                         name, reportPercent(value.count ? value.sum / value.count : 0),
                     ]))}
                 ` : ''}
@@ -5588,8 +5586,8 @@ const Admin = () => {
                                             <thead>
                                                 <tr>
                                                     <th>내원경로</th>
-                                                    <th>보험환자 비율</th>
-                                                    <th>비보험환자 비율</th>
+                                                    <th>보험 항목 비율</th>
+                                                    <th>비보험 항목 비율</th>
                                                 </tr>
                                             </thead>
                                             <tbody>

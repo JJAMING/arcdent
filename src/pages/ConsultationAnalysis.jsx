@@ -6,7 +6,9 @@ import {
 } from 'recharts';
 import { Calendar, ChevronDown, ClipboardCheck, UserCheck, UserX, Users } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import MonthlySnapshotBarChart from '../components/MonthlySnapshotBarChart';
 import ManagementInsight from '../components/ManagementInsight';
+import AnalysisPeriodControls from '../components/AnalysisPeriodControls';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
@@ -135,8 +137,8 @@ const ConsultationAnalysis = () => {
     const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
     const [half, setHalf] = useState('all');
+    const [monthFilter, setMonthFilter] = useState('all');
     const [subTab, setSubTab] = useState('overall');
-    const [selectedMonth, setSelectedMonth] = useState('1월');
     const [rejectedPage, setRejectedPage] = useState(1);
     const [refreshKey, setRefreshKey] = useState(0);
 
@@ -211,20 +213,17 @@ const ConsultationAnalysis = () => {
     }, []);
 
     const periodMonths = useMemo(() => {
+        if (monthFilter !== 'all') return [monthFilter];
         if (half === 'first') return MONTHS.slice(0, 6);
         if (half === 'second') return MONTHS.slice(6);
         return MONTHS;
-    }, [half]);
-
-    useEffect(() => {
-        if (!periodMonths.includes(selectedMonth)) {
-            setSelectedMonth(periodMonths[0] || '1월');
-        }
-    }, [periodMonths, selectedMonth]);
+    }, [half, monthFilter]);
+    const isMonthlyView = monthFilter !== 'all';
+    const selectedMonth = periodMonths[0] || MONTHS[0];
 
     useEffect(() => {
         setRejectedPage(1);
-    }, [selectedYear, selectedMonth]);
+    }, [selectedYear, half, monthFilter]);
 
     const filteredPlans = useMemo(() => {
         return treatmentPlans.filter(plan => {
@@ -233,14 +232,6 @@ const ConsultationAnalysis = () => {
             return year === String(selectedYear) && periodMonths.includes(month);
         });
     }, [treatmentPlans, selectedYear, periodMonths]);
-
-    const selectedMonthPlans = useMemo(() => {
-        return treatmentPlans.filter(plan => {
-            const year = getPlanYear(plan);
-            const month = getPlanMonth(plan);
-            return year === String(selectedYear) && month === selectedMonth;
-        });
-    }, [treatmentPlans, selectedYear, selectedMonth]);
 
     const buildSummary = (plans) => {
         const agreed = plans.filter(plan => isAgreedStatus(plan.status));
@@ -329,9 +320,61 @@ const ConsultationAnalysis = () => {
     };
 
     const monthSummary = useMemo(() => {
-        // 전체 동의율은 전용 업로드 데이터만 표시합니다. 치료비용계획은 매출 분석용 원본이라 대체값으로 사용하지 않습니다.
-        return getOverallSummary(selectedMonth) || buildSummary([]);
-    }, [consultationOverallData, selectedYear, selectedMonth]);
+        const summaries = periodMonths
+            .map(month => getOverallSummary(month))
+            .filter(Boolean);
+
+        if (summaries.length === 0) return buildSummary([]);
+
+        const doctorDiagnoses = new Map();
+        const total = summaries.reduce((acc, summary) => {
+            [
+                'totalConsultations', 'agreedCount', 'partialCount', 'rejectedCount',
+                'consultationAmount', 'diagnosisAmount', 'rejectedAmount', 'agreedAmount',
+                'paidAmount', 'newPatients', 'oldPatients', 'totalPatients',
+                'insuranceDiagnosis', 'insuranceAgreement', 'implantDecision',
+                'dentureDecision', 'planChange',
+            ].forEach(key => {
+                acc[key] += Number(summary[key] || 0);
+            });
+
+            (summary.doctorDiagnoses || []).forEach(doctor => {
+                const name = String(doctor.name || '').trim();
+                if (!name) return;
+                const current = doctorDiagnoses.get(name) || { name, count: 0, agreedAmount: 0 };
+                current.count += Number(doctor.count || 0);
+                current.agreedAmount += Number(doctor.agreedAmount || doctor.amount || 0);
+                doctorDiagnoses.set(name, current);
+            });
+            return acc;
+        }, {
+            totalConsultations: 0, agreedCount: 0, partialCount: 0, rejectedCount: 0,
+            consultationAmount: 0, diagnosisAmount: 0, rejectedAmount: 0, agreedAmount: 0,
+            paidAmount: 0, newPatients: 0, oldPatients: 0, totalPatients: 0,
+            insuranceDiagnosis: 0, insuranceAgreement: 0, implantDecision: 0,
+            dentureDecision: 0, planChange: 0,
+        });
+
+        if (total.totalPatients === 0) total.totalPatients = total.newPatients + total.oldPatients;
+        total.doctorDiagnoses = Array.from(doctorDiagnoses.values());
+        total.patientAgreementRate = total.totalConsultations > 0
+            ? (total.agreedCount / total.totalConsultations) * 100
+            : 0;
+        total.partialAgreementRate = total.totalConsultations > 0
+            ? (total.partialCount / total.totalConsultations) * 100
+            : 0;
+        total.diagnosisAgreementRate = total.diagnosisAmount > 0
+            ? (total.agreedAmount / total.diagnosisAmount) * 100
+            : 0;
+        total.consultationAgreementRate = total.consultationAmount > 0
+            ? (total.agreedAmount / total.consultationAmount) * 100
+            : 0;
+        total.collectionRate = total.agreedAmount > 0
+            ? (total.paidAmount / total.agreedAmount) * 100
+            : 0;
+
+        return total;
+    }, [consultationOverallData, selectedYear, periodMonths]);
     const doctorDiagnosisRows = useMemo(() => {
         return (monthSummary.doctorDiagnoses || [])
             .filter(doctor => isDoctorDiagnosisName(doctor.name) && Number(doctor.count || 0) > 0)
@@ -341,7 +384,9 @@ const ConsultationAnalysis = () => {
                 agreedAmount: Number(doctor.agreedAmount || doctor.amount || 0),
             }));
     }, [monthSummary]);
-    const periodLabel = half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
+    const periodLabel = monthFilter !== 'all'
+        ? monthFilter
+        : half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
 
     const consultationTrendData = periodMonths.map(month => {
         const summary = getOverallSummary(month) || buildSummary([]);
@@ -359,7 +404,7 @@ const ConsultationAnalysis = () => {
         {
             label: '최종동의금액',
             value: formatWon(monthSummary.agreedAmount),
-            sub: `${selectedYear}년 ${selectedMonth} 기준`,
+            sub: `${selectedYear}년 ${periodLabel} 기준`,
             color: '#ef4444',
             icon: ClipboardCheck,
         },
@@ -403,7 +448,7 @@ const ConsultationAnalysis = () => {
         whiteSpace: 'nowrap',
     };
 
-    const consultantRows = useMemo(() => {
+    const selectedMonthConsultantRows = useMemo(() => {
         const stored = getConsultantSummary(selectedMonth);
         if (stored?.rows?.length) {
             return stored.rows
@@ -424,7 +469,7 @@ const ConsultationAnalysis = () => {
         }
 
         const groups = new Map();
-        selectedMonthPlans.forEach(plan => {
+        filteredPlans.forEach(plan => {
             const name = getConsultantName(plan);
             if (!groups.has(name)) groups.set(name, []);
             groups.get(name).push(plan);
@@ -451,9 +496,9 @@ const ConsultationAnalysis = () => {
                 };
             })
             .sort((a, b) => b.patientCount - a.patientCount || b.amountAgreementRate - a.amountAgreementRate);
-    }, [consultationConsultantData, selectedYear, selectedMonth, selectedMonthPlans]);
+    }, [consultationConsultantData, selectedYear, selectedMonth, filteredPlans]);
 
-    const consultantPeriodRows = useMemo(() => {
+    const consultantRows = useMemo(() => {
         const normalizeRow = (row) => {
             const patientCount = Number(row.patientCount || 0);
             const fullAgreed = Number(row.fullAgreed || 0);
@@ -597,50 +642,52 @@ const ConsultationAnalysis = () => {
     }, [consultationConsultantData, treatmentPlans, selectedYear, periodMonths]);
 
     const rejectedRows = useMemo(() => {
-        const stored = getRejectedSummary(selectedMonth);
-        if (stored?.rows?.length) {
-            return stored.rows.map((row, index) => ({
-                id: row.id || `${selectedYear}-${selectedMonth}-${index}`,
-                doctor: String(row.doctor || '-').trim(),
-                newPatient: String(row.newPatient || '').trim(),
-                oldPatient: String(row.oldPatient || '').trim(),
-                patientName: String(row.patientName || '-').trim(),
-                visitDate: String(row.visitDate || '-').trim(),
-                consultant: String(row.consultant || '-').trim(),
-                reason: String(row.reason || '-').trim(),
-                diagnosisAmount: Number(row.diagnosisAmount || 0),
-                consultationAmount: Number(row.consultationAmount || 0),
-                agreedAmount: Number(row.agreedAmount || 0),
-                rejectedAmount: Number(row.rejectedAmount || 0),
-                note: String(row.note || '').trim(),
-            }));
-        }
+        const makeStoredRow = (row, month, index) => ({
+            id: row.id || `${selectedYear}-${month}-${index}`,
+            doctor: String(row.doctor || '-').trim(),
+            newPatient: String(row.newPatient || '').trim(),
+            oldPatient: String(row.oldPatient || '').trim(),
+            patientName: String(row.patientName || '-').trim(),
+            visitDate: String(row.visitDate || '-').trim(),
+            consultant: String(row.consultant || '-').trim(),
+            reason: String(row.reason || '-').trim(),
+            diagnosisAmount: Number(row.diagnosisAmount || 0),
+            consultationAmount: Number(row.consultationAmount || 0),
+            agreedAmount: Number(row.agreedAmount || 0),
+            rejectedAmount: Number(row.rejectedAmount || 0),
+            note: String(row.note || '').trim(),
+        });
 
-        return selectedMonthPlans
-            .filter(plan => isRejectedStatus(plan.status))
-            .map((plan, index) => {
-                const diagnosisAmount = getFieldNumber(plan, ['diagnosisAmount', 'diagnosisFee', '진단금액']);
-                const consultationAmount = getFieldNumber(plan, ['consultationAmount', 'counselAmount', 'contractAmount', '상담금액']);
-                const agreedAmount = getFieldNumber(plan, ['finalAgreedAmount', 'agreedAmount', '최종동의금액']);
-                const explicitRejectedAmount = getFieldNumber(plan, ['rejectedAmount', 'notAgreedAmount', '비동의금액']);
-                const rejectedAmount = explicitRejectedAmount || Math.max(consultationAmount - agreedAmount, 0);
+        const makeFallbackRow = (plan, month, index) => {
+            const diagnosisAmount = getFieldNumber(plan, ['diagnosisAmount', 'diagnosisFee']);
+            const consultationAmount = getFieldNumber(plan, ['consultationAmount', 'counselAmount', 'contractAmount']);
+            const agreedAmount = getFieldNumber(plan, ['finalAgreedAmount', 'agreedAmount', 'contractAmount']);
+            const explicitRejectedAmount = getFieldNumber(plan, ['rejectedAmount', 'notAgreedAmount']);
+            return {
+                id: `${getFieldText(plan, ['chartNo', 'patientName'], 'row')}-${month}-${index}`,
+                doctor: getFieldText(plan, ['doctor', 'doctorName', 'diagnosisDoctor'], '-'),
+                newPatient: getFieldNumber(plan, ['newPatientCount', 'newPatients']) > 0 ? '1명' : '0명',
+                oldPatient: getFieldNumber(plan, ['oldPatientCount', 'oldPatients']) > 0 ? '1명' : '0명',
+                patientName: getFieldText(plan, ['patientName', 'name'], '-'),
+                visitDate: getFieldText(plan, ['visitDate', 'createdAt', 'date'], '-'),
+                consultant: getConsultantName(plan),
+                reason: getFieldText(plan, ['rejectReason', 'rejectedReason', 'notAgreeReason', 'reason'], getFieldText(plan, ['status'], '-')),
+                diagnosisAmount,
+                consultationAmount,
+                agreedAmount,
+                rejectedAmount: explicitRejectedAmount || Math.max(consultationAmount - agreedAmount, 0),
+            };
+        };
 
-                return {
-                    id: `${getFieldText(plan, ['chartNo', 'patientName', '환자성함'], 'row')}-${index}`,
-                    doctor: getFieldText(plan, ['doctor', 'doctorName', 'diagnosisDoctor', '담당 Dr(진단)', '담당Dr', '담당의']),
-                    newPatient: getFieldNumber(plan, ['newPatientCount', 'newPatients', '신환수']) > 0 ? '1명' : getFieldText(plan, ['newPatient', '신환'], '0명'),
-                    oldPatient: getFieldNumber(plan, ['oldPatientCount', 'oldPatients', '구환수']) > 0 ? '1명' : getFieldText(plan, ['oldPatient', '구환'], '0명'),
-                    patientName: getFieldText(plan, ['patientName', 'name', '환자성함', '환자명', '성명']),
-                    visitDate: getFieldText(plan, ['visitDate', 'createdAt', 'date', '내원날짜']),
-                    consultant: getConsultantName(plan),
-                    reason: getFieldText(plan, ['rejectReason', 'rejectedReason', 'notAgreeReason', 'reason', '미동의사유'], getFieldText(plan, ['status'], '-')),
-                    diagnosisAmount,
-                    consultationAmount,
-                    agreedAmount,
-                    rejectedAmount,
-                };
-            });
-    }, [consultationRejectedData, selectedYear, selectedMonth, selectedMonthPlans]);
+        return periodMonths.flatMap(month => {
+            const stored = getRejectedSummary(month);
+            if (stored?.rows?.length) return stored.rows.map((row, index) => makeStoredRow(row, month, index));
+
+            return filteredPlans
+                .filter(plan => getPlanMonth(plan) === month && isRejectedStatus(plan.status))
+                .map((plan, index) => makeFallbackRow(plan, month, index));
+        });
+    }, [consultationRejectedData, selectedYear, periodMonths, filteredPlans]);
 
     const rejectedTotalAmount = rejectedRows.reduce((sum, row) => sum + row.rejectedAmount, 0);
     const consultationInsightText = (() => {
@@ -695,14 +742,14 @@ const ConsultationAnalysis = () => {
             </div>
 
             <DashboardCard
-                title={`전체 상담현황 [${selectedYear.slice(2)}년 ${selectedMonth}]`}
-                subtitle="선택 월 기준 상담 지표"
+                title={`전체 상담현황 [${selectedYear.slice(2)}년 ${periodLabel}]`}
+                subtitle={`${periodLabel} 기준 상담 지표`}
                 headerRight={
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700 }}>조회 월</span>
                         <select
-                            value={selectedMonth}
-                            onChange={(e) => setSelectedMonth(e.target.value)}
+                            value={periodLabel}
+                            disabled
                             style={{
                                 height: 38,
                                 border: '1px solid var(--border-color)',
@@ -714,7 +761,7 @@ const ConsultationAnalysis = () => {
                                 outline: 'none',
                             }}
                         >
-                            {periodMonths.map(month => <option key={month} value={month}>{month}</option>)}
+                            <option value={periodLabel}>{periodLabel}</option>
                         </select>
                     </div>
                 }
@@ -894,6 +941,18 @@ const ConsultationAnalysis = () => {
 
             <DashboardCard title="상담 현황 추이" subtitle={`${periodLabel} 기준 금액, 상담건수, 동의율`}>
                 <div style={{ height: 360, width: '100%' }}>
+                    {isMonthlyView ? (
+                        <MonthlySnapshotBarChart
+                            data={[
+                                { name: '진단금액', value: Number(consultationTrendData[0]?.진단금액 || 0), color: '#c94f4f' },
+                                { name: '상담금액', value: Number(consultationTrendData[0]?.상담금액 || 0), color: '#7c5aa6' },
+                                { name: '최종동의금액', value: Number(consultationTrendData[0]?.최종동의금액 || 0), color: '#8fbf4d' },
+                            ]}
+                            valueLabel="금액"
+                            formatValue={formatWon}
+                            height={330}
+                        />
+                    ) : (
                     <ResponsiveContainer>
                         <ComposedChart data={consultationTrendData} margin={{ top: 28, right: 42, left: 18, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -937,6 +996,7 @@ const ConsultationAnalysis = () => {
                             />
                         </ComposedChart>
                     </ResponsiveContainer>
+                    )}
                 </div>
 
                 <div className="treatment-data-table-container" style={{ marginTop: '1rem' }}>
@@ -980,14 +1040,14 @@ const ConsultationAnalysis = () => {
     const renderConsultantTab = () => (
         <div className="dashboard-stack">
             <DashboardCard
-                title={`상담자별 전체 상담 건수 및 동의율 [${selectedYear.slice(2)}년 ${selectedMonth}]`}
-                subtitle="선택 월 기준 상담자별 성과"
+                title={`상담자별 전체 상담 건수 및 동의율 [${selectedYear.slice(2)}년 ${periodLabel}]`}
+                subtitle={`${periodLabel} 기준 상담자별 성과`}
                 headerRight={
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700 }}>조회 월</span>
                         <select
-                            value={selectedMonth}
-                            onChange={(e) => setSelectedMonth(e.target.value)}
+                            value={periodLabel}
+                            disabled
                             style={{
                                 height: 38,
                                 border: '1px solid var(--border-color)',
@@ -999,7 +1059,7 @@ const ConsultationAnalysis = () => {
                                 outline: 'none',
                             }}
                         >
-                            {periodMonths.map(month => <option key={month} value={month}>{month}</option>)}
+                            <option value={periodLabel}>{periodLabel}</option>
                         </select>
                     </div>
                 }
@@ -1058,6 +1118,19 @@ const ConsultationAnalysis = () => {
 
             <DashboardCard title="상담자별 금액대비 동의율" subtitle={`${selectedYear}년 ${periodLabel} 월별 기준`}>
                 <div style={{ height: 340, width: '100%' }}>
+                    {isMonthlyView ? (
+                        <MonthlySnapshotBarChart
+                            data={consultantRows.map((row, index) => ({
+                                name: row.name,
+                                value: Number(row.amountAgreementRate || 0),
+                                color: CONSULTANT_COLORS[index % CONSULTANT_COLORS.length],
+                                detail: `상담금액 ${formatWon(row.consultationAmount)}`,
+                            }))}
+                            valueLabel="금액대비 동의율"
+                            formatValue={(value) => `${Number(value).toFixed(1)}%`}
+                            height={310}
+                        />
+                    ) : (
                     <ResponsiveContainer>
                         <BarChart data={consultantMonthlyChart.data} margin={{ top: 28, right: 24, left: 8, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -1080,6 +1153,7 @@ const ConsultationAnalysis = () => {
                             ))}
                         </BarChart>
                     </ResponsiveContainer>
+                    )}
                 </div>
             </DashboardCard>
         </div>
@@ -1145,7 +1219,7 @@ const ConsultationAnalysis = () => {
         <div className="dashboard-stack">
             <div className="patient-kpi-row">
                 {[
-                    { label: '비동의금액 합계', value: formatWon(rejectedTotalAmount), sub: `${selectedYear}년 ${selectedMonth} 기준`, color: '#ef4444', icon: UserX },
+                    { label: '비동의금액 합계', value: formatWon(rejectedTotalAmount), sub: `${selectedYear}년 ${periodLabel} 기준`, color: '#ef4444', icon: UserX },
                     { label: '신환 수', value: `${rejectedNewPatientCount.toLocaleString()}명`, sub: '미동의 환자 기준', color: '#3b82f6', icon: UserCheck },
                     { label: '구환 수', value: `${rejectedOldPatientCount.toLocaleString()}명`, sub: '미동의 환자 기준', color: '#64748b', icon: Users },
                 ].map(item => {
@@ -1161,14 +1235,14 @@ const ConsultationAnalysis = () => {
             </div>
 
             <DashboardCard
-                title={`미동의 환자 현황 [${selectedYear.slice(2)}년 ${selectedMonth}]`}
-                subtitle="선택 월 기준 미동의 환자 상세"
+                title={`미동의 환자 현황 [${selectedYear.slice(2)}년 ${periodLabel}]`}
+                subtitle={`${periodLabel} 기준 미동의 환자 상세`}
                 headerRight={
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700 }}>조회 월</span>
                         <select
-                            value={selectedMonth}
-                            onChange={(e) => setSelectedMonth(e.target.value)}
+                            value={periodLabel}
+                            disabled
                             style={{
                                 height: 38,
                                 border: '1px solid var(--border-color)',
@@ -1180,7 +1254,7 @@ const ConsultationAnalysis = () => {
                                 outline: 'none',
                             }}
                         >
-                            {periodMonths.map(month => <option key={month} value={month}>{month}</option>)}
+                            <option value={periodLabel}>{periodLabel}</option>
                         </select>
                     </div>
                 }
@@ -1275,7 +1349,16 @@ const ConsultationAnalysis = () => {
                     <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>상담 동의율과 미동의 환자 흐름을 분석합니다.</p>
                 </div>
 
-                <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+                <AnalysisPeriodControls
+                    selectedYear={selectedYear}
+                    availableYears={availableYears}
+                    onYearChange={setSelectedYear}
+                    half={half}
+                    onHalfChange={setHalf}
+                    monthFilter={monthFilter}
+                    onMonthFilterChange={setMonthFilter}
+                />
+                <div style={{ display: 'none' }}>
                     <div className="year-selector-container">
                         <button className="year-select-btn" onClick={() => setIsYearOpen(!isYearOpen)}>
                             <Calendar size={16} />
@@ -1333,7 +1416,7 @@ const ConsultationAnalysis = () => {
                 categoryKey="consultation"
                 subCategoryKey={subTab}
                 year={selectedYear}
-                period={half}
+                period={monthFilter !== 'all' ? `month-${monthFilter}` : half}
                 periodLabel={periodLabel}
                 defaultInsight={consultationInsightText}
             />

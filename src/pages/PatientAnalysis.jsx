@@ -8,7 +8,9 @@ import {
     Wrench, PlusCircle, Stethoscope
 } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import MonthlySnapshotBarChart from '../components/MonthlySnapshotBarChart';
 import ManagementInsight from '../components/ManagementInsight';
+import AnalysisPeriodControls from '../components/AnalysisPeriodControls';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
@@ -148,6 +150,7 @@ const PatientAnalysis = () => {
     const activeClinicId = getActiveAnalyticsClinicId(clinicId);
 
     const [half, setHalf] = useState('all');
+    const [monthFilter, setMonthFilter] = useState('all');
     const [subTab, setSubTab] = useState('newOld');
     const [selectedYear, setSelectedYear] = useState(() => getCurrentYearString());
     const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
@@ -218,10 +221,14 @@ const PatientAnalysis = () => {
 
 
     const currentHalfData = useMemo(() => {
+        if (monthFilter !== 'all') return patientData.filter(row => row.month === monthFilter);
         if (half === 'all') return patientData;
         return half === 'first' ? patientData.slice(0, 6) : patientData.slice(6, 12);
-    }, [half, patientData]);
-    const insightPeriodLabel = half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
+    }, [half, monthFilter, patientData]);
+    const isMonthlyView = monthFilter !== 'all';
+    const insightPeriodLabel = monthFilter !== 'all'
+        ? monthFilter
+        : half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
     const insightNewPatients = currentHalfData.reduce((sum, row) => sum + Number(row?.newPt || 0), 0);
     const insightOldPatients = currentHalfData.reduce((sum, row) => sum + Number(row?.oldPt || 0), 0);
     const insightTotalPatients = insightNewPatients + insightOldPatients;
@@ -294,6 +301,25 @@ const PatientAnalysis = () => {
                                 {/* 막대 차트 */}
                                 <DashboardCard title="월별 환자수 추이" subtitle="신환 · 구환 · 총합">
                                     <div style={{ height: 320, width: '100%' }}>
+                                        {isMonthlyView ? (
+                                            <MonthlySnapshotBarChart
+                                                data={[
+                        {
+                          name: '총 내원 환자수',
+                          value: Number(
+                            currentHalfData[0]?.total
+                            ?? (Number(currentHalfData[0]?.newPt || 0) + Number(currentHalfData[0]?.oldPt || 0))
+                          ),
+                          color: '#94a3b8',
+                        },
+                                                    { name: '구환', value: Number(currentHalfData[0]?.oldPt || 0), color: '#6366f1' },
+                                                    { name: '신환', value: Number(currentHalfData[0]?.newPt || 0), color: '#22c55e' },
+                                                ]}
+                                                valueLabel="환자수"
+                                                formatValue={(value) => `${Number(value).toLocaleString()}명`}
+                                                height={290}
+                                            />
+                                        ) : (
                                         <ResponsiveContainer>
                                             <BarChart data={currentHalfData} margin={{ top: 24, right: 16, left: 0, bottom: 0 }}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -309,6 +335,7 @@ const PatientAnalysis = () => {
                                                 </Bar>
                                             </BarChart>
                                         </ResponsiveContainer>
+                                        )}
                                     </div>
                                 </DashboardCard>
 
@@ -503,6 +530,18 @@ const PatientAnalysis = () => {
                                 {/* 좌: 의사별 그룹 바차트 */}
                                 <DashboardCard title="의사별 월간 환자수" subtitle="담당 의사 기준">
                                     <div style={{ height: 350, width: '100%' }}>
+                                        {isMonthlyView ? (
+                                            <MonthlySnapshotBarChart
+                                                data={doctorTotals.map((doctor) => ({
+                                                    name: doctor.name,
+                                                    value: doctor.total,
+                                                    color: doctor.color,
+                                                }))}
+                                                valueLabel="환자수"
+                                                formatValue={(value) => `${Number(value).toLocaleString()}명`}
+                                                height={320}
+                                            />
+                                        ) : (
                                         <ResponsiveContainer>
                                             <BarChart data={doctorChartData} margin={{ top: 24, right: 12, left: 0, bottom: 0 }} barCategoryGap="12%" barGap={2}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -517,6 +556,7 @@ const PatientAnalysis = () => {
                                                 ))}
                                             </BarChart>
                                         </ResponsiveContainer>
+                                        )}
                                     </div>
                                 </DashboardCard>
 
@@ -741,6 +781,18 @@ const PatientAnalysis = () => {
                                 {/* 좌: 월별 종류 그룹 바차트 */}
                                 <DashboardCard title="기공물 종류별 월간 의뢰 현황" subtitle="의뢰 건수 상위 10개">
                                     <div style={{ height: 350, width: '100%' }}>
+                                        {isMonthlyView ? (
+                                            <MonthlySnapshotBarChart
+                                                data={chartLabSeries.map((series) => ({
+                                                    name: series.name,
+                                                    value: series.getValue(currentHalfData[0] || {}),
+                                                    color: series.color,
+                                                }))}
+                                                valueLabel="의뢰 건수"
+                                                formatValue={(value) => `${Number(value).toLocaleString()}건`}
+                                                height={320}
+                                            />
+                                        ) : (
                                         <ResponsiveContainer>
                                             <BarChart data={labChartData} margin={{ top: 24, right: 12, left: 0, bottom: 0 }} barCategoryGap="10%" barGap={2}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -755,6 +807,7 @@ const PatientAnalysis = () => {
                                                 ))}
                                             </BarChart>
                                         </ResponsiveContainer>
+                                        )}
                                     </div>
                                 </DashboardCard>
 
@@ -872,7 +925,16 @@ const PatientAnalysis = () => {
                     </p>
                 </div>
 
-                <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+                <AnalysisPeriodControls
+                    selectedYear={selectedYear}
+                    availableYears={availableYears}
+                    onYearChange={setSelectedYear}
+                    half={half}
+                    onHalfChange={setHalf}
+                    monthFilter={monthFilter}
+                    onMonthFilterChange={setMonthFilter}
+                />
+                <div style={{ display: 'none' }}>
                     {/* 연도 선택 */}
                     <div className="year-selector-container">
                         <button className="year-select-btn" onClick={() => setIsYearOpen(!isYearOpen)}>
@@ -931,7 +993,7 @@ const PatientAnalysis = () => {
                 categoryKey="patient"
                 subCategoryKey={subTab}
                 year={selectedYear}
-                period={half}
+                period={monthFilter !== 'all' ? `month-${monthFilter}` : half}
                 periodLabel={insightPeriodLabel}
                 defaultInsight={patientInsightText}
             />

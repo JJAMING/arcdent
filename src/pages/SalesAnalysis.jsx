@@ -1,17 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { 
+import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Legend, ComposedChart, LabelList, PieChart, Pie, Cell, Line,
   ScatterChart, Scatter, ZAxis
 } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  BarChart3, PieChart as PieIcon, UserPlus, UserCheck, 
-  Award, Activity, FileText, TrendingUp, DollarSign, 
+import {
+  BarChart3, PieChart as PieIcon, UserPlus, UserCheck,
+  Award, Activity, FileText, TrendingUp, DollarSign,
   Users, ChevronRight, Calculator, Calendar, ChevronDown
 } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import MonthlySnapshotBarChart from '../components/MonthlySnapshotBarChart';
+import MonthlySnapshotDetailTable from '../components/MonthlySnapshotDetailTable';
 import ManagementInsight from '../components/ManagementInsight';
+import AnalysisPeriodControls from '../components/AnalysisPeriodControls';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
@@ -135,11 +138,12 @@ const SalesAnalysis = () => {
   const { clinicId } = useAuth();
   const activeClinicId = getActiveAnalyticsClinicId(clinicId);
   const [half, setHalf] = useState('all'); // 기본: 전체
+  const [monthFilter, setMonthFilter] = useState('all');
   const [subTab, setSubTab] = useState('total'); // 기본탭: 총 매출 현황
   const [selectedYear, setSelectedYear] = useState(() => getCurrentYearString());
   const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
   const [isYearOpen, setIsYearOpen] = useState(false);
-  
+
   const [salesDataMap, setSalesDataMap] = useState(() => ({ [getCurrentYearString()]: createEmptySalesData() }));
   const [salesData, setSalesData] = useState(() => createEmptySalesData());
   const [agreedPatients, setAgreedPatients] = useState([]);
@@ -207,12 +211,12 @@ const SalesAnalysis = () => {
         }
 
         if (cancelled) return;
-        
+
         const years = Object.keys(finalMap).sort((a, b) => b - a);
         const yearOptions = getDefaultYearOptions(years);
         setAvailableYears(yearOptions);
         setSalesDataMap(finalMap);
-        
+
         // 현재 선택된 연도의 데이터로 초기화
         const initialYear = yearOptions.includes(selectedYear) ? selectedYear : currentYear;
         setSelectedYear(initialYear);
@@ -259,11 +263,58 @@ const SalesAnalysis = () => {
     }
   };
 
-  const currentHalfData = 
-    half === 'all' ? (Array.isArray(salesData) ? salesData : []) :
-    half === 'first' ? (Array.isArray(salesData) ? salesData.slice(0, 6) : []) : 
-    (Array.isArray(salesData) ? salesData.slice(6, 12) : []);
-  const insightPeriodLabel = half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
+  const currentHalfData = monthFilter !== 'all'
+    ? (Array.isArray(salesData) ? salesData.filter(row => row.month === monthFilter) : [])
+    : half === 'all' ? (Array.isArray(salesData) ? salesData : [])
+      : half === 'first' ? (Array.isArray(salesData) ? salesData.slice(0, 6) : [])
+        : (Array.isArray(salesData) ? salesData.slice(6, 12) : []);
+  const isMonthlyView = monthFilter !== 'all';
+  const selectedMonthlySalesIndex = isMonthlyView && Array.isArray(salesData)
+    ? salesData.findIndex((row) => row?.month === monthFilter)
+    : -1;
+  const selectedMonthlySales = selectedMonthlySalesIndex >= 0
+    ? salesData[selectedMonthlySalesIndex]
+    : null;
+  const previousMonthlySales = selectedMonthlySalesIndex > 0
+    ? salesData[selectedMonthlySalesIndex - 1]
+    : null;
+  const monthlySalesDetailRows = isMonthlyView && selectedMonthlySales
+    ? [
+        { key: 'netSales', label: '순매출', unit: '원', color: '#3b82f6' },
+        { key: 'insurance', label: '보험청구', unit: '원', color: '#10b981' },
+        { key: 'total', label: '총매출', unit: '원', color: '#f59e0b' },
+        { key: 'newPatient', label: '신환 수', unit: '명', color: '#ec4899' },
+        { key: 'agreed', label: '동의 건수', unit: '건', color: '#8b5cf6' },
+      ].map((metric) => {
+        const currentValue = Number(selectedMonthlySales?.[metric.key] || 0);
+        const previousValue = previousMonthlySales
+          ? Number(previousMonthlySales?.[metric.key] || 0)
+          : null;
+        const changeValue = previousValue === null ? null : currentValue - previousValue;
+        const changeRate = previousValue && previousValue > 0
+          ? (changeValue / previousValue) * 100
+          : null;
+        const trendValues = salesData.map((row) => Number(row?.[metric.key] || 0));
+        const trendMaximum = Math.max(...trendValues, 1);
+        const cumulativeValue = salesData
+          .slice(0, selectedMonthlySalesIndex + 1)
+          .reduce((sum, row) => sum + Number(row?.[metric.key] || 0), 0);
+
+        return {
+          ...metric,
+          currentValue,
+          previousValue,
+          changeValue,
+          changeRate,
+          trendValues,
+          trendMaximum,
+          cumulativeValue,
+        };
+      })
+    : [];
+  const insightPeriodLabel = monthFilter !== 'all'
+    ? monthFilter
+    : half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
   const insightSalesTotal = currentHalfData.reduce((sum, row) => sum + Number(row?.total || 0), 0);
   const insightNetSales = currentHalfData.reduce((sum, row) => sum + Number(row?.netSales || 0), 0);
   const insightInsurance = currentHalfData.reduce((sum, row) => sum + Number(row?.insurance || 0), 0);
@@ -302,7 +353,7 @@ const SalesAnalysis = () => {
     }
   })();
 
-  
+
   // --- 연도 정규화 및 필터링 유틸리티 ---
   const normalizeYear = (val) => {
     if (!val) return '';
@@ -346,7 +397,7 @@ const SalesAnalysis = () => {
     const targetY = normalizeYear(selectedYear);
     return (agreedPatients || []).filter(p => {
       const pYear = normalizeYear(p.year || (p.createdAt ? p.createdAt.split('-')[0] : ''));
-      const finalPYear = pYear || getCurrentYearString(); 
+      const finalPYear = pYear || getCurrentYearString();
       return finalPYear === targetY;
     });
   }, [agreedPatients, selectedYear]);
@@ -369,7 +420,7 @@ const SalesAnalysis = () => {
   const doctorNames = React.useMemo(() => {
     const names = new Set();
     const dataArray = Array.isArray(salesData) ? salesData : [];
-    
+
     dataArray.forEach(month => {
       if (month && typeof month === 'object' && month.doctorData && typeof month.doctorData === 'object') {
         Object.keys(month.doctorData).forEach(name => {
@@ -386,15 +437,15 @@ const SalesAnalysis = () => {
     const dataArray = Array.isArray(currentHalfData) ? currentHalfData : [];
     return dataArray.map(month => {
       if (!month || typeof month !== 'object') return { month: 'Unknown', total: 0, top2Names: [] };
-      
-      const entry = { 
+
+      const entry = {
         ...month,
-        month: month.month || 'Unknown', 
+        month: month.month || 'Unknown',
         total: isNaN(Number(month.total)) ? 0 : Number(month.total),
         netSales: isNaN(Number(month.netSales)) ? 0 : Number(month.netSales),
         insurance: isNaN(Number(month.insurance)) ? 0 : Number(month.insurance)
       };
-      
+
       const doctorValues = [];
       let totalPure = 0;
       let totalInsurance = 0;
@@ -402,10 +453,10 @@ const SalesAnalysis = () => {
 
       doctorNames.forEach(name => {
         const dData = (month.doctorData && typeof month.doctorData === 'object') ? month.doctorData[name] : null;
-        
+
         let pureVal = 0;
         let insVal = 0;
-        
+
         if (dData) {
           hasDoctorData = true;
           if (typeof dData === 'object') {
@@ -415,7 +466,7 @@ const SalesAnalysis = () => {
             pureVal = Number(dData || 0);
           }
         }
-        
+
         totalPure += pureVal;
         totalInsurance += insVal;
         const combined = pureVal + insVal;
@@ -444,7 +495,7 @@ const SalesAnalysis = () => {
         const mStr = getAgreedPatientMonth(p);
         const status = (p.status || '').replace(/\s+/g, '');
         const statusMatch = status.includes('치료종결') || status.includes('진행중');
-        
+
         return mStr === entry.month && statusMatch;
       }).length;
 
@@ -482,26 +533,26 @@ const SalesAnalysis = () => {
     }
   });
 
-  const currentHalfAgreedStats = 
+  const currentHalfAgreedStats =
     half === 'all' ? agreedMonthlyStats :
-    half === 'first' ? agreedMonthlyStats.slice(0, 6) : 
+    half === 'first' ? agreedMonthlyStats.slice(0, 6) :
     agreedMonthlyStats.slice(6, 12);
 
   // --- 매출 분석 정리 (Summary) 데이터 집계 ---
   const summaryMonthlyMetrics = React.useMemo(() => {
     return doctorChartData.map(d => {
-      const metrics = { 
+      const metrics = {
         month: d.month,
         pureRatio: d.total > 0 ? ((d.netSales / d.total) * 100).toFixed(1) : 0,
         insRatio: d.total > 0 ? ((d.insurance / d.total) * 100).toFixed(1) : 0,
-        
+
         // 1. 진료비 상위 비중 (순매출 대비 상위 20명 수납액)
         topFeeRatio: 0,
         // 2. 동의환자 수납율 (개별 달 기준)
         agreedCollectionRate: 0,
         // 3. 신환 수익 비중
         newPatientRatio: d.netSales > 0 ? ((Number(d.newPatientSales || 0) / d.netSales) * 100).toFixed(1) : 0,
-        
+
         // 결제 수단 비중 (순매출 대비)
         cardRatio: d.netSales > 0 ? ((Number(d.card || 0) / d.netSales) * 100).toFixed(1) : 0,
         cashRatio: d.netSales > 0 ? ((Number(d.cash || 0) / d.netSales) * 100).toFixed(1) : 0,
@@ -520,7 +571,7 @@ const SalesAnalysis = () => {
         .sort((a, b) => b - a)
         .slice(0, 20)
         .reduce((sum, val) => sum + val, 0);
-      
+
       metrics.topFeeRatio = d.netSales > 0 ? ((top20Sum / d.netSales) * 100).toFixed(1) : 0;
 
       // 동의환자 수납율 계산
@@ -571,6 +622,15 @@ const SalesAnalysis = () => {
   const [agreedPage, setAgreedPage] = useState(1);
   const ITEMS_PER_PAGE = 20;
 
+  useEffect(() => {
+    const scopedMonth = monthFilter !== 'all' ? monthFilter : '전체';
+    setSelectedMonth(scopedMonth);
+    setSelectedAgreedMonth(scopedMonth);
+    setSelectedTopMonth(scopedMonth);
+    setSelectedDoctorMonth(scopedMonth);
+    setAgreedPage(1);
+  }, [selectedYear, half, monthFilter]);
+
   // --- 탭별 렌더링 로직 (7개 탭) ---
   const renderTabContent = () => {
     switch (subTab) {
@@ -579,59 +639,127 @@ const SalesAnalysis = () => {
           <div className="tab-pane active">
             <div className="dashboard-stack">
               <DashboardCard title="월별 매출 추합 및 목표 대비">
-                <ResponsiveContainer width="100%" height={400}>
-                  <ComposedChart data={doctorChartData} margin={{ left: 30, right: 30, top: 56, bottom: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-                    <XAxis dataKey="month" stroke="var(--text-secondary)" tick={{ dy: 10 }} />
-                    <YAxis 
-                      stroke="var(--text-secondary)" 
-                      width={80}
-                      domain={[0, (dataMax) => dataMax * 1.4]}
-                      tickFormatter={(v) => `${Math.floor(v/10000).toLocaleString()}만`} 
-                    />
-                    <Tooltip formatter={(v) => `${v.toLocaleString()}원`} contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }} />
-                    <Legend verticalAlign="top" height={36}/>
-                    <Bar dataKey="netSales" name="순매출" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
-                    <Bar dataKey="insurance" name="보험청구" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40} />
-                    <Line type="monotone" dataKey="total" name="총합계" stroke="#f59e0b" strokeWidth={3} dot={{ r: 5, fill: '#f59e0b' }}>
-                      <LabelList dataKey="total" content={<CustomizedLineLabel stroke="#f59e0b" />} />
-                    </Line>
-                  </ComposedChart>
-                </ResponsiveContainer>
+                {isMonthlyView ? (
+                  <MonthlySnapshotBarChart
+                    valueLabel="금액"
+                    formatValue={(value) => `${Number(value || 0).toLocaleString()}원`}
+                    data={doctorChartData.flatMap((row) => [
+                      { name: '총매출', value: row.total, color: '#f59e0b' },
+                      { name: '순매출', value: row.netSales, color: '#3b82f6' },
+                      { name: '보험청구', value: row.insurance, color: '#10b981' },
+                    ])}
+                  />
+                ) : (
+                  <ResponsiveContainer width="100%" height={400}>
+                    <ComposedChart data={doctorChartData} margin={{ left: 30, right: 30, top: 56, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+                      <XAxis dataKey="month" stroke="var(--text-secondary)" tick={{ dy: 10 }} />
+                      <YAxis
+                        stroke="var(--text-secondary)"
+                        width={80}
+                        domain={[0, (dataMax) => dataMax * 1.4]}
+                        tickFormatter={(v) => `${Math.floor(v/10000).toLocaleString()}만`}
+                      />
+                      <Tooltip formatter={(v) => `${v.toLocaleString()}원`} contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }} />
+                      <Legend verticalAlign="top" height={36}/>
+                      <Bar dataKey="netSales" name="순매출" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
+                      <Bar dataKey="insurance" name="보험청구" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40} />
+                      <Line type="monotone" dataKey="total" name="총합계" stroke="#f59e0b" strokeWidth={3} dot={{ r: 5, fill: '#f59e0b' }}>
+                        <LabelList dataKey="total" content={<CustomizedLineLabel stroke="#f59e0b" />} />
+                      </Line>
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                )}
               </DashboardCard>
-              
+
               <DashboardCard title="매출 통계 상세 지표">
                 <div className="sales-data-table-container">
-                  <table className="sales-data-table">
-                    <thead>
-                      <tr>
-                        <th className="row-header">구분</th>
-                        {doctorChartData.map(d => <th key={d.month}>{d.month}</th>)}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td className="row-header"><span className="marker blue"></span> 순매출</td>
-                        {doctorChartData.map(d => <td key={d.month}>{Number(d.netSales || 0).toLocaleString()}원</td>)}
-                      </tr>
-                      <tr>
-                        <td className="row-header"><span className="marker green"></span> 보험청구</td>
-                        {doctorChartData.map(d => <td key={d.month}>{Number(d.insurance || 0).toLocaleString()}원</td>)}
-                      </tr>
-                      <tr className="font-bold">
-                        <td className="row-header"><span className="marker-yellow"></span> 총매출</td>
-                        {doctorChartData.map(d => <td key={d.month}>{Number(d.total || 0).toLocaleString()}원</td>)}
-                      </tr>
-                      <tr>
-                        <td className="row-header"><TrendingUp size={14} /> 신환 수</td>
-                        {currentHalfData.map(d => <td key={d.month}>{d.newPatient || 0}</td>)}
-                      </tr>
-                      <tr>
-                        <td className="row-header"><Activity size={14} /> 동의 건수</td>
-                        {doctorChartData.map(d => <td key={d.month}>{d.agreed || 0}</td>)}
-                      </tr>
-                    </tbody>
-                  </table>
+                  {isMonthlyView ? (
+                    <table className="sales-data-table sales-month-snapshot-table">
+                      <thead>
+                        <tr>
+                          <th className="row-header">구분</th>
+                          <th>{monthFilter}</th>
+                          <th>전월 대비</th>
+                          <th>연간 누적</th>
+                          <th>월별 추이</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {monthlySalesDetailRows.map((row) => {
+                          const formattedValue = (value) => `${Number(value || 0).toLocaleString()}${row.unit}`;
+                          const isIncrease = Number(row.changeValue || 0) > 0;
+                          const isDecrease = Number(row.changeValue || 0) < 0;
+
+                          return (
+                            <tr key={row.key}>
+                              <td className="row-header">
+                                <span className="marker" style={{ background: row.color }}></span>
+                                {row.label}
+                              </td>
+                              <td className="snapshot-value">{formattedValue(row.currentValue)}</td>
+                              <td>
+                                {row.previousValue === null ? (
+                                  <span className="snapshot-empty">비교 데이터 없음</span>
+                                ) : (
+                                  <div className={`snapshot-change ${isIncrease ? 'increase' : isDecrease ? 'decrease' : 'neutral'}`}>
+                                    <strong>{isIncrease ? '+' : ''}{formattedValue(row.changeValue)}</strong>
+                                    <small>{row.changeRate === null ? '전월 0' : `${isIncrease ? '+' : ''}${row.changeRate.toFixed(1)}%`}</small>
+                                  </div>
+                                )}
+                              </td>
+                              <td className="snapshot-cumulative">{formattedValue(row.cumulativeValue)}</td>
+                              <td>
+                                <div className="sales-mini-trend" title={`${row.label} 월별 추이`}>
+                                  {row.trendValues.map((value, index) => (
+                                    <span
+                                      key={`${row.key}-${index}`}
+                                      className={index === selectedMonthlySalesIndex ? 'active' : ''}
+                                      style={{
+                                        height: `${Math.max(8, (value / row.trendMaximum) * 100)}%`,
+                                        backgroundColor: index === selectedMonthlySalesIndex ? row.color : `${row.color}55`,
+                                      }}
+                                    />
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <table className="sales-data-table">
+                      <thead>
+                        <tr>
+                          <th className="row-header">구분</th>
+                          {doctorChartData.map(d => <th key={d.month}>{d.month}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="row-header"><span className="marker blue"></span> 순매출</td>
+                          {doctorChartData.map(d => <td key={d.month}>{Number(d.netSales || 0).toLocaleString()}원</td>)}
+                        </tr>
+                        <tr>
+                          <td className="row-header"><span className="marker green"></span> 보험청구</td>
+                          {doctorChartData.map(d => <td key={d.month}>{Number(d.insurance || 0).toLocaleString()}원</td>)}
+                        </tr>
+                        <tr className="font-bold">
+                          <td className="row-header"><span className="marker-yellow"></span> 총매출</td>
+                          {doctorChartData.map(d => <td key={d.month}>{Number(d.total || 0).toLocaleString()}원</td>)}
+                        </tr>
+                        <tr>
+                          <td className="row-header"><TrendingUp size={14} /> 신환 수</td>
+                          {currentHalfData.map(d => <td key={d.month}>{d.newPatient || 0}</td>)}
+                        </tr>
+                        <tr>
+                          <td className="row-header"><Activity size={14} /> 동의 건수</td>
+                          {doctorChartData.map(d => <td key={d.month}>{d.agreed || 0}</td>)}
+                        </tr>
+                      </tbody>
+                    </table>
+                  )}
                 </div>
               </DashboardCard>
             </div>
@@ -639,8 +767,8 @@ const SalesAnalysis = () => {
         );
 
       case 'payment': // 2. 결제 분포도
-        const displayData = selectedMonth === '전체' 
-          ? currentHalfData 
+        const displayData = selectedMonth === '전체'
+          ? currentHalfData
           : currentHalfData.filter(d => d.month === selectedMonth);
 
         const paymentPieData = [
@@ -648,17 +776,17 @@ const SalesAnalysis = () => {
           { name: '현금', value: displayData.reduce((a, b) => a + (Number(b.cash) || 0), 0), color: '#10b981' },
           { name: '기타(온라인)', value: displayData.reduce((a, b) => a + (Number(b.other) || 0), 0), color: '#f59e0b' }
         ];
-        
+
         return (
           <div className="tab-pane active">
             <div className="dashboard-stack">
-              <div className="month-filter-container" style={{ marginBottom: '1rem', display: 'flex', gap: '8px' }}>
-                <button 
+              <div className="month-filter-container" style={{ display: 'none' }}>
+                <button
                   className={`filter-btn ${selectedMonth === '전체' ? 'active' : ''}`}
                   onClick={() => setSelectedMonth('전체')}
                 >전체보기</button>
                 {currentHalfData.map(d => (
-                  <button 
+                  <button
                     key={d.month}
                     className={`filter-btn ${selectedMonth === d.month ? 'active' : ''}`}
                     onClick={() => setSelectedMonth(d.month)}
@@ -682,25 +810,45 @@ const SalesAnalysis = () => {
                     </PieChart>
                   </ResponsiveContainer>
                 </DashboardCard>
-                
+
                 <DashboardCard title="월별 결제 수단 추이" className="flex-2">
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={currentHalfData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="month" tick={{ dy: 10 }} />
-                      <YAxis tickFormatter={(v) => `${Math.round(v/10000).toLocaleString()}만`} width={60} />
-                      <Tooltip formatter={(v) => `${v.toLocaleString()}원`} />
-                      <Legend />
-                      <Bar dataKey="card" name="카드" fill="#3b82f6" />
-                      <Bar dataKey="cash" name="현금" fill="#10b981" />
-                      <Bar dataKey="other" name="기타(온라인)" fill="#f59e0b" />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  {isMonthlyView ? (
+                    <MonthlySnapshotBarChart
+                      data={paymentPieData}
+                      valueLabel="수납액"
+                      formatValue={(value) => `${Number(value || 0).toLocaleString()}원`}
+                    />
+                  ) : (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <BarChart data={currentHalfData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="month" tick={{ dy: 10 }} />
+                        <YAxis tickFormatter={(v) => `${Math.round(v/10000).toLocaleString()}만`} width={60} />
+                        <Tooltip formatter={(v) => `${v.toLocaleString()}원`} />
+                        <Legend />
+                        <Bar dataKey="card" name="카드" fill="#3b82f6" />
+                        <Bar dataKey="cash" name="현금" fill="#10b981" />
+                        <Bar dataKey="other" name="기타(온라인)" fill="#f59e0b" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
                 </DashboardCard>
               </div>
 
               <DashboardCard title="월별 결제 상세 내역">
                 <div className="sales-data-table-container">
+                  {isMonthlyView ? (
+                    <MonthlySnapshotDetailTable
+                      selectedMonth={monthFilter}
+                      selectedIndex={selectedMonthlySalesIndex}
+                      monthLabels={salesData.map((item) => item.month)}
+                      rows={[
+                        { key: 'card', label: '카드', unit: '원', color: '#3b82f6', values: salesData.map((item) => Number(item.card || 0)) },
+                        { key: 'cash', label: '현금', unit: '원', color: '#10b981', values: salesData.map((item) => Number(item.cash || 0)) },
+                        { key: 'other', label: '기타(온라인)', unit: '원', color: '#f59e0b', values: salesData.map((item) => Number(item.other || 0)) },
+                      ]}
+                    />
+                  ) : (
                   <table className="sales-data-table">
                     <thead>
                       <tr>
@@ -727,6 +875,7 @@ const SalesAnalysis = () => {
                       </tr>
                     </tbody>
                   </table>
+                  )}
                 </div>
               </DashboardCard>
             </div>
@@ -738,29 +887,63 @@ const SalesAnalysis = () => {
           <div className="tab-pane active">
             <div className="dashboard-stack">
               <DashboardCard title="월별 신환 매출 기여도 비교">
-                <ResponsiveContainer width="100%" height={400}>
-                  <BarChart data={doctorChartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="month" tick={{ dy: 10 }} />
-                    <YAxis 
-                        tickFormatter={(v) => `${(v/10000).toLocaleString()}만`} 
-                        width={60} 
-                        domain={[0, (dataMax) => dataMax * 1.15]} 
-                    />
-                    <Tooltip formatter={(v) => `${Number(v).toLocaleString()}원`} />
-                    <Legend verticalAlign="top" align="right" height={36} />
-                    <Bar dataKey="netSales" name="전체 순매출" fill="#3b82f6" radius={[4, 4, 0, 0]}>
-                        <LabelList dataKey="netSales" content={<CustomizedLabel fill="#3b82f6" />} />
-                    </Bar>
-                    <Bar dataKey="newPatientSales" name="신환 매출" fill="#8b5cf6" radius={[4, 4, 0, 0]}>
-                        <LabelList dataKey="newPatientSales" content={<CustomizedLabel fill="#8b5cf6" />} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                {isMonthlyView ? (
+                  <MonthlySnapshotBarChart
+                    valueLabel="매출"
+                    formatValue={(value) => `${Number(value || 0).toLocaleString()}원`}
+                    data={doctorChartData.flatMap((row) => [
+                      { name: '전체 순매출', value: row.netSales, color: '#3b82f6' },
+                      { name: '신환 매출', value: row.newPatientSales, color: '#8b5cf6' },
+                    ])}
+                  />
+                ) : (
+                  <ResponsiveContainer width="100%" height={400}>
+                    <BarChart data={doctorChartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="month" tick={{ dy: 10 }} />
+                      <YAxis
+                          tickFormatter={(v) => `${(v/10000).toLocaleString()}만`}
+                          width={60}
+                          domain={[0, (dataMax) => dataMax * 1.15]}
+                      />
+                      <Tooltip formatter={(v) => `${Number(v).toLocaleString()}원`} />
+                      <Legend verticalAlign="top" align="right" height={36} />
+                      <Bar dataKey="netSales" name="전체 순매출" fill="#3b82f6" radius={[4, 4, 0, 0]}>
+                          <LabelList dataKey="netSales" content={<CustomizedLabel fill="#3b82f6" />} />
+                      </Bar>
+                      <Bar dataKey="newPatientSales" name="신환 매출" fill="#8b5cf6" radius={[4, 4, 0, 0]}>
+                          <LabelList dataKey="newPatientSales" content={<CustomizedLabel fill="#8b5cf6" />} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
               </DashboardCard>
-              
+
               <DashboardCard title="순수 매출 중 신환 수익 비중 (%)">
                 <div className="sales-data-table-container">
+                  {isMonthlyView ? (
+                    <MonthlySnapshotDetailTable
+                      selectedMonth={monthFilter}
+                      selectedIndex={selectedMonthlySalesIndex}
+                      monthLabels={salesData.map((item) => item.month)}
+                      rows={[
+                        { key: 'net-sales', label: '전체 순매출', unit: '원', color: '#3b82f6', values: salesData.map((item) => Number(item.netSales || 0)) },
+                        { key: 'new-patient-sales', label: '신환 매출', unit: '원', color: '#8b5cf6', values: salesData.map((item) => Number(item.newPatientSales || 0)) },
+                        {
+                          key: 'new-patient-rate',
+                          label: '신환 수익 비중',
+                          color: '#f59e0b',
+                          values: salesData.map((item) => {
+                            const netSales = Number(item.netSales || 0);
+                            return netSales > 0 ? (Number(item.newPatientSales || 0) / netSales) * 100 : 0;
+                          }),
+                          formatValue: (value) => `${Number(value || 0).toFixed(1)}%`,
+                          formatChange: (value) => `${value > 0 ? '+' : ''}${Number(value || 0).toFixed(1)}%p`,
+                          showRate: false,
+                        },
+                      ]}
+                    />
+                  ) : (
                   <table className="sales-data-table">
                     <thead>
                       <tr>
@@ -787,12 +970,13 @@ const SalesAnalysis = () => {
                           return <td key={d.month} className="highlight text-blue">{ratio.toFixed(1)}%</td>;
                         })}
                         <td className="font-bold highlight text-blue">
-                          {((doctorChartData.reduce((a,b)=>a+(Number(b.newPatientSales)||0),0) / 
+                          {((doctorChartData.reduce((a,b)=>a+(Number(b.newPatientSales)||0),0) /
                             doctorChartData.reduce((a,b)=>a+(Number(b.netSales)||0), 1)) * 100).toFixed(1)}%
                         </td>
                       </tr>
                     </tbody>
                   </table>
+                  )}
                 </div>
               </DashboardCard>
             </div>
@@ -801,7 +985,7 @@ const SalesAnalysis = () => {
 
       case 'agreed': // 4. 동의환자 수납액
         const currentAgreedMonths = currentHalfData.map(d => d.month);
-        const filteredAgreed = selectedAgreedMonth === '전체' 
+        const filteredAgreed = selectedAgreedMonth === '전체'
           ? filteredAgreedPatients.filter(p => {
               const mStr = getAgreedPatientMonth(p);
               return mStr && currentAgreedMonths.includes(mStr);
@@ -857,10 +1041,10 @@ const SalesAnalysis = () => {
         return (
           <div className="tab-pane active animated-fade-in">
             <div className="dashboard-stack">
-              <div className="month-filter-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div className="month-filter-container" style={{ display: 'none' }}>
                 {['전체', ...currentAgreedMonths].map(m => (
-                  <button 
-                    key={m} 
+                  <button
+                    key={m}
                     className={`month-filter-btn ${selectedAgreedMonth === m ? 'active' : ''}`}
                     onClick={() => {
                         setSelectedAgreedMonth(m);
@@ -901,17 +1085,17 @@ const SalesAnalysis = () => {
 
                 {/* 페이지네이션 UI */}
                 <div className="pagination-container">
-                    <button 
-                        className="pagination-btn" 
+                    <button
+                        className="pagination-btn"
                         disabled={agreedPage === 1}
                         onClick={() => setAgreedPage(1)}
                     >처음</button>
-                    <button 
-                        className="pagination-btn" 
+                    <button
+                        className="pagination-btn"
                         disabled={agreedPage === 1}
                         onClick={() => setAgreedPage(prev => Math.max(1, prev - 1))}
                     >이전</button>
-                    
+
                     {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                         let pageNum;
                         if (totalPages <= 5) pageNum = i + 1;
@@ -920,7 +1104,7 @@ const SalesAnalysis = () => {
                         else pageNum = agreedPage - 2 + i;
 
                         return (
-                            <button 
+                            <button
                                 key={pageNum}
                                 className={`pagination-number ${agreedPage === pageNum ? 'active' : ''}`}
                                 onClick={() => setAgreedPage(pageNum)}
@@ -930,13 +1114,13 @@ const SalesAnalysis = () => {
                         );
                     })}
 
-                    <button 
-                        className="pagination-btn" 
+                    <button
+                        className="pagination-btn"
                         disabled={agreedPage === totalPages}
                         onClick={() => setAgreedPage(prev => Math.min(totalPages, prev + 1))}
                     >다음</button>
-                    <button 
-                        className="pagination-btn" 
+                    <button
+                        className="pagination-btn"
                         disabled={agreedPage === totalPages}
                         onClick={() => setAgreedPage(totalPages)}
                     >끝</button>
@@ -948,8 +1132,8 @@ const SalesAnalysis = () => {
 
       case 'topFee': // 5. 진료비 상위
         const currentMonths = currentHalfData.map(d => d.month);
-        const filteredTop = selectedTopMonth === '전체' 
-          ? filteredTopPatientsRaw.filter(p => currentMonths.includes(p.month)) 
+        const filteredTop = selectedTopMonth === '전체'
+          ? filteredTopPatientsRaw.filter(p => currentMonths.includes(p.month))
           : filteredTopPatientsRaw.filter(p => {
               const m = (p.month || '');
               return m === selectedTopMonth || m.includes(selectedTopMonth.replace('월', ''));
@@ -972,7 +1156,7 @@ const SalesAnalysis = () => {
           .sort((a, b) => (b.paid || 0) - (a.paid || 0))
           .slice(0, 20);
 
-        
+
         const leftTop = sortedTop.slice(0, 10);
         const rightTop = sortedTop.slice(10, 20);
 
@@ -1023,10 +1207,10 @@ const SalesAnalysis = () => {
           <div className="tab-pane active">
             <div className="dashboard-stack">
               {/* 월별 필터 버튼 */}
-              <div className="month-filter-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div className="month-filter-container" style={{ display: 'none' }}>
                 {['전체', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'].map(m => (
-                  <button 
-                    key={m} 
+                  <button
+                    key={m}
                     className={`month-filter-btn ${selectedTopMonth === m ? 'active' : ''}`}
                     onClick={() => setSelectedTopMonth(m)}
                   >
@@ -1055,7 +1239,7 @@ const SalesAnalysis = () => {
                 <h3 style={{ fontSize: '1.2rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                    <Award size={20} color="#f59e0b" /> {selectedTopMonth} 진료비 수납 상위 환자 (TOP 20)
                 </h3>
-                
+
                 <div className="top-patients-grid">
                   <div className="top-patients-column">
                     <h4><span className="rank-badge">1 ~ 10위</span></h4>
@@ -1074,7 +1258,7 @@ const SalesAnalysis = () => {
 
       case 'doctor': // 6. 매출분석(의사)
         const doctorColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
-        
+
         if (!Array.isArray(doctorChartData) || doctorChartData.length === 0) {
           return <div className="tab-pane active"><div className="empty-state">데이터가 없습니다.</div></div>;
         }
@@ -1083,86 +1267,129 @@ const SalesAnalysis = () => {
           <div className="tab-pane active">
             <div className="dashboard-stack">
               <DashboardCard title="월별 의사 기여도 및 병원 매출 추합">
-                <ResponsiveContainer width="100%" height={450}>
-                  <ComposedChart data={doctorChartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-                    <XAxis dataKey="month" stroke="var(--text-secondary)" tick={{ dy: 10 }} />
-                    <YAxis 
-                      stroke="var(--text-secondary)" 
-                      width={80}
-                      domain={[0, (dataMax) => dataMax * 1.15]}
-                      tickFormatter={(v) => `${Math.floor(v/10000).toLocaleString()}만`} 
+                {isMonthlyView ? (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.35rem', color: 'var(--text-secondary)', fontSize: '0.84rem', fontWeight: 700 }}>
+                      병원 총매출 {Number(doctorChartData[0]?.total || 0).toLocaleString()}원
+                    </div>
+                    <MonthlySnapshotBarChart
+                      valueLabel="의사 매출"
+                      formatValue={(value) => `${Number(value || 0).toLocaleString()}원`}
+                      data={(doctorNames || []).map((name, idx) => ({
+                        name,
+                        value: Number(doctorChartData[0]?.[name] || 0),
+                        color: doctorColors[idx % doctorColors.length],
+                        detail: `병원 총매출 대비 ${Number(doctorChartData[0]?.total || 0) > 0 ? ((Number(doctorChartData[0]?.[name] || 0) / Number(doctorChartData[0]?.total || 1)) * 100).toFixed(1) : '0.0'}%`,
+                      }))}
                     />
-                    <Tooltip 
-                      formatter={(v) => `${Number(v || 0).toLocaleString()}원`} 
-                      contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }} 
-                    />
-                    <Legend verticalAlign="top" height={36}/>
-                    
-                    {/* 의사별 매출 (Stacked Bar) */}
-                    {(doctorNames || []).map((name, idx) => (
-                      <Bar 
-                        key={name} 
-                        dataKey={name} 
-                        name={name}
-                        fill={doctorColors[idx % doctorColors.length]} 
-                        barSize={15}
-                        isAnimationActive={false} 
-                      >
-                         <LabelList 
-                          dataKey={name} 
-                          position="top"
-                          content={(props) => {
-                            const { x, y, width, value, index } = props;
-                            const monthData = doctorChartData[index];
-                            if (monthData?.top2Names?.includes(name)) {
-                              const labelText = `${Number(value || 0).toLocaleString()}원`;
-                              const textWidth = labelText.length * 6.5; 
-                              return (
-                                <g>
-                                  <rect 
-                                    x={x + width / 2 - textWidth / 2 - 5} 
-                                    y={y - 25} 
-                                    width={textWidth + 10} 
-                                    height={20} 
-                                    rx={4} 
-                                    fill={doctorColors[idx % doctorColors.length]} 
-                                  />
-                                  <text 
-                                    x={x + width / 2} 
-                                    y={y - 11} 
-                                    fill="#fff" 
-                                    fontSize={10} 
-                                    textAnchor="middle" 
-                                    fontWeight="bold"
-                                  >
-                                    {labelText}
-                                  </text>
-                                </g>
-                              );
-                            }
-                            return null;
-                          }}
-                        />
-                      </Bar>
-                    ))}
-                    
-                    {/* 병원 총 매출 (Line) */}
-                    <Line 
-                      type="monotone" 
-                      dataKey="total" 
-                      name="병원 총매출" 
-                      stroke="#6366f1" 
-                      strokeWidth={3} 
-                      dot={{ r: 5, fill: '#6366f1' }}
-                      isAnimationActive={false}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
+                  </>
+                ) : (
+                  <ResponsiveContainer width="100%" height={450}>
+                    <ComposedChart data={doctorChartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+                      <XAxis dataKey="month" stroke="var(--text-secondary)" tick={{ dy: 10 }} />
+                      <YAxis
+                        stroke="var(--text-secondary)"
+                        width={80}
+                        domain={[0, (dataMax) => dataMax * 1.15]}
+                        tickFormatter={(v) => `${Math.floor(v/10000).toLocaleString()}만`}
+                      />
+                      <Tooltip
+                        formatter={(v) => `${Number(v || 0).toLocaleString()}원`}
+                        contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }}
+                      />
+                      <Legend verticalAlign="top" height={36}/>
+                      {(doctorNames || []).map((name, idx) => (
+                        <Bar
+                          key={name}
+                          dataKey={name}
+                          name={name}
+                          fill={doctorColors[idx % doctorColors.length]}
+                          barSize={15}
+                          isAnimationActive={false}
+                        >
+                           <LabelList
+                            dataKey={name}
+                            position="top"
+                            content={(props) => {
+                              const { x, y, width, value, index } = props;
+                              const monthData = doctorChartData[index];
+                              if (monthData?.top2Names?.includes(name)) {
+                                const labelText = `${Number(value || 0).toLocaleString()}원`;
+                                const textWidth = labelText.length * 6.5;
+                                return (
+                                  <g>
+                                    <rect
+                                      x={x + width / 2 - textWidth / 2 - 5}
+                                      y={y - 25}
+                                      width={textWidth + 10}
+                                      height={20}
+                                      rx={4}
+                                      fill={doctorColors[idx % doctorColors.length]}
+                                    />
+                                    <text
+                                      x={x + width / 2}
+                                      y={y - 11}
+                                      fill="#fff"
+                                      fontSize={10}
+                                      textAnchor="middle"
+                                      fontWeight="bold"
+                                    >
+                                      {labelText}
+                                    </text>
+                                  </g>
+                                );
+                              }
+                              return null;
+                            }}
+                          />
+                        </Bar>
+                      ))}
+                      <Line
+                        type="monotone"
+                        dataKey="total"
+                        name="병원 총매출"
+                        stroke="#6366f1"
+                        strokeWidth={3}
+                        dot={{ r: 5, fill: '#6366f1' }}
+                        isAnimationActive={false}
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                )}
               </DashboardCard>
-              
+
               <DashboardCard title="의사별 월간 매출 상세 지표">
                 <div className="sales-data-table-container">
+                  {isMonthlyView ? (
+                    <MonthlySnapshotDetailTable
+                      selectedMonth={monthFilter}
+                      selectedIndex={selectedMonthlySalesIndex}
+                      monthLabels={salesData.map((item) => item.month)}
+                      rows={[
+                        ...(doctorNames || []).map((name, index) => ({
+                          key: `doctor-${name}`,
+                          label: name,
+                          unit: '원',
+                          color: doctorColors[index % doctorColors.length],
+                          values: salesData.map((item) => {
+                            const value = item?.doctorData?.[name];
+                            if (typeof value === 'object' && value !== null) {
+                              return Number(value.pure || 0) + Number(value.insurance || 0);
+                            }
+                            return Number(value || 0);
+                          }),
+                        })),
+                        {
+                          key: 'hospital-total',
+                          label: '병원 총매출',
+                          unit: '원',
+                          color: '#64748b',
+                          values: salesData.map((item) => Number(item.total || 0)),
+                        },
+                      ]}
+                    />
+                  ) : (
                   <table className="sales-data-table">
                     <thead>
                       <tr>
@@ -1175,7 +1402,7 @@ const SalesAnalysis = () => {
                       {(doctorNames || []).map((name, idx) => (
                         <tr key={name}>
                           <td className="row-header">
-                            <span className="marker" style={{ backgroundColor: doctorColors[idx % doctorColors.length] }}></span> 
+                            <span className="marker" style={{ backgroundColor: doctorColors[idx % doctorColors.length] }}></span>
                             {name}
                           </td>
                           {(currentHalfData || []).map(d => {
@@ -1190,13 +1417,13 @@ const SalesAnalysis = () => {
                                 pure = Number(dData || 0);
                               }
                             }
-                            
+
                             const monthEntry = doctorChartData.find(e => e.month === d.month);
                             const combined = pure + insurance;
-                            
-                            const hospitalTotal = monthEntry ? monthEntry.total : Number(d?.total || 1); 
+
+                            const hospitalTotal = monthEntry ? monthEntry.total : Number(d?.total || 1);
                             const ratio = ((combined / (hospitalTotal || 1)) * 100).toFixed(1);
-                            
+
                             return (
                               <td key={`${d?.month}-${name}`}>
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
@@ -1209,7 +1436,7 @@ const SalesAnalysis = () => {
                           })}
                         </tr>
                       ))}
-                      
+
                       {/* 총매출 행 */}
                       <tr className="font-bold" style={{ borderTop: '2px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
                         <td className="row-header"><span className="marker-yellow"></span> 총매출</td>
@@ -1227,6 +1454,7 @@ const SalesAnalysis = () => {
                       </tr>
                     </tbody>
                   </table>
+                  )}
                 </div>
               </DashboardCard>
             </div>
@@ -1244,25 +1472,36 @@ const SalesAnalysis = () => {
             <div className="dashboard-stack">
               {/* 상단 통합 비중 차트 */}
               <DashboardCard title="월별 주요 비중 추이 (%)" subtitle="진료비 상위, 동의환자 수납율, 신환 수익 비중 비교">
-                <ResponsiveContainer width="100%" height={350}>
-                  <BarChart data={summaryMonthlyMetrics} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-                    <XAxis dataKey="month" tick={{ dy: 10 }} />
-                    <YAxis tickFormatter={(v) => `${v}%`} width={50} domain={[0, (dataMax) => Math.max(100, dataMax * 1.1)]} />
-                    <Tooltip formatter={(v) => `${v}%`} cursor={{ fill: 'var(--bg-hover)' }} />
-                    <Legend verticalAlign="top" align="right" height={36} iconType="rect" />
-                    
-                    <Bar dataKey="topFeeRatio" name="진료비 상위" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20}>
-                      <LabelList dataKey="topFeeRatio" position="top" formatter={(v) => `${v}%`} style={{ fontSize: '10px', fill: 'var(--text-secondary)' }} />
-                    </Bar>
-                    <Bar dataKey="agreedCollectionRate" name="동의환자 수납율" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={20}>
-                      <LabelList dataKey="agreedCollectionRate" position="top" formatter={(v) => `${v}%`} style={{ fontSize: '10px', fill: 'var(--text-secondary)' }} />
-                    </Bar>
-                    <Bar dataKey="newPatientRatio" name="신환 수익" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20}>
-                      <LabelList dataKey="newPatientRatio" position="top" formatter={(v) => `${v}%`} style={{ fontSize: '10px', fill: 'var(--text-secondary)' }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                {isMonthlyView ? (
+                  <MonthlySnapshotBarChart
+                    valueLabel="비중"
+                    formatValue={(value) => `${Number(value || 0).toFixed(1)}%`}
+                    data={summaryMonthlyMetrics.flatMap((row) => [
+                      { name: '진료비 상위', value: row.topFeeRatio, color: '#3b82f6' },
+                      { name: '동의환자 수납율', value: row.agreedCollectionRate, color: '#ef4444' },
+                      { name: '신환 수익', value: row.newPatientRatio, color: '#10b981' },
+                    ])}
+                  />
+                ) : (
+                  <ResponsiveContainer width="100%" height={350}>
+                    <BarChart data={summaryMonthlyMetrics} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+                      <XAxis dataKey="month" tick={{ dy: 10 }} />
+                      <YAxis tickFormatter={(v) => `${v}%`} width={50} domain={[0, (dataMax) => Math.max(100, dataMax * 1.1)]} />
+                      <Tooltip formatter={(v) => `${v}%`} cursor={{ fill: 'var(--bg-hover)' }} />
+                      <Legend verticalAlign="top" align="right" height={36} iconType="rect" />
+                      <Bar dataKey="topFeeRatio" name="진료비 상위" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20}>
+                        <LabelList dataKey="topFeeRatio" position="top" formatter={(v) => `${v}%`} style={{ fontSize: '10px', fill: 'var(--text-secondary)' }} />
+                      </Bar>
+                      <Bar dataKey="agreedCollectionRate" name="동의환자 수납율" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={20}>
+                        <LabelList dataKey="agreedCollectionRate" position="top" formatter={(v) => `${v}%`} style={{ fontSize: '10px', fill: 'var(--text-secondary)' }} />
+                      </Bar>
+                      <Bar dataKey="newPatientRatio" name="신환 수익" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20}>
+                        <LabelList dataKey="newPatientRatio" position="top" formatter={(v) => `${v}%`} style={{ fontSize: '10px', fill: 'var(--text-secondary)' }} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
               </DashboardCard>
 
               {/* 하단 매출 분석 정리 표 */}
@@ -1394,21 +1633,30 @@ const SalesAnalysis = () => {
             <h1>매출 분석 대시보드</h1>
             <p>치과의 주요 경영 지표와 매출 통계를 한눈에 확인합니다.</p>
           </div>
-          <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+          <AnalysisPeriodControls
+            selectedYear={selectedYear}
+            availableYears={availableYears}
+            onYearChange={handleYearChange}
+            half={half}
+            onHalfChange={setHalf}
+            monthFilter={monthFilter}
+            onMonthFilterChange={setMonthFilter}
+          />
+          <div style={{ display: 'none' }}>
             <div className="year-selector-container">
-              <button 
-                className="year-select-btn" 
+              <button
+                className="year-select-btn"
                 onClick={() => setIsYearOpen(!isYearOpen)}
               >
                 <Calendar size={16} />
                 {selectedYear}년
                 <ChevronDown size={14} style={{ transform: isYearOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
               </button>
-              
+
               {isYearOpen && (
                 <div className="year-dropdown">
                   {availableYears.map(year => (
-                    <button 
+                    <button
                       key={year}
                       className={`year-item ${selectedYear === year ? 'active' : ''}`}
                       onClick={() => {
@@ -1471,7 +1719,7 @@ const SalesAnalysis = () => {
         categoryKey="sales"
         subCategoryKey={subTab}
         year={selectedYear}
-        period={half}
+        period={monthFilter !== 'all' ? `month-${monthFilter}` : half}
         periodLabel={insightPeriodLabel}
         defaultInsight={salesInsightText}
       />

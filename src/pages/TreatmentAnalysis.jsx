@@ -9,7 +9,10 @@ import {
     Stethoscope, Smile                          // 임플 탭 아이콘: Stethoscope / 틀니: Smile
 } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import MonthlySnapshotBarChart from '../components/MonthlySnapshotBarChart';
+import MonthlySnapshotDetailTable from '../components/MonthlySnapshotDetailTable';
 import ManagementInsight from '../components/ManagementInsight';
+import AnalysisPeriodControls from '../components/AnalysisPeriodControls';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData, loadClinicImplantTypes } from '../utils/supabaseAnalyticsStore';
 import { getImplantTypeCounts, getImplantTypeStorageKey, normalizeImplantTypes } from '../utils/implantTypes';
@@ -80,6 +83,7 @@ const TreatmentAnalysis = () => {
     const { clinicId } = useAuth();
     const activeClinicId = getActiveAnalyticsClinicId(clinicId);
     const [half, setHalf] = useState('all');
+    const [monthFilter, setMonthFilter] = useState('all');
     const [subTab, setSubTab] = useState('implant');
     const [selectedYear, setSelectedYear] = useState(() => getCurrentYearString());
     const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
@@ -152,10 +156,17 @@ const TreatmentAnalysis = () => {
 
 
     const currentHalfData = useMemo(() => {
+        if (monthFilter !== 'all') return perfData.filter(row => row.month === monthFilter);
         if (half === 'all') return perfData;
         return half === 'first' ? perfData.slice(0, 6) : perfData.slice(6, 12);
-    }, [half, perfData]);
-    const insightPeriodLabel = half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
+    }, [half, monthFilter, perfData]);
+    const isMonthlyView = monthFilter !== 'all';
+    const selectedMonthlyIndex = isMonthlyView
+        ? perfData.findIndex((row) => row?.month === monthFilter)
+        : -1;
+    const insightPeriodLabel = monthFilter !== 'all'
+        ? monthFilter
+        : half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
     const insightImplants = currentHalfData.reduce((sum, row) => (
         sum + Number(row?.implantTotal || 0) + Number(row?.crestal || 0)
         + Number(row?.lateral || 0) + Number(row?.gbr || 0)
@@ -213,6 +224,14 @@ const TreatmentAnalysis = () => {
                                     subtitle={`${half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체'} 사용량 추이`}
                                 >
                                     <div style={{ height: 350, width: '100%' }}>
+                                        {isMonthlyView ? (
+                                            <MonthlySnapshotBarChart
+                                                data={[{ name: '총 식립개수', value: Number(currentHalfData[0]?.implantTotal || 0), color: '#70ad47' }]}
+                                                valueLabel="식립개수"
+                                                formatValue={(value) => `${Number(value).toLocaleString()}개`}
+                                                height={320}
+                                            />
+                                        ) : (
                                         <ResponsiveContainer>
                                             <BarChart data={currentHalfData} margin={{ top: 24, right: 16, left: 0, bottom: 0 }}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -227,6 +246,7 @@ const TreatmentAnalysis = () => {
                                                 </Bar>
                                             </BarChart>
                                         </ResponsiveContainer>
+                                        )}
                                     </div>
                                 </DashboardCard>
 
@@ -236,6 +256,18 @@ const TreatmentAnalysis = () => {
                                     subtitle="치과별 등록 종류 / Crestal·Lateral·GBR"
                                 >
                                     <div style={{ height: 420, width: '100%' }}>
+                                        {isMonthlyView ? (
+                                            <MonthlySnapshotBarChart
+                                                data={allSeries.map((series) => ({
+                                                    name: series.name,
+                                                    value: getSeriesValue(currentHalfData[0], series),
+                                                    color: series.color,
+                                                }))}
+                                                valueLabel="사용량"
+                                                formatValue={(value) => `${Number(value).toLocaleString()}개`}
+                                                height={380}
+                                            />
+                                        ) : (
                                         <ResponsiveContainer>
                                             <BarChart
                                                 data={chartData}
@@ -258,6 +290,7 @@ const TreatmentAnalysis = () => {
                                                 ))}
                                             </BarChart>
                                         </ResponsiveContainer>
+                                        )}
                                     </div>
                                 </DashboardCard>
                             </div>
@@ -265,6 +298,29 @@ const TreatmentAnalysis = () => {
                             {/* 하단 상세 데이터 테이블 */}
                             <DashboardCard title="임플란트 종류 및 수술법 상세 데이터">
                                 <div className="treatment-data-table-container">
+                                    {isMonthlyView ? (
+                                        <MonthlySnapshotDetailTable
+                                            selectedMonth={monthFilter}
+                                            selectedIndex={selectedMonthlyIndex}
+                                            monthLabels={perfData.map((item) => item.month)}
+                                            rows={[
+                                                {
+                                                    key: 'implant-total',
+                                                    label: '총 사용개수',
+                                                    unit: '개',
+                                                    color: '#70ad47',
+                                                    values: perfData.map((item) => Number(item.implantTotal || 0)),
+                                                },
+                                                ...allSeries.map((series) => ({
+                                                    key: series.key,
+                                                    label: series.name,
+                                                    unit: '개',
+                                                    color: series.color,
+                                                    values: perfData.map((item) => getSeriesValue(item, series)),
+                                                })),
+                                            ]}
+                                        />
+                                    ) : (
                                     <table className="treatment-data-table">
                                         <thead>
                                             <tr>
@@ -294,6 +350,7 @@ const TreatmentAnalysis = () => {
                                             ))}
                                         </tbody>
                                     </table>
+                                    )}
                                 </div>
                             </DashboardCard>
                         </div>
@@ -327,6 +384,17 @@ const TreatmentAnalysis = () => {
                                     subtitle={`${half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체'} 추이`}
                                 >
                                     <div style={{ height: 350, width: '100%' }}>
+                                        {isMonthlyView ? (
+                                            <MonthlySnapshotBarChart
+                                                data={[
+                                                    { name: '보험 임플란트', value: safeD(currentHalfData[0] || {}, 'insImp'), color: '#4472c4' },
+                                                    { name: '보험 틀니', value: safeD(currentHalfData[0] || {}, 'insDent'), color: '#f59e0b' },
+                                                ]}
+                                                valueLabel="건수"
+                                                formatValue={(value) => `${Number(value).toLocaleString()}건`}
+                                                height={320}
+                                            />
+                                        ) : (
                                         <ResponsiveContainer>
                                             <BarChart data={currentHalfData} margin={{ top: 24, right: 16, left: 0, bottom: 0 }}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -342,6 +410,7 @@ const TreatmentAnalysis = () => {
                                                 </Bar>
                                             </BarChart>
                                         </ResponsiveContainer>
+                                        )}
                                     </div>
                                 </DashboardCard>
 
@@ -351,6 +420,18 @@ const TreatmentAnalysis = () => {
                                     subtitle="임플 1·2·3단계 / 틀니 1·5·6단계"
                                 >
                                     <div style={{ height: 350, width: '100%' }}>
+                                        {isMonthlyView ? (
+                                            <MonthlySnapshotBarChart
+                                                data={[...impSeries, ...dentSeries].map((series) => ({
+                                                    name: series.name,
+                                                    value: safeD(currentHalfData[0] || {}, series.key),
+                                                    color: series.color,
+                                                }))}
+                                                valueLabel="사용량"
+                                                formatValue={(value) => `${Number(value).toLocaleString()}건`}
+                                                height={320}
+                                            />
+                                        ) : (
                                         <ResponsiveContainer>
                                             <BarChart
                                                 data={currentHalfData}
@@ -370,6 +451,7 @@ const TreatmentAnalysis = () => {
                                                 ))}
                                             </BarChart>
                                         </ResponsiveContainer>
+                                        )}
                                     </div>
                                 </DashboardCard>
                             </div>
@@ -377,6 +459,50 @@ const TreatmentAnalysis = () => {
                             {/* 하단 상세 테이블 */}
                             <DashboardCard title="보험 임플/틀니 상세 데이터">
                                 <div className="treatment-data-table-container">
+                                    {isMonthlyView ? (
+                                        <MonthlySnapshotDetailTable
+                                            selectedMonth={monthFilter}
+                                            selectedIndex={selectedMonthlyIndex}
+                                            monthLabels={perfData.map((item) => item.month)}
+                                            rows={[
+                                                {
+                                                    key: 'insurance-implant-total',
+                                                    label: '보험 임플 합계',
+                                                    unit: '건',
+                                                    color: '#4472c4',
+                                                    values: perfData.map((item) => safeD(item, 'insImp')),
+                                                },
+                                                ...impSeries.map((series) => ({
+                                                    key: series.key,
+                                                    label: series.name,
+                                                    unit: '건',
+                                                    color: series.color,
+                                                    values: perfData.map((item) => safeD(item, series.key)),
+                                                })),
+                                                {
+                                                    key: 'insurance-denture-total',
+                                                    label: '보험 틀니 합계',
+                                                    unit: '건',
+                                                    color: '#f59e0b',
+                                                    values: perfData.map((item) => safeD(item, 'insDent')),
+                                                },
+                                                ...dentSeries.map((series) => ({
+                                                    key: series.key,
+                                                    label: series.name,
+                                                    unit: '건',
+                                                    color: series.color,
+                                                    values: perfData.map((item) => safeD(item, series.key)),
+                                                })),
+                                                {
+                                                    key: 'insurance-treatment-total',
+                                                    label: '보험 진료 총합계',
+                                                    unit: '건',
+                                                    color: '#64748b',
+                                                    values: perfData.map((item) => safeD(item, 'insImp') + safeD(item, 'insDent')),
+                                                },
+                                            ]}
+                                        />
+                                    ) : (
                                     <table className="treatment-data-table">
                                         <thead>
                                             <tr>
@@ -431,6 +557,7 @@ const TreatmentAnalysis = () => {
                                             </tr>
                                         </tbody>
                                     </table>
+                                    )}
                                 </div>
                             </DashboardCard>
                         </div>
@@ -450,7 +577,16 @@ const TreatmentAnalysis = () => {
                     <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>수술 건수 및 보험 진료 현황을 분석합니다.</p>
                 </div>
                 
-                <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+                <AnalysisPeriodControls
+                    selectedYear={selectedYear}
+                    availableYears={availableYears}
+                    onYearChange={handleYearChange}
+                    half={half}
+                    onHalfChange={setHalf}
+                    monthFilter={monthFilter}
+                    onMonthFilterChange={setMonthFilter}
+                />
+                <div style={{ display: 'none' }}>
                     <div className="year-selector-container">
                         <button 
                             className="year-select-btn" 
@@ -507,7 +643,7 @@ const TreatmentAnalysis = () => {
                 categoryKey="treatment"
                 subCategoryKey={subTab}
                 year={selectedYear}
-                period={half}
+                period={monthFilter !== 'all' ? `month-${monthFilter}` : half}
                 periodLabel={insightPeriodLabel}
                 defaultInsight={treatmentInsightText}
             />

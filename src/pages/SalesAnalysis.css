@@ -86,6 +86,78 @@
     color: #6366f1;
 }
 
+.sales-month-snapshot-table {
+    min-width: 760px;
+}
+
+.sales-month-snapshot-table th,
+.sales-month-snapshot-table td {
+    height: 66px;
+    vertical-align: middle;
+}
+
+.sales-month-snapshot-table th:nth-child(1) { width: 25%; }
+.sales-month-snapshot-table th:nth-child(2) { width: 20%; }
+.sales-month-snapshot-table th:nth-child(3) { width: 18%; }
+.sales-month-snapshot-table th:nth-child(4) { width: 20%; }
+.sales-month-snapshot-table th:nth-child(5) { width: 17%; }
+
+.sales-month-snapshot-table .snapshot-value,
+.sales-month-snapshot-table .snapshot-cumulative {
+    color: var(--text-primary);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+.sales-month-snapshot-table .snapshot-value {
+    color: #3b82f6;
+    font-size: 0.94rem;
+}
+
+.snapshot-change {
+    display: grid;
+    gap: 0.16rem;
+    justify-items: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.snapshot-change strong {
+    font-size: 0.86rem;
+}
+
+.snapshot-change small,
+.snapshot-empty {
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+}
+
+.snapshot-change.increase { color: #ef4444; }
+.snapshot-change.decrease { color: #3b82f6; }
+.snapshot-change.neutral { color: var(--text-secondary); }
+
+.sales-mini-trend {
+    align-items: end;
+    display: flex;
+    gap: 3px;
+    height: 34px;
+    justify-content: center;
+    margin: 0 auto;
+    max-width: 112px;
+}
+
+.sales-mini-trend span {
+    border-radius: 2px 2px 0 0;
+    display: block;
+    flex: 1 1 0;
+    min-width: 3px;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.sales-mini-trend span.active {
+    box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 18%, transparent);
+    transform: translateY(-2px);
+}
+
 /* Dark mode adjustments if needed */
 [data-theme='dark'] .sales-data-table th {
     background: rgba(255, 255, 255, 0.05);

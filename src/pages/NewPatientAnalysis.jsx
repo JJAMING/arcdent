@@ -5,7 +5,9 @@ import {
 } from 'recharts';
 import { Calendar, ChevronDown, ClipboardCheck, MapPin, Users, WalletCards } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
+import MonthlySnapshotBarChart from '../components/MonthlySnapshotBarChart';
 import ManagementInsight from '../components/ManagementInsight';
+import AnalysisPeriodControls from '../components/AnalysisPeriodControls';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
@@ -196,11 +198,8 @@ const NewPatientAnalysis = () => {
     const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
     const [half, setHalf] = useState('all');
+    const [monthFilter, setMonthFilter] = useState('all');
     const [subTab, setSubTab] = useState('source');
-    const [selectedRatioMonthIndex, setSelectedRatioMonthIndex] = useState('period');
-    const [selectedTreatmentDetailMonthIndex, setSelectedTreatmentDetailMonthIndex] = useState(0);
-    const [selectedAgeDetailMonthIndex, setSelectedAgeDetailMonthIndex] = useState('period');
-    const [selectedUnitPriceMonthIndex, setSelectedUnitPriceMonthIndex] = useState(0);
     const [yearData, setYearData] = useState(() => normalizeYearData([]));
     const [supabaseNewPatientMap, setSupabaseNewPatientMap] = useState(null);
 
@@ -256,10 +255,12 @@ const NewPatientAnalysis = () => {
     }, [selectedYear, activeClinicId]);
 
     const currentHalfData = useMemo(() => {
+        if (monthFilter !== 'all') return yearData.filter(item => item.month === monthFilter);
         if (half === 'first') return yearData.slice(0, 6);
         if (half === 'second') return yearData.slice(6, 12);
         return yearData;
-    }, [half, yearData]);
+    }, [half, monthFilter, yearData]);
+    const isMonthlyView = monthFilter !== 'all';
 
     const sourceSummary = useMemo(() => {
         const totals = new Map();
@@ -329,16 +330,20 @@ const NewPatientAnalysis = () => {
     const getInsuranceRatioInfo = (month, name) => {
         const ratio = month.sourceInsuranceRatios?.[name] ?? month.newPatientSourceInsuranceRatios?.[name];
         const nonRatio = month.sourceNonInsuranceRatios?.[name] ?? month.newPatientSourceNonInsuranceRatios?.[name];
-        if (ratio != null || nonRatio != null) {
-            const insuranceRatio = ratio != null
-                ? Math.max(0, Math.min(100, normalizePercent(ratio)))
-                : Math.max(0, 100 - Math.max(0, Math.min(100, normalizePercent(nonRatio))));
-            const nonInsuranceRatio = nonRatio != null
-                ? Math.max(0, Math.min(100, normalizePercent(nonRatio)))
-                : Math.max(0, 100 - insuranceRatio);
+        if (ratio != null) {
+            const insuranceRatio = Math.max(0, Math.min(100, normalizePercent(ratio)));
             return {
                 hasData: true,
                 insuranceRatio,
+                // The uploaded insurance item is the source of truth. The remainder represents all non-insurance items.
+                nonInsuranceRatio: Math.max(0, 100 - insuranceRatio),
+            };
+        }
+        if (nonRatio != null) {
+            const nonInsuranceRatio = Math.max(0, Math.min(100, normalizePercent(nonRatio)));
+            return {
+                hasData: true,
+                insuranceRatio: Math.max(0, 100 - nonInsuranceRatio),
                 nonInsuranceRatio,
             };
         }
@@ -444,7 +449,9 @@ const NewPatientAnalysis = () => {
 
     const totalNewPatients = sourceSummary.reduce((sum, item) => sum + item.value, 0);
 
-    const insightPeriodLabel = half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
+    const insightPeriodLabel = monthFilter !== 'all'
+        ? monthFilter
+        : half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
     const insightTopSource = sourceSummary[0];
     const insightTopAge = ageSummary.slice().sort((a, b) => b.count - a.count)[0];
     const insightTopUnitPrice = unitPriceBySource[0];
@@ -511,8 +518,6 @@ const NewPatientAnalysis = () => {
 
     const formatRatio = (value, total) => (total ? `${((value / total) * 100).toFixed(1)}%` : '0.0%');
 
-    const isRatioMonthMode = selectedRatioMonthIndex !== 'period';
-    const selectedRatioMonth = isRatioMonthMode ? (yearData[Number(selectedRatioMonthIndex)] || {}) : {};
     const fullYearSourceTotals = yearData.reduce((acc, month) => {
         Object.entries(month.sources || {}).forEach(([name, count]) => {
             acc[name] = (acc[name] || 0) + Number(count || 0);
@@ -524,7 +529,7 @@ const NewPatientAnalysis = () => {
     const detailSourceSummary = Object.entries(fullYearSourceTotals)
         .map(([name, value], index) => ({ name, value, color: COLORS[index % COLORS.length] }))
         .sort((a, b) => b.value - a.value);
-    const selectedRatioDetailRows = isRatioMonthMode && selectedRatioMonth?.month ? [selectedRatioMonth] : currentHalfData;
+    const selectedRatioDetailRows = currentHalfData;
     const selectedRatioDetailSourceTotals = detailSourceSummary.reduce((acc, { name }) => {
         acc[name] = selectedRatioDetailRows.reduce(
             (sum, month) => sum + Number((month.sources || {})[name] || 0),
@@ -534,29 +539,58 @@ const NewPatientAnalysis = () => {
     }, {});
     const selectedRatioDetailGrandTotal = Object.values(selectedRatioDetailSourceTotals)
         .reduce((sum, count) => sum + Number(count || 0), 0);
-    const selectedTreatmentDetailMonth = yearData[selectedTreatmentDetailMonthIndex] || {};
-    const selectedTreatmentDetailTotal = Object.values(selectedTreatmentDetailMonth.sources || {})
-        .reduce((sum, count) => sum + Number(count || 0), 0);
-    const selectedTreatmentInsuranceTotal = treatmentSourceSummary
-        .reduce((sum, { name }) => {
-            const count = Number((selectedTreatmentDetailMonth.sources || {})[name] || 0);
-            return sum + (count * (getInsuranceRatio(selectedTreatmentDetailMonth, name) / 100));
-        }, 0);
-    const selectedTreatmentNonInsuranceTotal = treatmentSourceSummary
-        .reduce((sum, { name }) => {
-            const count = Number((selectedTreatmentDetailMonth.sources || {})[name] || 0);
-            return sum + (count * (getNonInsuranceRatio(selectedTreatmentDetailMonth, name) / 100));
-        }, 0);
-    const selectedTreatmentHasData = treatmentSourceSummary
-        .some(({ name }) => getInsuranceRatioInfo(selectedTreatmentDetailMonth, name).hasData);
+    const treatmentDetailRows = treatmentSourceSummary.map(({ name, color }) => {
+        let count = 0;
+        let insuranceWeighted = 0;
+        let nonInsuranceWeighted = 0;
+        let hasData = false;
+
+        currentHalfData.forEach(month => {
+            const currentCount = Number((month.sources || {})[name] || 0);
+            const ratioInfo = getInsuranceRatioInfo(month, name);
+            count += currentCount;
+            if (ratioInfo.hasData) {
+                hasData = true;
+                insuranceWeighted += currentCount * (ratioInfo.insuranceRatio / 100);
+                nonInsuranceWeighted += currentCount * (ratioInfo.nonInsuranceRatio / 100);
+            }
+        });
+
+        return {
+            name,
+            color,
+            count,
+            hasData,
+            insuranceCount: insuranceWeighted,
+            nonInsuranceCount: nonInsuranceWeighted,
+            insuranceRatio: count > 0 && hasData ? (insuranceWeighted / count) * 100 : 0,
+            nonInsuranceRatio: count > 0 && hasData ? (nonInsuranceWeighted / count) * 100 : 0,
+        };
+    });
+    const selectedTreatmentDetailTotal = treatmentDetailRows
+        .reduce((sum, row) => sum + row.count, 0);
+    const selectedTreatmentInsuranceTotal = treatmentDetailRows
+        .reduce((sum, row) => sum + row.insuranceCount, 0);
+    const selectedTreatmentNonInsuranceTotal = treatmentDetailRows
+        .reduce((sum, row) => sum + row.nonInsuranceCount, 0);
+    const selectedTreatmentHasData = treatmentDetailRows.some(row => row.hasData);
     const selectedTreatmentInsuranceRatio = selectedTreatmentDetailTotal > 0
         ? (selectedTreatmentInsuranceTotal / selectedTreatmentDetailTotal) * 100
         : 0;
     const selectedTreatmentNonInsuranceRatio = selectedTreatmentDetailTotal > 0
         ? (selectedTreatmentNonInsuranceTotal / selectedTreatmentDetailTotal) * 100
         : 0;
+    const treatmentPayerMixData = treatmentDetailRows
+        .filter((row) => row.count > 0 && row.hasData)
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10)
+        .map((row) => ({
+            name: row.name,
+            insuranceRatio: Number(row.insuranceRatio || 0),
+            nonInsuranceRatio: Number(row.nonInsuranceRatio || 0),
+            count: Number(row.count || 0),
+        }));
     const selectedAgeDetailData = useMemo(() => {
-        const selectedScope = AGE_RATIO_SCOPES.find(scope => scope.value === half) || AGE_RATIO_SCOPES[0];
         const months = currentHalfData;
         const totals = Object.fromEntries(AGE_RANGES.map(range => [range, 0]));
         months.forEach(month => {
@@ -568,33 +602,16 @@ const NewPatientAnalysis = () => {
             months,
             totals,
             total: Object.values(totals).reduce((sum, count) => sum + Number(count || 0), 0),
-            label: selectedScope.label,
+            label: monthFilter !== 'all' ? '당월 비율' : (half === 'first' ? '상반기 비율' : half === 'second' ? '하반기 비율' : '전체 비율'),
         };
-    }, [currentHalfData, half]);
+    }, [currentHalfData, half, monthFilter]);
 
     const ageScopedSummary = useMemo(() => AGE_RANGES.map(range => ({
         range,
         count: Number((selectedAgeDetailData.totals || {})[range] || 0),
     })), [selectedAgeDetailData]);
 
-    const selectedAgeTableData = useMemo(() => {
-        const isMonthMode = selectedAgeDetailMonthIndex !== 'period';
-        const months = isMonthMode
-            ? [yearData[Number(selectedAgeDetailMonthIndex)]].filter(Boolean)
-            : selectedAgeDetailData.months;
-        const totals = Object.fromEntries(AGE_RANGES.map(range => [range, 0]));
-        months.forEach(month => {
-            AGE_RANGES.forEach(range => {
-                totals[range] += Number((month.ages || {})[range] || 0);
-            });
-        });
-        return {
-            months,
-            totals,
-            total: Object.values(totals).reduce((sum, count) => sum + Number(count || 0), 0),
-            label: isMonthMode ? '당월 비율' : selectedAgeDetailData.label,
-        };
-    }, [selectedAgeDetailMonthIndex, yearData, selectedAgeDetailData]);
+    const selectedAgeTableData = selectedAgeDetailData;
 
     const fullYearAgeTotals = useMemo(() => {
         const totals = Object.fromEntries(AGE_RANGES.map(range => [range, 0]));
@@ -608,80 +625,166 @@ const NewPatientAnalysis = () => {
     const fullYearAgeTotal = Object.values(fullYearAgeTotals)
         .reduce((sum, count) => sum + Number(count || 0), 0);
 
-    const selectedUnitPriceMonth = yearData[selectedUnitPriceMonthIndex] || {};
     const selectedUnitPriceRows = useMemo(() => (
         sourceSummary
-            .map(({ name, color }) => ({
-                name,
-                color,
-                newPatientCount: Number((selectedUnitPriceMonth.sources || {})[name] || 0),
-                oldPatientCount: Number((selectedUnitPriceMonth.sourceOldPatients || {})[name] || 0),
-                visitPatientCount: Number((selectedUnitPriceMonth.sourceVisitPatients || {})[name] || 0),
-                revenue: Number((selectedUnitPriceMonth.sourceRevenue || {})[name] || 0),
-                unitPrice: Number((selectedUnitPriceMonth.sourceAvgFee || {})[name] || 0),
-            }))
+            .map(({ name, color }) => {
+                const totals = currentHalfData.reduce((acc, month) => {
+                    acc.newPatientCount += Number((month.sources || {})[name] || 0);
+                    acc.oldPatientCount += Number((month.sourceOldPatients || {})[name] || 0);
+                    acc.visitPatientCount += Number((month.sourceVisitPatients || {})[name] || 0);
+                    acc.revenue += Number((month.sourceRevenue || {})[name] || 0);
+                    return acc;
+                }, { newPatientCount: 0, oldPatientCount: 0, visitPatientCount: 0, revenue: 0 });
+                const totalVisitPatients = totals.visitPatientCount || (totals.newPatientCount + totals.oldPatientCount);
+                return {
+                    name,
+                    color,
+                    ...totals,
+                    unitPrice: totalVisitPatients > 0 ? totals.revenue / totalVisitPatients : 0,
+                };
+            })
             .sort((a, b) => b.unitPrice - a.unitPrice)
-    ), [selectedUnitPriceMonth, sourceSummary]);
-    const unitPriceSummary = selectedUnitPriceMonth.pathDistributionSummary || {};
+    ), [currentHalfData, sourceSummary]);
+    const unitPriceSummary = currentHalfData.reduce((acc, month) => {
+        const total = month.pathDistributionSummary?.total || {};
+        Object.entries(total).forEach(([key, value]) => {
+            acc[key] = Number(acc[key] || 0) + Number(value || 0);
+        });
+        return acc;
+    }, {});
+    const summaryMonthCount = currentHalfData.filter(month => Object.keys(month.pathDistributionSummary?.total || {}).length > 0).length;
     const unitPriceSummaryRows = [
-        { key: 'total', label: '합계', values: unitPriceSummary.total || {} },
-        { key: 'average', label: '평균', values: unitPriceSummary.average || {} },
+        { key: 'total', label: '합계', values: unitPriceSummary },
+        {
+            key: 'average',
+            label: '평균',
+            values: Object.fromEntries(Object.entries(unitPriceSummary).map(([key, value]) => [key, summaryMonthCount > 0 ? Number(value || 0) / summaryMonthCount : 0])),
+        },
     ];
 
     const renderSourcePieTooltip = ({ active, payload }) => {
-        if (!active || sourceSummary.length === 0) return null;
-        const activeName = payload?.[0]?.payload?.name;
-        const rows = sourceSummary
-            .filter(item => Number(item.value || 0) > 0)
-            .sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
+        if (!active || !payload?.length) return null;
+        return renderSourceTooltipPanel({
+            title: '내원경로 비중',
+            rows: sourceSummary,
+            highlightName: payload[0]?.payload?.name,
+        });
+
+        const item = active ? payload?.[0]?.payload : null;
+        if (!item) return null;
+        const ratio = totalNewPatients > 0 ? (Number(item.value || 0) / totalNewPatients) * 100 : 0;
 
         return (
             <div style={{
-                minWidth: '220px',
-                maxWidth: '280px',
+                minWidth: '176px',
                 background: 'var(--card-bg)',
                 border: '1px solid var(--border-color)',
-                borderRadius: '12px',
+                borderRadius: '10px',
                 boxShadow: 'var(--shadow)',
-                padding: '0.75rem',
+                padding: '0.7rem 0.8rem',
                 color: 'var(--text-primary)',
             }}>
-                <div style={{ fontSize: '12px', fontWeight: 800, marginBottom: '0.55rem' }}>
-                    내원경로 비중
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>내원경로</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '13px', fontWeight: 800, marginBottom: '0.45rem' }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 2, background: item.color }} />
+                    <span>{item.name}</span>
                 </div>
-                <div style={{ display: 'grid', gap: '0.35rem' }}>
-                    {rows.map(item => {
-                        const ratio = totalNewPatients > 0 ? (Number(item.value || 0) / totalNewPatients) * 100 : 0;
-                        const isActive = item.name === activeName;
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', fontSize: '12px' }}>
+                    <span>신환 수</span>
+                    <strong style={{ color: item.color }}>{Number(item.value || 0).toLocaleString()}명</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', fontSize: '12px', marginTop: '0.25rem' }}>
+                    <span>비중</span>
+                    <strong style={{ color: item.color }}>{ratio.toFixed(1)}%</strong>
+                </div>
+            </div>
+        );
+    };
+
+    const renderSourceBarTooltip = ({ active, label, payload }) => {
+        if (!active || !label) return null;
+        const monthData = monthlySourceChartData.find(item => item.month === label) || {};
+        return renderSourceTooltipPanel({
+            title: `${label} 내원경로별 신환 수`,
+            rows: sourceSummary
+                .map(({ name, color }) => ({ name, color, value: Number(monthData[name] || 0) }))
+                .sort((a, b) => b.value - a.value),
+            highlightName: payload?.[0]?.name,
+        });
+
+        const item = active ? payload?.[0] : null;
+        if (!item) return null;
+
+        return (
+            <div style={{
+                minWidth: '164px',
+                background: 'var(--card-bg)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '10px',
+                boxShadow: 'var(--shadow)',
+                padding: '0.7rem 0.8rem',
+                color: 'var(--text-primary)',
+            }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>{label}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '13px', fontWeight: 800, marginBottom: '0.45rem' }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 2, background: item.color }} />
+                    <span>{item.name}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', fontSize: '12px' }}>
+                    <span>신환 수</span>
+                    <strong style={{ color: item.color }}>{Number(item.value || 0).toLocaleString()}명</strong>
+                </div>
+            </div>
+        );
+    };
+
+    const renderSourceTooltipPanel = ({ title, rows, highlightName }) => {
+        if (!rows.length) return null;
+
+        return (
+            <div style={{
+                width: '520px',
+                maxWidth: 'calc(100vw - 2rem)',
+                background: 'var(--card-bg)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '10px',
+                boxShadow: 'var(--shadow)',
+                padding: '0.7rem 0.8rem',
+                color: 'var(--text-primary)',
+            }}>
+                <div style={{ fontSize: '12px', fontWeight: 800, marginBottom: '0.5rem' }}>{title}</div>
+                <div style={{
+                    display: 'grid',
+                    gridAutoFlow: 'column',
+                    gridTemplateRows: 'repeat(10, minmax(0, auto))',
+                    gridAutoColumns: 'minmax(0, 1fr)',
+                    columnGap: '0.8rem',
+                    rowGap: '0.08rem',
+                }}>
+                    {rows.map(({ name, value, color }) => {
+                        const ratio = totalNewPatients > 0 ? (Number(value || 0) / totalNewPatients) * 100 : 0;
+                        const highlighted = highlightName === name;
                         return (
                             <div
-                                key={item.name}
+                                key={name}
                                 style={{
                                     display: 'grid',
                                     gridTemplateColumns: '10px minmax(0, 1fr) auto',
-                                    gap: '0.45rem',
                                     alignItems: 'center',
-                                    padding: isActive ? '0.3rem 0.35rem' : '0.15rem 0',
-                                    borderRadius: '8px',
-                                    background: isActive ? 'rgba(59, 130, 246, 0.08)' : 'transparent',
+                                    gap: '0.45rem',
+                                    padding: '0.3rem 0.25rem',
+                                    borderRadius: '6px',
+                                    background: 'transparent',
+                                    fontSize: '12px',
                                 }}
                             >
-                                <span style={{ width: 9, height: 9, borderRadius: 2, background: item.color }} />
-                                <span style={{ fontSize: '12px', fontWeight: isActive ? 800 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {item.name}
-                                </span>
-                                <span style={{ fontSize: '12px', fontWeight: 800, color: item.color, whiteSpace: 'nowrap' }}>
-                                    {Number(item.value || 0).toLocaleString()}명 · {ratio.toFixed(1)}%
-                                </span>
+                                <span style={{ width: 9, height: 9, borderRadius: 2, background: color }} />
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: highlighted ? 800 : 600 }}>{name}</span>
+                                <strong style={{ color, whiteSpace: 'nowrap' }}>{Number(value || 0).toLocaleString()}명 · {ratio.toFixed(1)}%</strong>
                             </div>
                         );
                     })}
                 </div>
-                {rows.length === 0 && (
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                        표시할 데이터가 없습니다.
-                    </div>
-                )}
             </div>
         );
     };
@@ -731,6 +834,19 @@ const NewPatientAnalysis = () => {
                             <div className="dashboard-grid" style={{ gridTemplateColumns: '2fr 1fr' }}>
                                 <DashboardCard title="내원 경로별 치료 이행율" subtitle="월별 총 비율 추이">
                                     <div style={{ height: 340, width: '100%' }}>
+                                        {isMonthlyView ? (
+                                            <MonthlySnapshotBarChart
+                                                data={treatmentRankByTotalRatio.map(({ name, totalRatio, value, color }) => ({
+                                                    name,
+                                                    value: totalRatio,
+                                                    color,
+                                                    detail: `신환 ${Number(value || 0).toLocaleString()}명`,
+                                                }))}
+                                                valueLabel="치료 이행율"
+                                                formatValue={(value) => `${Number(value).toFixed(1)}%`}
+                                                height={310}
+                                            />
+                                        ) : (
                                         <ResponsiveContainer>
                                             <LineChart data={monthlyTreatmentChartData} margin={{ top: 24, right: 24, left: 0, bottom: 0 }}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -753,41 +869,53 @@ const NewPatientAnalysis = () => {
                                                 ))}
                                             </LineChart>
                                         </ResponsiveContainer>
+                                        )}
                                     </div>
                                 </DashboardCard>
 
-                                <DashboardCard title="치료 이행율 순위" subtitle="기간 합계 기준">
+                                <DashboardCard title="내원경로별 보험·비보험 구성" subtitle="신환 수 상위 10개 경로 기준">
                                     <div style={{ height: 300, width: '100%' }}>
-                                        <ResponsiveContainer>
-                                            <BarChart data={treatmentRankByTotalRatio} layout="vertical" margin={{ top: 12, right: 24, left: 12, bottom: 0 }}>
-                                                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-color)" />
-                                                <XAxis type="number" tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11 }} />
-                                                <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={86} />
-                                                <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '12px' }} formatter={(v) => [`${Number(v).toFixed(1)}%`, '총 비율']} />
-                                                <Bar dataKey="totalRatio" name="총 비율" fill="#14b8a6" maxBarSize={24} radius={[0,4,4,0]}>
-                                                    <LabelList dataKey="totalRatio" position="right" formatter={(v) => `${Number(v).toFixed(1)}%`} style={{ fontSize: 10, fill: '#14b8a6', fontWeight: 700 }} />
-                                                </Bar>
-                                            </BarChart>
-                                        </ResponsiveContainer>
+                                        {treatmentPayerMixData.length > 0 ? (
+                                            <ResponsiveContainer>
+                                                <BarChart
+                                                    data={treatmentPayerMixData}
+                                                    layout="vertical"
+                                                    margin={{ top: 12, right: 18, left: 12, bottom: 0 }}
+                                                    barCategoryGap="18%"
+                                                >
+                                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-color)" />
+                                                    <XAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11 }} />
+                                                    <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={92} />
+                                                    <Tooltip
+                                                        contentStyle={{ borderRadius: '12px', fontSize: '12px' }}
+                                                        formatter={(value, name, item) => [
+                                                            `${Number(value || 0).toFixed(1)}%`,
+                                                            name === '보험 비율' ? '보험 항목 비율' : '비보험 항목 비율',
+                                                        ]}
+                                                        labelFormatter={(label, payload) => {
+                                                            const count = payload?.[0]?.payload?.count || 0;
+                                                            return `${label} · 신환 ${Number(count).toLocaleString()}명`;
+                                                        }}
+                                                    />
+                                                    <Legend verticalAlign="top" height={30} iconType="square" wrapperStyle={{ fontSize: '11px' }} />
+                                                    <Bar dataKey="insuranceRatio" name="보험 비율" stackId="payer" fill="#3b82f6" radius={[4, 0, 0, 4]} />
+                                                    <Bar dataKey="nonInsuranceRatio" name="비보험 비율" stackId="payer" fill="#f59e0b" radius={[0, 4, 4, 0]} />
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        ) : (
+                                            <div className="chart-empty-state">보험·비보험 구성 데이터가 없습니다.</div>
+                                        )}
                                     </div>
                                 </DashboardCard>
                             </div>
 
                             <DashboardCard
                                 title="내원 경로별 치료 이행율 상세 데이터"
-                                subtitle="선택 월 기준 보험 / 비보험 환자 비율"
+                                subtitle={`${insightPeriodLabel} 기준 보험 / 비보험 항목 비율`}
                                 headerRight={
                                     <div style={monthSelectWrapStyle}>
-                                        <span style={monthSelectLabelStyle}>조회 월</span>
-                                        <select
-                                            value={selectedTreatmentDetailMonthIndex}
-                                            onChange={(e) => setSelectedTreatmentDetailMonthIndex(Number(e.target.value))}
-                                            style={monthSelectStyle}
-                                        >
-                                            {MONTHS.map((month, index) => (
-                                                <option key={month} value={index}>{month}</option>
-                                            ))}
-                                        </select>
+                                        <span style={monthSelectLabelStyle}>표시 범위</span>
+                                        <strong style={monthSelectLabelStyle}>{insightPeriodLabel}</strong>
                                     </div>
                                 }
                             >
@@ -796,19 +924,15 @@ const NewPatientAnalysis = () => {
                                         <thead>
                                             <tr>
                                                 <th className="row-header">내원경로</th>
-                                                <th>{selectedTreatmentDetailMonth.month || '-'} 신환수</th>
-                                                <th>보험환자 비율</th>
-                                                <th>비보험환자 비율</th>
+                                                <th>{insightPeriodLabel} 신환수</th>
+                                                <th>보험 항목 비율</th>
+                                                <th>비보험 항목 비율</th>
                                                 <th>총 비율</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {treatmentSourceSummary.map(({ name, color }) => {
-                                                const count = Number((selectedTreatmentDetailMonth.sources || {})[name] || 0);
-                                                const ratioInfo = getInsuranceRatioInfo(selectedTreatmentDetailMonth, name);
-                                                const insuranceRatio = ratioInfo.hasData ? ratioInfo.insuranceRatio : 0;
-                                                const nonInsuranceRatio = ratioInfo.hasData ? ratioInfo.nonInsuranceRatio : 0;
-                                                const totalRatio = ratioInfo.hasData ? formatRatio(count, selectedTreatmentDetailTotal) : '0.0%';
+                                            {treatmentDetailRows.map(({ name, color, count, hasData, insuranceRatio, nonInsuranceRatio }) => {
+                                                const totalRatio = hasData ? formatRatio(count, selectedTreatmentDetailTotal) : '0.0%';
                                                 return (
                                                     <tr key={name}>
                                                         <td className="row-header">
@@ -900,22 +1024,11 @@ const NewPatientAnalysis = () => {
 
                             <DashboardCard
                                 title="연령별 신환 상세 데이터"
-                                subtitle="선택 기간 월별 인원수와 연령대 비율"
+                                subtitle={`${insightPeriodLabel} 기준 월별 인원수와 연령대 비율`}
                                 headerRight={
                                     <div style={monthSelectWrapStyle}>
                                         <span style={monthSelectLabelStyle}>표시 범위</span>
-                                        <select
-                                            value={selectedAgeDetailMonthIndex}
-                                            onChange={(e) => setSelectedAgeDetailMonthIndex(e.target.value)}
-                                            style={monthSelectStyle}
-                                        >
-                                            <option value="period">
-                                                {half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체보기'}
-                                            </option>
-                                            {MONTHS.map((month, index) => (
-                                                <option key={month} value={index}>{month}</option>
-                                            ))}
-                                        </select>
+                                        <strong style={monthSelectLabelStyle}>{insightPeriodLabel}</strong>
                                     </div>
                                 }
                             >
@@ -986,6 +1099,19 @@ const NewPatientAnalysis = () => {
                         <div className="dashboard-stack">
                             <DashboardCard title="내원 경로별 객단가">
                                 <div style={{ height: 360, width: '100%' }}>
+                                    {isMonthlyView ? (
+                                        <MonthlySnapshotBarChart
+                                            data={selectedUnitPriceRows.map(({ name, unitPrice, color, visitPatientCount, newPatientCount, oldPatientCount }) => ({
+                                                name,
+                                                value: unitPrice,
+                                                color,
+                                                detail: `내원환자 ${Number(visitPatientCount || (newPatientCount + oldPatientCount)).toLocaleString()}명`,
+                                            }))}
+                                            valueLabel="평균 진료비"
+                                            formatValue={formatWon}
+                                            height={330}
+                                        />
+                                    ) : (
                                     <ResponsiveContainer>
                                         <LineChart data={monthlyUnitPriceChartData} margin={{ top: 24, right: 28, left: 20, bottom: 0 }}>
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -1008,24 +1134,17 @@ const NewPatientAnalysis = () => {
                                             ))}
                                         </LineChart>
                                     </ResponsiveContainer>
+                                    )}
                                 </div>
                             </DashboardCard>
 
                             <DashboardCard
                                 title="내원경로별 1인당 평균 진료비 상세 데이터"
-                                subtitle="선택 월 기준 총 진료비와 평균 진료비"
+                                subtitle={`${insightPeriodLabel} 기준 총 진료비와 평균 진료비`}
                                 headerRight={
                                     <div style={monthSelectWrapStyle}>
-                                        <span style={monthSelectLabelStyle}>조회 월</span>
-                                        <select
-                                            value={selectedUnitPriceMonthIndex}
-                                            onChange={(e) => setSelectedUnitPriceMonthIndex(Number(e.target.value))}
-                                            style={monthSelectStyle}
-                                        >
-                                            {MONTHS.map((month, index) => (
-                                                <option key={month} value={index}>{month}</option>
-                                            ))}
-                                        </select>
+                                        <span style={monthSelectLabelStyle}>표시 범위</span>
+                                        <strong style={monthSelectLabelStyle}>{insightPeriodLabel}</strong>
                                     </div>
                                 }
                             >
@@ -1063,7 +1182,7 @@ const NewPatientAnalysis = () => {
                                 </div>
                             </DashboardCard>
 
-                            <DashboardCard title="내원환자 및 진료비 요약 데이터" subtitle="선택 월 기준 엑셀 합계 / 평균">
+                            <DashboardCard title="내원환자 및 진료비 요약 데이터" subtitle={`${insightPeriodLabel} 기준 엑셀 합계 / 평균`}>
                                 <div className="treatment-data-table-container">
                                     <table className="treatment-data-table">
                                         <thead>
@@ -1117,14 +1236,43 @@ const NewPatientAnalysis = () => {
 
                             <div className="dashboard-grid" style={{ gridTemplateColumns: '2fr 1fr' }}>
                                 <DashboardCard title="신환 내원경로 현황" subtitle="월별 유입 경로">
-                                    <div style={{ height: 330, width: '100%' }}>
+                                    <div
+                                        aria-label="신환 내원경로 상위 10개"
+                                        style={{
+                                            display: 'flex',
+                                            flexWrap: 'wrap',
+                                            justifyContent: 'center',
+                                            gap: '0.35rem 0.65rem',
+                                            padding: '0.05rem 0.2rem 0.55rem',
+                                        }}
+                                    >
+                                        {sourceSummary.slice(0, 10).map(({ name, color }, index) => (
+                                            <span
+                                                key={name}
+                                                title={`${index + 1}위 · ${name}`}
+                                                style={{
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '0.28rem',
+                                                    minWidth: 0,
+                                                    color: 'var(--text-secondary)',
+                                                    fontSize: '11px',
+                                                    lineHeight: 1.3,
+                                                }}
+                                            >
+                                                <span style={{ width: 8, height: 8, borderRadius: 2, flex: '0 0 auto', background: color }} />
+                                                <strong style={{ color, fontSize: '10px' }}>{index + 1}위</strong>
+                                                <span style={{ maxWidth: '7.5rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                                            </span>
+                                        ))}
+                                    </div>
+                                    <div style={{ height: 286, width: '100%' }}>
                                         <ResponsiveContainer>
-                                            <BarChart data={monthlySourceChartData} margin={{ top: 24, right: 16, left: 0, bottom: 0 }} barCategoryGap="14%" barGap={2}>
+                                            <BarChart data={monthlySourceChartData} margin={{ top: 12, right: 16, left: 0, bottom: 0 }} barCategoryGap="14%" barGap={2}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                                                 <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                                                 <YAxis tick={{ fontSize: 12 }} width={42} />
-                                                <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '12px' }} formatter={(v, name) => [`${v}명`, name]} />
-                                                <Legend verticalAlign="top" height={36} iconType="square" wrapperStyle={{ fontSize: '11px' }} />
+                                                <Tooltip content={renderSourceBarTooltip} cursor={false} wrapperStyle={{ zIndex: 10 }} />
                                                 {sourceSummary.map(({ name, color }) => (
                                                     <Bar key={name} dataKey={name} name={name} fill={color} maxBarSize={34} radius={[3,3,0,0]} />
                                                 ))}
@@ -1134,23 +1282,23 @@ const NewPatientAnalysis = () => {
                                 </DashboardCard>
 
                                 <DashboardCard title="신환 내원경로 비중" subtitle="기간 합계 기준">
-                                    <div style={{ height: 340, width: '100%' }}>
+                                    <div style={{ height: 300, width: '100%' }}>
                                         <ResponsiveContainer>
                                             <PieChart>
                                                 <Pie
                                                     data={sourceSummary}
                                                     cx="50%"
-                                                    cy="48%"
+                                                    cy="50%"
                                                     innerRadius={52}
                                                     outerRadius={78}
                                                     paddingAngle={4}
                                                     dataKey="value"
+                                                    nameKey="name"
                                                     labelLine={false}
                                                 >
                                                     {sourceSummary.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
                                                 </Pie>
-                                                <Tooltip content={renderSourcePieTooltip} />
-                                                <Legend verticalAlign="bottom" height={24} iconSize={10} wrapperStyle={{ fontSize: '11px' }} />
+                                                <Tooltip content={renderSourcePieTooltip} cursor={false} wrapperStyle={{ zIndex: 10 }} />
                                             </PieChart>
                                         </ResponsiveContainer>
                                     </div>
@@ -1159,22 +1307,11 @@ const NewPatientAnalysis = () => {
 
                             <DashboardCard
                                 title="신환 내원경로 상세 데이터"
-                                subtitle="월별 내원경로와 비율"
+                                subtitle={`${insightPeriodLabel} 기준 월별 내원경로와 비율`}
                                 headerRight={
                                     <div style={monthSelectWrapStyle}>
                                         <span style={monthSelectLabelStyle}>표시 범위</span>
-                                        <select
-                                            value={selectedRatioMonthIndex}
-                                            onChange={(e) => setSelectedRatioMonthIndex(e.target.value)}
-                                            style={monthSelectStyle}
-                                        >
-                                            <option value="period">
-                                                {half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체보기'}
-                                            </option>
-                                            {MONTHS.map((month, index) => (
-                                                <option key={month} value={index}>{month}</option>
-                                            ))}
-                                        </select>
+                                        <strong style={monthSelectLabelStyle}>{insightPeriodLabel}</strong>
                                     </div>
                                 }
                             >
@@ -1216,7 +1353,7 @@ const NewPatientAnalysis = () => {
                                                 <td className="font-bold">{selectedRatioDetailGrandTotal.toLocaleString()}명</td>
                                             </tr>
                                             <tr>
-                                                <td className="row-header" style={compactMonthCellStyle}>{isRatioMonthMode ? '당월 비율' : '기간 비율'}</td>
+                                                <td className="row-header" style={compactMonthCellStyle}>{monthFilter !== 'all' ? '당월 비율' : '기간 비율'}</td>
                                                 {detailSourceSummary.map(({ name, color }) => {
                                                     const count = Number(selectedRatioDetailSourceTotals[name] || 0);
                                                     return <td key={name} style={{ color }}>{formatRatio(count, selectedRatioDetailGrandTotal)}</td>;
@@ -1250,35 +1387,15 @@ const NewPatientAnalysis = () => {
                     </p>
                 </div>
 
-                <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
-                    <div className="year-selector-container">
-                        <button className="year-select-btn" onClick={() => setIsYearOpen(!isYearOpen)}>
-                            <Calendar size={16} />
-                            {selectedYear}년
-                            <ChevronDown size={14} style={{ transform: isYearOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-                        </button>
-
-                        {isYearOpen && (
-                            <div className="year-dropdown">
-                                {availableYears.map(year => (
-                                    <button
-                                        key={year}
-                                        className={`year-item ${selectedYear === year ? 'active' : ''}`}
-                                        onClick={() => { setSelectedYear(year); setIsYearOpen(false); }}
-                                    >
-                                        {year}년
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="period-tabs">
-                        <button className={half === 'all' ? 'active' : ''} onClick={() => setHalf('all')}>전체보기</button>
-                        <button className={half === 'first' ? 'active' : ''} onClick={() => setHalf('first')}>상반기</button>
-                        <button className={half === 'second' ? 'active' : ''} onClick={() => setHalf('second')}>하반기</button>
-                    </div>
-                </div>
+                <AnalysisPeriodControls
+                    selectedYear={selectedYear}
+                    availableYears={availableYears}
+                    onYearChange={setSelectedYear}
+                    half={half}
+                    onHalfChange={setHalf}
+                    monthFilter={monthFilter}
+                    onMonthFilterChange={setMonthFilter}
+                />
             </header>
 
             <nav className="tab-navigation">
@@ -1309,7 +1426,7 @@ const NewPatientAnalysis = () => {
                 categoryKey="new_patient"
                 subCategoryKey={subTab}
                 year={selectedYear}
-                period={half}
+                period={monthFilter !== 'all' ? `month-${monthFilter}` : half}
                 periodLabel={insightPeriodLabel}
                 defaultInsight={newPatientInsightText}
             />
