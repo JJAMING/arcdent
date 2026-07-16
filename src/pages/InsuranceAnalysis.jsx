@@ -123,6 +123,18 @@ const monthSelectStyle = {
     outline: 'none',
 };
 const feeCountCellStyle = { minWidth: '72px', whiteSpace: 'nowrap', wordBreak: 'keep-all' };
+const FEE_CHART_NAME_LIMIT = 12;
+
+const formatFeeChartName = (fee = {}) => {
+    const code = String(fee.code || '').trim();
+    const name = String(fee.name || '').trim();
+    const shortenedName = name.length > FEE_CHART_NAME_LIMIT
+        ? `${name.slice(0, FEE_CHART_NAME_LIMIT)}…`
+        : name;
+
+    if (code && shortenedName) return `${code} · ${shortenedName}`;
+    return shortenedName || code || '-';
+};
 const feeAmountCellStyle = { minWidth: '112px', whiteSpace: 'nowrap', wordBreak: 'keep-all' };
 const FEE_ROWS_PER_PAGE = 20;
 
@@ -393,7 +405,8 @@ const InsuranceAnalysis = () => {
         isMonthlyView ? (
             <MonthlySnapshotBarChart
                 data={topFees.map((item, index) => ({
-                    name: item.name || item.code,
+                    name: formatFeeChartName(item),
+                    tooltipName: item.name || item.code,
         value: Number(dataKeyLabel === '진료횟수' ? (item.visits || 0) : (item.patients || 0)),
                     color: COLORS[index % COLORS.length],
                     detail: item.code ? `코드 ${item.code}` : '',
@@ -401,6 +414,7 @@ const InsuranceAnalysis = () => {
                 valueLabel={dataKeyLabel}
                 formatValue={(value) => `${Number(value || 0).toLocaleString()}${dataKeyLabel === '진료횟수' ? '회' : '명'}`}
                 height={290}
+                categoryWidth={184}
             />
         ) : (
         <ResponsiveContainer>

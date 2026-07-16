@@ -480,6 +480,11 @@ const NewPatientAnalysis = () => {
             .sort((a, b) => b.totalRatio - a.totalRatio || b.value - a.value);
     }, [currentHalfData, treatmentSourceSummary]);
 
+    const topTreatmentConversionRows = useMemo(
+        () => treatmentRankByTotalRatio.slice(0, 10),
+        [treatmentRankByTotalRatio]
+    );
+
     const newPatientInsightText = (() => {
         if (subTab === 'treatmentConversion') {
             const topTreatment = treatmentRankByTotalRatio[0];
@@ -743,7 +748,7 @@ const NewPatientAnalysis = () => {
 
         return (
             <div style={{
-                width: '520px',
+                width: '760px',
                 maxWidth: 'calc(100vw - 2rem)',
                 background: 'var(--card-bg)',
                 border: '1px solid var(--border-color)',
@@ -769,7 +774,7 @@ const NewPatientAnalysis = () => {
                                 key={name}
                                 style={{
                                     display: 'grid',
-                                    gridTemplateColumns: '10px minmax(0, 1fr) auto',
+                                    gridTemplateColumns: '10px minmax(118px, 1fr) auto',
                                     alignItems: 'center',
                                     gap: '0.45rem',
                                     padding: '0.3rem 0.25rem',
@@ -787,6 +792,90 @@ const NewPatientAnalysis = () => {
                 </div>
             </div>
         );
+    };
+
+    const renderTreatmentConversionTooltipPanel = ({ title, rows, highlightName }) => {
+        if (!rows.length) return null;
+
+        return (
+            <div style={{
+                width: '760px',
+                maxWidth: 'calc(100vw - 2rem)',
+                background: 'var(--card-bg)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '10px',
+                boxShadow: 'var(--shadow)',
+                padding: '0.7rem 0.8rem',
+                color: 'var(--text-primary)',
+            }}>
+                <div style={{ fontSize: '12px', fontWeight: 800, marginBottom: '0.5rem' }}>{title}</div>
+                <div style={{
+                    display: 'grid',
+                    gridAutoFlow: 'column',
+                    gridTemplateRows: 'repeat(10, minmax(0, auto))',
+                    gridAutoColumns: 'minmax(0, 1fr)',
+                    columnGap: '0.8rem',
+                    rowGap: '0.08rem',
+                }}>
+                    {rows.map(({ name, color, ratio, count }) => {
+                        const highlighted = highlightName === name;
+                        return (
+                            <div
+                                key={name}
+                                style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: '10px minmax(118px, 1fr) auto',
+                                    alignItems: 'center',
+                                    gap: '0.45rem',
+                                    padding: '0.3rem 0.25rem',
+                                    borderRadius: '6px',
+                                    background: 'transparent',
+                                    fontSize: '12px',
+                                }}
+                            >
+                                <span style={{ width: 9, height: 9, borderRadius: 2, background: color }} />
+                                <span style={{
+                                    minWidth: 0,
+                                    whiteSpace: 'normal',
+                                    overflowWrap: 'anywhere',
+                                    lineHeight: 1.35,
+                                    fontWeight: highlighted ? 800 : 600,
+                                }}>
+                                    {name}
+                                </span>
+                                <strong style={{ color, whiteSpace: 'nowrap' }}>
+                                    {Number(ratio || 0).toFixed(1)}% · {Number(count || 0).toLocaleString()}명
+                                </strong>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        );
+    };
+
+    const renderTreatmentConversionTooltip = ({ active, label, payload }) => {
+        if (!active) return null;
+
+        const highlightedName = payload?.[0]?.payload?.name || payload?.[0]?.name;
+        const selectedMonth = label
+            ? currentHalfData.find(month => month.month === label)
+            : null;
+        const selectedMonthChart = label
+            ? monthlyTreatmentChartData.find(month => month.month === label)
+            : null;
+        const rows = treatmentRankByTotalRatio.map(({ name, color, totalRatio, value }) => ({
+            name,
+            color,
+            ratio: selectedMonthChart ? Number(selectedMonthChart[name] || 0) : totalRatio,
+            count: selectedMonth ? Number((selectedMonth.sources || {})[name] || 0) : value,
+        }));
+
+        return renderTreatmentConversionTooltipPanel({
+            title: label ? `${label} 내원경로별 치료 이행율` : `${insightPeriodLabel} 내원경로별 치료 이행율`,
+            rows,
+            highlightName: highlightedName,
+        });
     };
 
     const renderUnitPriceTooltip = ({ active, label, payload }) => {
@@ -836,7 +925,7 @@ const NewPatientAnalysis = () => {
                                     <div style={{ height: 340, width: '100%' }}>
                                         {isMonthlyView ? (
                                             <MonthlySnapshotBarChart
-                                                data={treatmentRankByTotalRatio.map(({ name, totalRatio, value, color }) => ({
+                                                data={topTreatmentConversionRows.map(({ name, totalRatio, value, color }) => ({
                                                     name,
                                                     value: totalRatio,
                                                     color,
@@ -845,6 +934,7 @@ const NewPatientAnalysis = () => {
                                                 valueLabel="치료 이행율"
                                                 formatValue={(value) => `${Number(value).toFixed(1)}%`}
                                                 height={310}
+                                                tooltipContent={renderTreatmentConversionTooltip}
                                             />
                                         ) : (
                                         <ResponsiveContainer>
@@ -852,9 +942,9 @@ const NewPatientAnalysis = () => {
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                                                 <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                                                 <YAxis tick={{ fontSize: 12 }} width={42} tickFormatter={(v) => `${v}%`} />
-                                                <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '12px' }} formatter={(v, name) => [`${Number(v).toFixed(1)}%`, name]} />
+                                                <Tooltip content={renderTreatmentConversionTooltip} cursor={false} wrapperStyle={{ zIndex: 10 }} />
                                                 <Legend verticalAlign="top" height={36} iconType="line" wrapperStyle={{ fontSize: '11px' }} />
-                                                {treatmentRankByTotalRatio.map(({ name, color }) => (
+                                                {topTreatmentConversionRows.map(({ name, color }) => (
                                                     <Line
                                                         key={name}
                                                         type="monotone"

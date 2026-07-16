@@ -31,7 +31,7 @@ const SnapshotTooltip = ({ active, payload, valueLabel, formatValue }) => {
       }}
     >
       <div style={{ color: 'var(--text-primary)', fontSize: '0.86rem', fontWeight: 800, marginBottom: 4 }}>
-        {item.name}
+        {item.tooltipName || item.name}
       </div>
       <div style={{ color: item.color || '#3b82f6', fontSize: '0.82rem', fontWeight: 700 }}>
         {valueLabel}: {formatValue(item.value)}
@@ -50,6 +50,8 @@ const MonthlySnapshotBarChart = ({
   valueLabel = '값',
   formatValue = defaultFormatValue,
   height,
+  categoryWidth = 146,
+  tooltipContent,
   emptyMessage = '해당 월에 표시할 데이터가 없습니다.',
 }) => {
   const chartData = (Array.isArray(data) ? data : [])
@@ -89,12 +91,15 @@ const MonthlySnapshotBarChart = ({
         <YAxis
           type="category"
           dataKey="name"
-          width={146}
+          width={categoryWidth}
           tick={{ fontSize: 12, fill: 'var(--text-primary)' }}
           axisLine={false}
           tickLine={false}
         />
-        <Tooltip content={<SnapshotTooltip valueLabel={valueLabel} formatValue={formatValue} />} cursor={{ fill: 'rgba(59, 130, 246, 0.06)' }} />
+        <Tooltip
+          content={tooltipContent || <SnapshotTooltip valueLabel={valueLabel} formatValue={formatValue} />}
+          cursor={{ fill: 'rgba(59, 130, 246, 0.06)' }}
+        />
         <Bar dataKey="value" radius={[0, 5, 5, 0]} maxBarSize={30} isAnimationActive={false}>
           {chartData.map((entry, index) => (
             <Cell key={`${entry.name}-${index}`} fill={entry.color || '#3b82f6'} />
