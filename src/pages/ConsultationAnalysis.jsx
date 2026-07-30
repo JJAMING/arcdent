@@ -61,13 +61,18 @@ const isRejectedStatus = (status) => {
 const getPlanYear = (plan) => String(plan.year || normalizeYear(plan.createdAt));
 const getPlanMonth = (plan) => plan.month || normalizeMonth(plan.createdAt);
 
+const isDisplayableConsultantName = (value) => {
+    const name = String(value || '').trim();
+    return Boolean(name) && !['미지정', '미입력', '-', '없음'].includes(name);
+};
+
 const getConsultantName = (plan) => {
     const keys = ['consultant', 'consultantName', 'counselor', 'manager', '담당자', '상담자', '실장'];
     for (const key of keys) {
         const value = String(plan?.[key] ?? '').trim();
         if (value) return value;
     }
-    return '미지정';
+    return '';
 };
 
 const getFieldNumber = (item, keys) => {
@@ -127,7 +132,11 @@ const buildTreatmentPlansFromSupabaseRows = (rows = []) => (
 const isDoctorDiagnosisName = (value) => {
     const text = String(value || '').trim();
     if (!/^[가-힣]{2,5}$/.test(text)) return false;
-    return !/(상담|현황|결정|환자|진단|동의|금액|보험|치료|계획|신환|구환|전체|부분|최종|총)/.test(text);
+    const reservedLabels = new Set([
+        '상담', '현황', '결정', '환자', '진단', '동의', '금액', '보험',
+        '치료', '계획', '신환', '구환', '전체', '부분', '최종', '총',
+    ]);
+    return !reservedLabels.has(text);
 };
 
 const ConsultationAnalysis = () => {
@@ -453,7 +462,7 @@ const ConsultationAnalysis = () => {
         if (stored?.rows?.length) {
             return stored.rows
                 .map(row => ({
-                    name: String(row.name || '').trim() || '미입력',
+                    name: String(row.name || '').trim(),
                     patientCount: Number(row.patientCount || 0),
                     fullAgreed: Number(row.fullAgreed || 0),
                     partialAgreed: Number(row.partialAgreed || 0),
@@ -464,13 +473,14 @@ const ConsultationAnalysis = () => {
                     agreedAmount: Number(row.agreedAmount || 0),
                     amountAgreementRate: Number(row.amountAgreementRate || 0),
                 }))
-                .filter(row => row.name && row.patientCount > 0)
+                .filter(row => isDisplayableConsultantName(row.name) && row.patientCount > 0)
                 .sort((a, b) => b.patientCount - a.patientCount || b.amountAgreementRate - a.amountAgreementRate);
         }
 
         const groups = new Map();
         filteredPlans.forEach(plan => {
             const name = getConsultantName(plan);
+            if (!isDisplayableConsultantName(name)) return;
             if (!groups.has(name)) groups.set(name, []);
             groups.get(name).push(plan);
         });
@@ -507,7 +517,7 @@ const ConsultationAnalysis = () => {
             const consultationAmount = Number(row.consultationAmount || 0);
             const agreedAmount = Number(row.agreedAmount || 0);
             return {
-                name: String(row.name || '').trim() || '미입력',
+                name: String(row.name || '').trim(),
                 patientCount,
                 fullAgreed,
                 partialAgreed,
@@ -520,12 +530,17 @@ const ConsultationAnalysis = () => {
 
         const rowsForMonth = (month) => {
             const stored = getConsultantSummary(month);
-            if (stored?.rows?.length) return stored.rows.map(normalizeRow);
+            if (stored?.rows?.length) {
+                return stored.rows
+                    .map(normalizeRow)
+                    .filter(row => isDisplayableConsultantName(row.name));
+            }
 
             const monthPlans = treatmentPlans.filter(plan => getPlanYear(plan) === String(selectedYear) && getPlanMonth(plan) === month);
             const groups = new Map();
             monthPlans.forEach(plan => {
                 const name = getConsultantName(plan);
+                if (!isDisplayableConsultantName(name)) return;
                 if (!groups.has(name)) groups.set(name, []);
                 groups.get(name).push(plan);
             });
@@ -577,7 +592,7 @@ const ConsultationAnalysis = () => {
                 patientAgreementRate: row.patientCount > 0 ? (row.totalAgreed / row.patientCount) * 100 : 0,
                 amountAgreementRate: row.consultationAmount > 0 ? (row.agreedAmount / row.consultationAmount) * 100 : 0,
             }))
-            .filter(row => row.patientCount > 0 || row.consultationAmount > 0)
+            .filter(row => isDisplayableConsultantName(row.name) && (row.patientCount > 0 || row.consultationAmount > 0))
             .sort((a, b) => b.patientCount - a.patientCount || b.amountAgreementRate - a.amountAgreementRate);
     }, [consultationConsultantData, treatmentPlans, selectedYear, periodMonths]);
 
@@ -589,7 +604,7 @@ const ConsultationAnalysis = () => {
             const consultationAmount = Number(row.consultationAmount || 0);
             const agreedAmount = Number(row.agreedAmount || 0);
             return {
-                name: String(row.name || '').trim() || '미입력',
+                name: String(row.name || '').trim(),
                 patientCount: Number(row.patientCount || 0),
                 totalAgreed,
                 consultationAmount,
@@ -601,12 +616,17 @@ const ConsultationAnalysis = () => {
 
         const rowsForMonth = (month) => {
             const stored = getConsultantSummary(month);
-            if (stored?.rows?.length) return stored.rows.map(normalizeRow);
+            if (stored?.rows?.length) {
+                return stored.rows
+                    .map(normalizeRow)
+                    .filter(row => isDisplayableConsultantName(row.name));
+            }
 
             const monthPlans = treatmentPlans.filter(plan => getPlanYear(plan) === String(selectedYear) && getPlanMonth(plan) === month);
             const groups = new Map();
             monthPlans.forEach(plan => {
                 const name = getConsultantName(plan);
+                if (!isDisplayableConsultantName(name)) return;
                 if (!groups.has(name)) groups.set(name, []);
                 groups.get(name).push(plan);
             });
@@ -627,7 +647,7 @@ const ConsultationAnalysis = () => {
         const data = periodMonths.map(month => {
             const row = { month };
             rowsForMonth(month)
-                .filter(item => item.patientCount > 0 || item.consultationAmount > 0)
+                .filter(item => isDisplayableConsultantName(item.name) && (item.patientCount > 0 || item.consultationAmount > 0))
                 .forEach(item => {
                     consultantNames.add(item.name);
                     row[item.name] = Number(item.amountAgreementRate.toFixed(1));

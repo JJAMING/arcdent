@@ -4030,7 +4030,11 @@ const Admin = () => {
         const isDoctorName = (value) => {
             const text = String(value || '').trim();
             if (!/^[가-힣]{2,5}$/.test(text)) return false;
-            return !/(상담|현황|결정|환자|진단|동의|금액|보험|치료|계획|신환|구환|전체|부분|최종|총)/.test(text);
+            const reservedLabels = new Set([
+                '상담', '현황', '결정', '환자', '진단', '동의', '금액', '보험',
+                '치료', '계획', '신환', '구환', '전체', '부분', '최종', '총',
+            ]);
+            return !reservedLabels.has(text);
         };
 
         const cells = [];
