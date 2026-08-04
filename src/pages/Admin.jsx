@@ -14,7 +14,7 @@ import {
     saveAnalyticsAuditLog,
     saveAnalyticsData,
 } from '../utils/supabaseAnalyticsStore';
-import { DEFAULT_IMPLANT_TYPES, IMPLANT_TYPE_COLORS, getImplantTypeCounts, normalizeImplantTypes } from '../utils/implantTypes';
+import { DEFAULT_IMPLANT_TYPES, IMPLANT_TYPE_COLORS, getImplantTypeCounts, getReconciledImplantTotal, normalizeImplantTypes } from '../utils/implantTypes';
 import { getCurrentYearString, getRollingYearOptions } from '../utils/dateUtils';
 import { useAuth } from '../context/AuthContext';
 import './Admin.css';
@@ -1801,15 +1801,20 @@ const Admin = () => {
                     ? implantTypeNames.map(name => ({ name }))
                     : DEFAULT_IMPLANT_TYPES
             );
+            const reconciledTreatmentRows = treatmentRows.map(row => ({
+                ...row,
+                implantTotal: getReconciledImplantTotal(row, reportImplantTypes),
+                surg1: getReconciledImplantTotal(row, reportImplantTypes),
+            }));
             return `
                 ${reportCards([
-                    ...(includeTab('implant') ? [{ label: '임플란트 총계', value: `${reportNumber(reportSum(treatmentRows, 'implantTotal'))}건`, sub: reportPeriodLabel }] : []),
+                    ...(includeTab('implant') ? [{ label: '임플란트 총계', value: `${reportNumber(reportSum(reconciledTreatmentRows, 'implantTotal'))}건`, sub: reportPeriodLabel }] : []),
                     ...(includeTab('insuranceImplant') ? [{ label: '보험 임플란트', value: `${reportNumber(reportSum(treatmentRows, 'insImp'))}건`, sub: reportPeriodLabel }] : []),
                     ...(includeTab('insuranceDenture') ? [{ label: '보험 틀니', value: `${reportNumber(reportSum(treatmentRows, 'insDent'))}건`, sub: reportPeriodLabel }] : []),
                 ])}
                 ${includeTab('implant') ? `
                     <h2>임플란트</h2>
-                    ${reportTable(['월', '수술 1차', '임플란트 총계', ...reportImplantTypes.map(type => type.name)], treatmentRows.map(row => [
+                    ${reportTable(['월', '수술 1차', '임플란트 총계', ...reportImplantTypes.map(type => type.name)], reconciledTreatmentRows.map(row => [
                         row.month,
                         reportNumber(row.surg1),
                         reportNumber(row.implantTotal),

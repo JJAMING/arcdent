@@ -15,7 +15,7 @@ import ManagementInsight from '../components/ManagementInsight';
 import AnalysisPeriodControls from '../components/AnalysisPeriodControls';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData, loadClinicImplantTypes } from '../utils/supabaseAnalyticsStore';
-import { getImplantTypeCounts, getImplantTypeStorageKey, normalizeImplantTypes } from '../utils/implantTypes';
+import { getImplantTypeCounts, getImplantTypeStorageKey, getReconciledImplantTotal, normalizeImplantTypes } from '../utils/implantTypes';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
 import './TreatmentAnalysis.css';
 import './SalesAnalysis.css';
@@ -72,7 +72,11 @@ const buildTreatmentMapFromSupabaseRows = (implantRows = [], insuranceRows = [],
         if (!target) return;
         Object.assign(target, row.payload || {});
         if (row.sub_category === 'implant_surgery') {
-            target.implantTypes = getImplantTypeCounts(row.payload || {}, implantTypes);
+            const payload = row.payload || {};
+            const implantTotal = getReconciledImplantTotal(payload, implantTypes);
+            target.implantTypes = getImplantTypeCounts(payload, implantTypes);
+            target.implantTotal = implantTotal;
+            target.surg1 = implantTotal;
         }
     });
 

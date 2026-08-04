@@ -83,4 +83,23 @@ export const getImplantTypeCounts = (payload = {}, implantTypes = []) => {
     }, {});
 };
 
+// Prefer the persisted type rows over a legacy subtotal that may include a separate subtotal row.
+export const getReconciledImplantTotal = (payload = {}, implantTypes = []) => {
+    const configuredTotal = Object.values(getImplantTypeCounts(payload, implantTypes))
+        .reduce((sum, value) => sum + Number(value || 0), 0);
+    const unclassifiedCount = Number(payload?.unclassifiedImplantCount);
+
+    if (Number.isFinite(unclassifiedCount) && unclassifiedCount >= 0) {
+        return configuredTotal + unclassifiedCount;
+    }
+
+    if (configuredTotal > 0) return configuredTotal;
+
+    const rowUsageTotal = Number(payload?.rowUsageTotal);
+    if (Number.isFinite(rowUsageTotal) && rowUsageTotal > 0) return rowUsageTotal;
+
+    const storedTotal = Number(payload?.implantTotal ?? payload?.surg1 ?? 0);
+    return Number.isFinite(storedTotal) && storedTotal > 0 ? storedTotal : 0;
+};
+
 export const getImplantTypeStorageKey = (index) => `implantType_${index}`;

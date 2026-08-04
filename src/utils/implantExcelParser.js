@@ -102,6 +102,8 @@ const parseImplantSheet = (sheet, implantTypes = []) => {
     acc[type.name] = 0;
     return acc;
   }, {});
+  let rowUsageTotal = 0;
+  let sourceImplantTotal = 0;
 
   // 헤더 행 찾기
   let headerRow = null;
@@ -119,7 +121,7 @@ const parseImplantSheet = (sheet, implantTypes = []) => {
     // 합계 행 → implantTotal 추출
     if (isTotalRow(row)) {
       const val = usageIdx >= 0 ? toNum(row[usageIdx]) : 0;
-      if (val > 0) counts.implantTotal = val;
+      if (val > 0) sourceImplantTotal = val;
       continue;
     }
 
@@ -130,6 +132,8 @@ const parseImplantSheet = (sheet, implantTypes = []) => {
     // 사용개수 값
     const usage = usageIdx >= 0 ? toNum(row[usageIdx]) : 1;
     if (usage <= 0) continue;
+
+    rowUsageTotal += usage;
 
     // 관리자 설정 종류 감지 후 합산
     const configuredType = detectConfiguredImplantType(firstCell, configuredTypes);
@@ -145,12 +149,17 @@ const parseImplantSheet = (sheet, implantTypes = []) => {
   }
 
   // implantTotal이 합계 셀에서 못 왔으면 브랜드 합산으로 대체
-  if (counts.implantTotal === 0) {
-    const dynamicTotal = Object.values(dynamicCounts).reduce((sum, value) => sum + Number(value || 0), 0);
-    counts.implantTotal = dynamicTotal || counts.osstem + counts.dentium + counts.dio + counts.straumann;
-  }
+  const dynamicTotal = Object.values(dynamicCounts).reduce((sum, value) => sum + Number(value || 0), 0);
+  const legacyTotal = counts.osstem + counts.dentium + counts.dio + counts.straumann;
+  counts.implantTotal = rowUsageTotal || sourceImplantTotal || dynamicTotal || legacyTotal;
 
-  return { ...counts, implantTypes: dynamicCounts };
+  return {
+    ...counts,
+    implantTypes: dynamicCounts,
+    rowUsageTotal,
+    sourceImplantTotal,
+    unclassifiedImplantCount: Math.max(0, rowUsageTotal - dynamicTotal),
+  };
 };
 
 // ─── "수술 기타건수" 시트 파싱 ───────────────────────────────────
