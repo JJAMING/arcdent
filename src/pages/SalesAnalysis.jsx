@@ -435,8 +435,8 @@ const SalesAnalysis = () => {
 
   const doctorChartData = React.useMemo(() => {
     const dataArray = Array.isArray(currentHalfData) ? currentHalfData : [];
-    return dataArray.map(month => {
-      if (!month || typeof month !== 'object') return { month: 'Unknown', total: 0, top2Names: [] };
+    const chartRows = dataArray.map(month => {
+      if (!month || typeof month !== 'object') return { month: 'Unknown', total: 0, top2Names: [], maxDoctorRevenue: 0 };
 
       const entry = {
         ...month,
@@ -505,9 +505,23 @@ const SalesAnalysis = () => {
         .slice(0, 2)
         .filter(d => d.value > 0)
         .map(d => d.name);
+      entry.maxDoctorRevenue = Math.max(0, ...doctorValues.map(({ value }) => value));
 
       return entry;
     });
+
+    // 병원 총매출 선은 의사별 막대 라벨과 겹치지 않도록, 차트에서만 상단 여백을 더해 그립니다.
+    // 실제 총매출 값은 total에 그대로 보존하며 툴팁과 상세 표는 해당 실제 값을 사용합니다.
+    const chartMaximum = Math.max(
+      0,
+      ...chartRows.flatMap(({ total = 0, maxDoctorRevenue = 0 }) => [total, maxDoctorRevenue])
+    );
+    const lineGap = Math.max(chartMaximum * 0.08, 1_000_000);
+
+    return chartRows.map((entry) => ({
+      ...entry,
+      totalVisual: Math.max(entry.total, entry.maxDoctorRevenue) + lineGap,
+    }));
   }, [currentHalfData, doctorNames, filteredAgreedPatients, getAgreedPatientMonth]);
 
 
@@ -1316,10 +1330,6 @@ const SalesAnalysis = () => {
                         domain={[0, (dataMax) => dataMax * 1.15]}
                         tickFormatter={(v) => `${Math.floor(v/10000).toLocaleString()}만`}
                       />
-                      <Tooltip
-                        formatter={(v) => `${Number(v || 0).toLocaleString()}원`}
-                        contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }}
-                      />
                       <Legend verticalAlign="top" height={36}/>
                       {(doctorNames || []).map((name, idx) => (
                         <Bar
@@ -1334,25 +1344,12 @@ const SalesAnalysis = () => {
                             dataKey={name}
                             position="top"
                             content={(props) => {
-                              const { x, y, width, height, value, index } = props;
+                              const { x, y, width, value, index } = props;
                               const monthData = doctorChartData[index];
                               if (monthData?.top2Names?.includes(name)) {
                                 const labelText = `${Number(value || 0).toLocaleString()}원`;
                                 const textWidth = labelText.length * 6.5;
-                                const barHeight = Number(height) || 0;
-                                const barValue = Number(value) || 0;
-                                const hospitalTotal = Number(monthData.total) || 0;
-                                const baselineY = y + barHeight;
-                                const hospitalPointY = barValue > 0
-                                  ? baselineY - ((hospitalTotal / barValue) * barHeight)
-                                  : null;
-                                const defaultLabelTop = y - 25;
-                                const overlapsHospitalPoint = hospitalPointY !== null
-                                  && hospitalPointY + 5 >= defaultLabelTop
-                                  && hospitalPointY - 5 <= defaultLabelTop + 20;
-                                const labelTop = overlapsHospitalPoint && barHeight >= 44
-                                  ? y + 8
-                                  : defaultLabelTop;
+                                const labelTop = y - 25;
                                 return (
                                   <g>
                                     <rect
@@ -1381,9 +1378,18 @@ const SalesAnalysis = () => {
                           />
                         </Bar>
                       ))}
+                      <Tooltip
+                        formatter={(value, name, item) => {
+                          const actualValue = name === '병원 총매출'
+                            ? Number(item?.payload?.total || 0)
+                            : Number(value || 0);
+                          return [`${actualValue.toLocaleString()}원`, name];
+                        }}
+                        contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }}
+                      />
                       <Line
                         type="monotone"
-                        dataKey="total"
+                        dataKey="totalVisual"
                         name="병원 총매출"
                         stroke="#6366f1"
                         strokeWidth={3}
