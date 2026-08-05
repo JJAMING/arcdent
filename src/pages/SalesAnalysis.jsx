@@ -1334,16 +1334,30 @@ const SalesAnalysis = () => {
                             dataKey={name}
                             position="top"
                             content={(props) => {
-                              const { x, y, width, value, index } = props;
+                              const { x, y, width, height, value, index } = props;
                               const monthData = doctorChartData[index];
                               if (monthData?.top2Names?.includes(name)) {
                                 const labelText = `${Number(value || 0).toLocaleString()}원`;
                                 const textWidth = labelText.length * 6.5;
+                                const barHeight = Number(height) || 0;
+                                const barValue = Number(value) || 0;
+                                const hospitalTotal = Number(monthData.total) || 0;
+                                const baselineY = y + barHeight;
+                                const hospitalPointY = barValue > 0
+                                  ? baselineY - ((hospitalTotal / barValue) * barHeight)
+                                  : null;
+                                const defaultLabelTop = y - 25;
+                                const overlapsHospitalPoint = hospitalPointY !== null
+                                  && hospitalPointY + 5 >= defaultLabelTop
+                                  && hospitalPointY - 5 <= defaultLabelTop + 20;
+                                const labelTop = overlapsHospitalPoint && barHeight >= 44
+                                  ? y + 8
+                                  : defaultLabelTop;
                                 return (
                                   <g>
                                     <rect
                                       x={x + width / 2 - textWidth / 2 - 5}
-                                      y={y - 25}
+                                      y={labelTop}
                                       width={textWidth + 10}
                                       height={20}
                                       rx={4}
@@ -1351,7 +1365,7 @@ const SalesAnalysis = () => {
                                     />
                                     <text
                                       x={x + width / 2}
-                                      y={y - 11}
+                                      y={labelTop + 14}
                                       fill="#fff"
                                       fontSize={10}
                                       textAnchor="middle"
