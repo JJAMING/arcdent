@@ -540,23 +540,32 @@ const SalesAnalysis = () => {
 
   // --- 매출 분석 정리 (Summary) 데이터 집계 ---
   const summaryMonthlyMetrics = React.useMemo(() => {
+    const toPercent = (numerator, denominator) => {
+      const numericNumerator = Number(numerator) || 0;
+      const numericDenominator = Number(denominator) || 0;
+
+      if (numericDenominator <= 0) return 0;
+
+      return Math.round((numericNumerator / numericDenominator) * 1000) / 10;
+    };
+
     return doctorChartData.map(d => {
       const metrics = {
         month: d.month,
-        pureRatio: d.total > 0 ? ((d.netSales / d.total) * 100).toFixed(1) : 0,
-        insRatio: d.total > 0 ? ((d.insurance / d.total) * 100).toFixed(1) : 0,
+        pureRatio: toPercent(d.netSales, d.total),
+        insRatio: toPercent(d.insurance, d.total),
 
         // 1. 진료비 상위 비중 (순매출 대비 상위 20명 수납액)
         topFeeRatio: 0,
         // 2. 동의환자 수납율 (개별 달 기준)
         agreedCollectionRate: 0,
         // 3. 신환 수익 비중
-        newPatientRatio: d.netSales > 0 ? ((Number(d.newPatientSales || 0) / d.netSales) * 100).toFixed(1) : 0,
+        newPatientRatio: toPercent(d.newPatientSales, d.netSales),
 
         // 결제 수단 비중 (순매출 대비)
-        cardRatio: d.netSales > 0 ? ((Number(d.card || 0) / d.netSales) * 100).toFixed(1) : 0,
-        cashRatio: d.netSales > 0 ? ((Number(d.cash || 0) / d.netSales) * 100).toFixed(1) : 0,
-        otherRatio: d.netSales > 0 ? ((Number(d.other || 0) / d.netSales) * 100).toFixed(1) : 0
+        cardRatio: toPercent(d.card, d.netSales),
+        cashRatio: toPercent(d.cash, d.netSales),
+        otherRatio: toPercent(d.other, d.netSales)
       };
 
       // 진료비 상위 비중 계산 (동일 환자 합산 후 상위 20명 기준)
@@ -572,17 +581,30 @@ const SalesAnalysis = () => {
         .slice(0, 20)
         .reduce((sum, val) => sum + val, 0);
 
-      metrics.topFeeRatio = d.netSales > 0 ? ((top20Sum / d.netSales) * 100).toFixed(1) : 0;
+      metrics.topFeeRatio = toPercent(top20Sum, d.netSales);
 
       // 동의환자 수납율 계산
       const monthlyAgreed = filteredAgreedPatients.filter(p => getAgreedPatientMonth(p) === d.month);
       const contractSum = monthlyAgreed.reduce((sum, p) => sum + (Number(p.contractAmount) || 0), 0);
       const paidSum = monthlyAgreed.reduce((sum, p) => sum + (Number(p.paidAmount) || 0), 0);
-      metrics.agreedCollectionRate = contractSum > 0 ? ((paidSum / contractSum) * 100).toFixed(1) : 0;
+      metrics.agreedCollectionRate = toPercent(paidSum, contractSum);
 
       return metrics;
     });
   }, [doctorChartData, filteredTopPatientsRaw, filteredAgreedPatients, getAgreedPatientMonth]);
+
+  const summaryPercentAxisMax = React.useMemo(() => {
+    const largestValue = Math.max(
+      100,
+      ...summaryMonthlyMetrics.flatMap(({ topFeeRatio, agreedCollectionRate, newPatientRatio }) => [
+        Number(topFeeRatio) || 0,
+        Number(agreedCollectionRate) || 0,
+        Number(newPatientRatio) || 0
+      ])
+    );
+
+    return Math.ceil((largestValue * 1.15) / 25) * 25;
+  }, [summaryMonthlyMetrics]);
 
   // --- 진료비 상위 환자 (최근 월 기준) ---
   const topPatients = (currentHalfData[currentHalfData.length - 1]?.topPatients || []).slice(0, 20);
@@ -1484,11 +1506,11 @@ const SalesAnalysis = () => {
                   />
                 ) : (
                   <ResponsiveContainer width="100%" height={350}>
-                    <BarChart data={summaryMonthlyMetrics} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                    <BarChart data={summaryMonthlyMetrics} margin={{ top: 44, right: 30, left: 20, bottom: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                       <XAxis dataKey="month" tick={{ dy: 10 }} />
-                      <YAxis tickFormatter={(v) => `${v}%`} width={50} domain={[0, (dataMax) => Math.max(100, dataMax * 1.1)]} />
-                      <Tooltip formatter={(v) => `${v}%`} cursor={{ fill: 'var(--bg-hover)' }} />
+                      <YAxis tickFormatter={(v) => `${v}%`} width={50} domain={[0, summaryPercentAxisMax]} tickCount={5} />
+                      <Tooltip formatter={(v) => `${Number(v || 0).toFixed(1)}%`} cursor={{ fill: 'var(--bg-hover)' }} />
                       <Legend verticalAlign="top" align="right" height={36} iconType="rect" />
                       <Bar dataKey="topFeeRatio" name="진료비 상위" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20}>
                         <LabelList dataKey="topFeeRatio" position="top" formatter={(v) => `${v}%`} style={{ fontSize: '10px', fill: 'var(--text-secondary)' }} />
