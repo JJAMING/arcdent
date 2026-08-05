@@ -435,8 +435,8 @@ const SalesAnalysis = () => {
 
   const doctorChartData = React.useMemo(() => {
     const dataArray = Array.isArray(currentHalfData) ? currentHalfData : [];
-    const chartRows = dataArray.map(month => {
-      if (!month || typeof month !== 'object') return { month: 'Unknown', total: 0, top2Names: [], maxDoctorRevenue: 0 };
+    return dataArray.map(month => {
+      if (!month || typeof month !== 'object') return { month: 'Unknown', total: 0, top2Names: [] };
 
       const entry = {
         ...month,
@@ -505,23 +505,9 @@ const SalesAnalysis = () => {
         .slice(0, 2)
         .filter(d => d.value > 0)
         .map(d => d.name);
-      entry.maxDoctorRevenue = Math.max(0, ...doctorValues.map(({ value }) => value));
 
       return entry;
     });
-
-    // 병원 총매출 선은 의사별 막대 라벨과 겹치지 않도록, 차트에서만 상단 여백을 더해 그립니다.
-    // 실제 총매출 값은 total에 그대로 보존하며 툴팁과 상세 표는 해당 실제 값을 사용합니다.
-    const chartMaximum = Math.max(
-      0,
-      ...chartRows.flatMap(({ total = 0, maxDoctorRevenue = 0 }) => [total, maxDoctorRevenue])
-    );
-    const lineGap = Math.max(chartMaximum * 0.08, 1_000_000);
-
-    return chartRows.map((entry) => ({
-      ...entry,
-      totalVisual: Math.max(entry.total, entry.maxDoctorRevenue) + lineGap,
-    }));
   }, [currentHalfData, doctorNames, filteredAgreedPatients, getAgreedPatientMonth]);
 
 
@@ -1294,6 +1280,36 @@ const SalesAnalysis = () => {
 
       case 'doctor': // 6. 매출분석(의사)
         const doctorColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
+        const renderDoctorSalesTooltip = ({ active, label, payload }) => {
+          if (!active || !payload?.length) return null;
+
+          const row = payload[0]?.payload;
+          if (!row) return null;
+
+          const doctorRows = (doctorNames || [])
+            .map((name, index) => ({
+              name,
+              color: doctorColors[index % doctorColors.length],
+              value: Number(row[name] || 0),
+            }))
+            .filter(({ value }) => value > 0);
+
+          return (
+            <div style={{ maxWidth: '420px', padding: '0.8rem 0.9rem', background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '10px', boxShadow: '0 10px 24px rgba(15, 23, 42, 0.14)' }}>
+              <div style={{ marginBottom: '0.45rem', color: 'var(--text-primary)', fontWeight: 800 }}>{label} 매출</div>
+              <div style={{ marginBottom: '0.55rem', color: '#6366f1', fontWeight: 800 }}>병원 총매출 {Number(row.total || 0).toLocaleString()}원</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.35rem 0.8rem' }}>
+                {doctorRows.map(({ name, color, value }) => (
+                  <div key={name} style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem', minWidth: 0 }}>
+                    <span style={{ width: '0.55rem', height: '0.55rem', flex: '0 0 auto', borderRadius: '2px', background: color }} />
+                    <span style={{ minWidth: 0, color: 'var(--text-secondary)', fontWeight: 700, overflow: 'visible', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{name}</span>
+                    <span style={{ marginLeft: 'auto', color, fontWeight: 800, whiteSpace: 'nowrap' }}>{value.toLocaleString()}원</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        };
 
         if (!Array.isArray(doctorChartData) || doctorChartData.length === 0) {
           return <div className="tab-pane active"><div className="empty-state">데이터가 없습니다.</div></div>;
@@ -1320,84 +1336,56 @@ const SalesAnalysis = () => {
                     />
                   </>
                 ) : (
-                  <ResponsiveContainer width="100%" height={450}>
-                    <ComposedChart data={doctorChartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-                      <XAxis dataKey="month" stroke="var(--text-secondary)" tick={{ dy: 10 }} />
-                      <YAxis
-                        stroke="var(--text-secondary)"
-                        width={80}
-                        domain={[0, (dataMax) => dataMax * 1.15]}
-                        tickFormatter={(v) => `${Math.floor(v/10000).toLocaleString()}만`}
-                      />
-                      <Legend verticalAlign="top" height={36}/>
-                      {(doctorNames || []).map((name, idx) => (
-                        <Bar
-                          key={name}
-                          dataKey={name}
-                          name={name}
-                          fill={doctorColors[idx % doctorColors.length]}
-                          barSize={15}
-                          isAnimationActive={false}
-                        >
-                           <LabelList
-                            dataKey={name}
-                            position="top"
-                            content={(props) => {
-                              const { x, y, width, value, index } = props;
-                              const monthData = doctorChartData[index];
-                              if (monthData?.top2Names?.includes(name)) {
-                                const labelText = `${Number(value || 0).toLocaleString()}원`;
-                                const textWidth = labelText.length * 6.5;
-                                const labelTop = y - 25;
-                                return (
-                                  <g>
-                                    <rect
-                                      x={x + width / 2 - textWidth / 2 - 5}
-                                      y={labelTop}
-                                      width={textWidth + 10}
-                                      height={20}
-                                      rx={4}
-                                      fill={doctorColors[idx % doctorColors.length]}
-                                    />
-                                    <text
-                                      x={x + width / 2}
-                                      y={labelTop + 14}
-                                      fill="#fff"
-                                      fontSize={10}
-                                      textAnchor="middle"
-                                      fontWeight="bold"
-                                    >
-                                      {labelText}
-                                    </text>
-                                  </g>
-                                );
-                              }
-                              return null;
-                            }}
-                          />
-                        </Bar>
-                      ))}
-                      <Tooltip
-                        formatter={(value, name, item) => {
-                          const actualValue = name === '병원 총매출'
-                            ? Number(item?.payload?.total || 0)
-                            : Number(value || 0);
-                          return [`${actualValue.toLocaleString()}원`, name];
-                        }}
-                        contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px' }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="totalVisual"
-                        name="병원 총매출"
-                        stroke="#6366f1"
-                        strokeWidth={3}
-                        dot={{ r: 5, fill: '#6366f1' }}
-                        isAnimationActive={false}
-                      />
-                    </ComposedChart>
-                  </ResponsiveContainer>
+                  <div style={{ display: 'grid', gap: '1rem' }}>
+                    <div style={{ paddingBottom: '0.5rem', borderBottom: '1px solid var(--border-color)' }}>
+                      <div style={{ margin: '0 0 0.25rem 0.35rem', color: 'var(--text-secondary)', fontSize: '0.83rem', fontWeight: 800 }}>병원 총매출</div>
+                      <ResponsiveContainer width="100%" height={145}>
+                        <ComposedChart syncId="doctor-sales-month" data={doctorChartData} margin={{ top: 12, right: 30, left: 20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+                          <XAxis dataKey="month" hide />
+                          <YAxis stroke="var(--text-secondary)" width={80} tickFormatter={(v) => `${Math.floor(v / 10000).toLocaleString()}만`} />
+                          <Tooltip content={renderDoctorSalesTooltip} />
+                          <Line type="monotone" dataKey="total" name="병원 총매출" stroke="#6366f1" strokeWidth={3} dot={{ r: 5, fill: '#6366f1' }} isAnimationActive={false} />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    <div>
+                      <div style={{ margin: '0 0 0.25rem 0.35rem', color: 'var(--text-secondary)', fontSize: '0.83rem', fontWeight: 800 }}>의사별 매출</div>
+          <ResponsiveContainer width="100%" height={330}>
+            <ComposedChart syncId="doctor-sales-month" data={doctorChartData} margin={{ top: 30, right: 30, left: 20, bottom: 58 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+                          <XAxis dataKey="month" stroke="var(--text-secondary)" tick={{ dy: 10 }} />
+                          <YAxis stroke="var(--text-secondary)" width={80} tickFormatter={(v) => `${Math.floor(v / 10000).toLocaleString()}만`} />
+              <Legend verticalAlign="bottom" height={34} wrapperStyle={{ paddingTop: '0.35rem' }} />
+                          {(doctorNames || []).map((name, idx) => (
+                            <Bar key={name} dataKey={name} name={name} fill={doctorColors[idx % doctorColors.length]} barSize={15} isAnimationActive={false}>
+                              <LabelList
+                                dataKey={name}
+                                position="top"
+                                content={(props) => {
+                                  const { x, y, width, value, index } = props;
+                                  const monthData = doctorChartData[index];
+                                  if (!monthData?.top2Names?.includes(name)) return null;
+
+                                  const labelText = `${Number(value || 0).toLocaleString()}원`;
+                                  const textWidth = labelText.length * 6.5;
+                                  const labelTop = y - 25;
+                                  return (
+                                    <g>
+                                      <rect x={x + width / 2 - textWidth / 2 - 5} y={labelTop} width={textWidth + 10} height={20} rx={4} fill={doctorColors[idx % doctorColors.length]} />
+                                      <text x={x + width / 2} y={labelTop + 14} fill="#fff" fontSize={10} textAnchor="middle" fontWeight="bold">{labelText}</text>
+                                    </g>
+                                  );
+                                }}
+                              />
+                            </Bar>
+                          ))}
+                          <Tooltip content={renderDoctorSalesTooltip} />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
                 )}
               </DashboardCard>
 
