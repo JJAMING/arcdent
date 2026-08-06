@@ -149,6 +149,7 @@ const ConsultationAnalysis = () => {
     const [monthFilter, setMonthFilter] = useState('all');
     const [subTab, setSubTab] = useState('overall');
     const [rejectedPage, setRejectedPage] = useState(1);
+    const [rejectedConsultantFilter, setRejectedConsultantFilter] = useState('all');
     const [refreshKey, setRefreshKey] = useState(0);
 
     const [treatmentPlans, setTreatmentPlans] = useState(() => []);
@@ -232,6 +233,7 @@ const ConsultationAnalysis = () => {
 
     useEffect(() => {
         setRejectedPage(1);
+        setRejectedConsultantFilter('all');
     }, [selectedYear, half, monthFilter]);
 
     const filteredPlans = useMemo(() => {
@@ -709,7 +711,27 @@ const ConsultationAnalysis = () => {
         });
     }, [consultationRejectedData, selectedYear, periodMonths, filteredPlans]);
 
-    const rejectedTotalAmount = rejectedRows.reduce((sum, row) => sum + row.rejectedAmount, 0);
+    const rejectedConsultantOptions = useMemo(() => (
+        Array.from(new Set(
+            rejectedRows
+                .map(row => String(row.consultant || '').trim())
+                .filter(name => name && name !== '-')
+        )).sort((left, right) => left.localeCompare(right, 'ko'))
+    ), [rejectedRows]);
+
+    useEffect(() => {
+        if (rejectedConsultantFilter !== 'all' && !rejectedConsultantOptions.includes(rejectedConsultantFilter)) {
+            setRejectedConsultantFilter('all');
+        }
+    }, [rejectedConsultantFilter, rejectedConsultantOptions]);
+
+    const filteredRejectedRows = useMemo(() => (
+        rejectedConsultantFilter === 'all'
+            ? rejectedRows
+            : rejectedRows.filter(row => row.consultant === rejectedConsultantFilter)
+    ), [rejectedRows, rejectedConsultantFilter]);
+
+    const rejectedTotalAmount = filteredRejectedRows.reduce((sum, row) => sum + row.rejectedAmount, 0);
     const consultationInsightText = (() => {
         if (subTab === 'consultant') {
             const topConsultant = consultantRows.slice().sort((a, b) => Number(b.amountAgreementRate || 0) - Number(a.amountAgreementRate || 0))[0];
@@ -717,19 +739,24 @@ const ConsultationAnalysis = () => {
         }
 
         if (subTab === 'rejected') {
-            return `${selectedYear}년 ${periodLabel} 기준 미동의 환자는 ${rejectedRows.length.toLocaleString()}명이며 비동의금액 합계는 ${formatWon(rejectedTotalAmount)}입니다. 미동의 사유와 담당 상담자, 진단금액을 함께 보면서 후속 상담 우선순위를 정리해 주세요.`;
+            const consultantLabel = rejectedConsultantFilter === 'all' ? '전체 상담자' : `${rejectedConsultantFilter} 상담자`;
+            return `${selectedYear}년 ${periodLabel} 기준 ${consultantLabel}의 미동의 환자는 ${filteredRejectedRows.length.toLocaleString()}명이며 비동의금액 합계는 ${formatWon(rejectedTotalAmount)}입니다. 미동의 사유와 담당 상담자, 진단금액을 함께 보면서 후속 상담 우선순위를 정리해 주세요.`;
         }
 
         return `${selectedYear}년 ${periodLabel} 기준 최종동의금액은 ${formatWon(monthSummary.agreedAmount)}, 상담금액 대비 동의율은 ${formatPercent(monthSummary.consultationAgreementRate)}입니다. 전체상담건수는 ${Number(monthSummary.totalConsultations || 0).toLocaleString()}건입니다. 상담 전환율과 금액 흐름을 함께 점검해 주세요.`;
     })();
-    const rejectedNewPatientCount = rejectedRows.filter(row => String(row.newPatient || '').trim()).length;
-    const rejectedOldPatientCount = rejectedRows.filter(row => String(row.oldPatient || '').trim()).length;
-    const rejectedTotalPages = Math.max(1, Math.ceil(rejectedRows.length / REJECTED_ROWS_PER_PAGE));
+    const rejectedNewPatientCount = filteredRejectedRows.filter(row => String(row.newPatient || '').trim()).length;
+    const rejectedOldPatientCount = filteredRejectedRows.filter(row => String(row.oldPatient || '').trim()).length;
+    const rejectedTotalPages = Math.max(1, Math.ceil(filteredRejectedRows.length / REJECTED_ROWS_PER_PAGE));
     const currentRejectedPage = Math.min(rejectedPage, rejectedTotalPages);
-    const pagedRejectedRows = rejectedRows.slice(
+    const pagedRejectedRows = filteredRejectedRows.slice(
         (currentRejectedPage - 1) * REJECTED_ROWS_PER_PAGE,
         currentRejectedPage * REJECTED_ROWS_PER_PAGE
     );
+    const rejectedPageStart = filteredRejectedRows.length === 0
+        ? 0
+        : (currentRejectedPage - 1) * REJECTED_ROWS_PER_PAGE + 1;
+    const rejectedPageEnd = Math.min(currentRejectedPage * REJECTED_ROWS_PER_PAGE, filteredRejectedRows.length);
     const rejectedTableCellStyle = {
         textAlign: 'center',
         verticalAlign: 'middle',
@@ -1256,36 +1283,65 @@ const ConsultationAnalysis = () => {
 
             <DashboardCard
                 title={`미동의 환자 현황 [${selectedYear.slice(2)}년 ${periodLabel}]`}
-                subtitle={`${periodLabel} 기준 미동의 환자 상세`}
+                subtitle={`${periodLabel} 기준 ${rejectedConsultantFilter === 'all' ? '전체 상담자' : rejectedConsultantFilter} 미동의 환자 상세`}
                 headerRight={
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700 }}>조회 월</span>
-                        <select
-                            value={periodLabel}
-                            disabled
-                            style={{
-                                height: 38,
-                                border: '1px solid var(--border-color)',
-                                borderRadius: 8,
-                                padding: '0 0.75rem',
-                                background: 'var(--card-bg)',
-                                color: 'var(--text-primary)',
-                                fontWeight: 700,
-                                outline: 'none',
-                            }}
-                        >
-                            <option value={periodLabel}>{periodLabel}</option>
-                        </select>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700 }}>상담자</span>
+                            <select
+                                aria-label="미동의 환자 상담자 필터"
+                                value={rejectedConsultantFilter}
+                                onChange={(event) => setRejectedConsultantFilter(event.target.value)}
+                                style={{
+                                    height: 38,
+                                    minWidth: 118,
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: 8,
+                                    padding: '0 0.75rem',
+                                    background: 'var(--card-bg)',
+                                    color: 'var(--text-primary)',
+                                    fontWeight: 700,
+                                    outline: 'none',
+                                }}
+                            >
+                                <option value="all">전체</option>
+                                {rejectedConsultantOptions.map((consultant) => (
+                                    <option key={consultant} value={consultant}>{consultant}</option>
+                                ))}
+                            </select>
+                            <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                {filteredRejectedRows.length.toLocaleString()}명
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700 }}>조회 월</span>
+                            <select
+                                value={periodLabel}
+                                disabled
+                                style={{
+                                    height: 38,
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: 8,
+                                    padding: '0 0.75rem',
+                                    background: 'var(--card-bg)',
+                                    color: 'var(--text-primary)',
+                                    fontWeight: 700,
+                                    outline: 'none',
+                                }}
+                            >
+                                <option value={periodLabel}>{periodLabel}</option>
+                            </select>
+                        </div>
                     </div>
                 }
             >
                 {renderRejectedTableSection(
-                    `${(currentRejectedPage - 1) * REJECTED_ROWS_PER_PAGE + 1} ~ ${Math.min(currentRejectedPage * REJECTED_ROWS_PER_PAGE, rejectedRows.length)}`,
+                    filteredRejectedRows.length > 0 ? `${rejectedPageStart} ~ ${rejectedPageEnd}` : '결과 없음',
                     pagedRejectedRows,
                     0
                 )}
 
-                {rejectedRows.length > REJECTED_ROWS_PER_PAGE && (
+                {filteredRejectedRows.length > REJECTED_ROWS_PER_PAGE && (
                     <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                         <button
                             className="pagination-btn"
