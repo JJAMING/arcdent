@@ -44,6 +44,16 @@ const cancelBtnStyle = {
 
 const YEARS  = getRollingYearOptions({ past: 3, future: 1 });
 const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+const getLabRequestReportKey = (item = {}) => {
+    const category = String(item.category || item.group || item.type || item.kind || '미분류').trim() || '미분류';
+    const type = String(item.name || item.labType || item.item || item.type || '미분류').trim() || '미분류';
+
+    if (/(인레이|온레이)/.test(`${category}${type}`.replace(/\s+/g, ''))) {
+        return '통합 - 인레이·온레이';
+    }
+
+    return `${category} - ${type}`;
+};
 const REPORT_CATEGORIES = [
     { key: 'home', label: 'HOME 종합 대시보드' },
     { key: 'sales', label: '매출분석' },
@@ -1844,7 +1854,7 @@ const Admin = () => {
                     doctorTotals[name] = (doctorTotals[name] || 0) + Number(value || 0);
                 });
                 (row.labRequests || []).forEach(item => {
-                    const key = `${item.category || item.group || item.type || item.kind || '미분류'} - ${item.name || item.labType || item.item || item.type || '미분류'}`;
+                    const key = getLabRequestReportKey(item);
                     labTotals[key] = (labTotals[key] || 0) + Number(item.count || item.value || item.teeth || 0);
                 });
             });

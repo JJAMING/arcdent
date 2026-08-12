@@ -48,6 +48,23 @@ const CHART_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#1
 const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
 const LAB_ROWS_PER_PAGE = 10;
 
+// Inlay and onlay are reported as one combined lab category regardless of the source group.
+const normalizeLabRequestForDisplay = (item = {}) => {
+    const category = String(item.category || '미분류').trim() || '미분류';
+    const type = String(item.type || item.name || '미분류').trim() || '미분류';
+    const normalizedLabel = `${category}${type}`.replace(/\s+/g, '');
+
+    if (/(인레이|온레이)/.test(normalizedLabel)) {
+        return {
+            ...item,
+            category: '통합',
+            type: '인레이·온레이',
+        };
+    }
+
+    return { ...item, category, type };
+};
+
 const createEmptyPatientData = () => MONTHS.map(month => ({
     month,
     workDays: 0,
@@ -250,8 +267,9 @@ const PatientAnalysis = () => {
             const labTotals = {};
             currentHalfData.forEach(row => {
                 (row?.labRequests || []).forEach(item => {
-                    const key = `${item.category || '미분류'} - ${item.type || item.name || '미분류'}`;
-                    labTotals[key] = (labTotals[key] || 0) + Number(item.count || item.value || 0);
+                    const normalizedItem = normalizeLabRequestForDisplay(item);
+                    const key = `${normalizedItem.category} - ${normalizedItem.type}`;
+                    labTotals[key] = (labTotals[key] || 0) + Number(normalizedItem.count || normalizedItem.value || 0);
                 });
             });
             const topLab = Object.entries(labTotals).sort((a, b) => b[1] - a[1])[0];
@@ -624,8 +642,10 @@ const PatientAnalysis = () => {
             case 'labRequest': {
                 const normalizeLabRequests = (labRequests) => {
                     if (!labRequests) return [];
-                    if (Array.isArray(labRequests)) return labRequests;
-                    return Object.entries(labRequests).map(([type, count]) => ({
+                    if (Array.isArray(labRequests)) {
+                        return labRequests.map(normalizeLabRequestForDisplay);
+                    }
+                    return Object.entries(labRequests).map(([type, count]) => normalizeLabRequestForDisplay({
                         category: '미분류',
                         type,
                         count,
