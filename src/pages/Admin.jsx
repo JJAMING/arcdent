@@ -927,6 +927,7 @@ const Admin = () => {
     const [availableReportYears, setAvailableReportYears] = useState(YEARS);
     const [reportPeriod, setReportPeriod] = useState('all');
     const [reportMonth, setReportMonth] = useState('1월');
+    const [reportOrientation, setReportOrientation] = useState('landscape');
     const reportStoreRef = useRef(null);
     const [adminClinics, setAdminClinics] = useState([]);
     const [selectedAdminClinicId, setSelectedAdminClinicId] = useState(() => (
@@ -2034,21 +2035,214 @@ const Admin = () => {
         `).join('');
     };
 
+    const buildMonthlyManagementReportSections = (year) => {
+        const sections = [
+            { key: 'home', label: '종합 대시보드' },
+            { key: 'sales', label: '매출분석' },
+            { key: 'treatment', label: '진료분석' },
+            { key: 'patient', label: '환자분석' },
+            { key: 'newPatient', label: '신환분석' },
+            { key: 'consultation', label: '상담분석' },
+            { key: 'insurance', label: '보험청구분석' },
+        ];
+
+        return `
+            <div class="monthly-management-report">
+                <section class="monthly-cover">
+                    <div class="monthly-cover-eyebrow">MONTHLY MANAGEMENT REPORT</div>
+                    <h2>${escapeReportHtml(year)}년 ${escapeReportHtml(reportMonth)} 월간 경영 실적 통합보고서</h2>
+                    <p>업로드된 병원 운영 데이터를 기준으로 주요 경영 지표와 세부 분석을 정리한 보고서입니다.</p>
+                </section>
+                ${sections.map(section => `
+                    <section class="report-section">
+                        <h2 class="category-title">${escapeReportHtml(section.label)}</h2>
+                        ${buildReportSections(section.key, year, 'all')}
+                    </section>
+                `).join('')}
+            </div>
+        `;
+    };
+
+    // 월간 통합보고서는 기존 범용 보고서와 분리해, 선택한 한 달의 데이터를 2페이지로 요약한다.
+    const buildMonthlyManagementReportSectionsV2 = (year) => {
+        const monthlyRows = (storeKey, emptyRow) => normalizeReportRows(readReportStore(storeKey), year, emptyRow)
+            .filter(row => row.month === reportMonth);
+        const numberValue = (value) => Number(value || 0);
+        const ratio = (numerator, denominator) => denominator > 0 ? (numerator / denominator) * 100 : 0;
+        const clinicName = selectedAdminClinic?.name || '선택 치과';
+        const salesRows = monthlyRows('parsed_sales_data', { total: 0, netSales: 0, doctorData: {} });
+        const ledgerRows = monthlyRows('patient_ledger_data', { newPt: 0 });
+        const treatmentRows = monthlyRows('treatment_performance_data', { implantTotal: 0, surg1: 0, implantTypes: {} });
+        const newPatientRows = monthlyRows(NEW_PATIENT_STORAGE_KEY, { sources: {}, ages: {} });
+        const consultationRows = monthlyRows('consultation_overall_data', {
+            totalConsultations: 0, agreedCount: 0, partialCount: 0, consultationAmount: 0, agreedAmount: 0, doctorDiagnoses: [],
+        });
+        const consultantRows = monthlyRows(CONSULTATION_CONSULTANT_STORAGE_KEY, { rows: [] });
+        const rejectedRows = monthlyRows(CONSULTATION_REJECTED_STORAGE_KEY, { rows: [] });
+
+        const totalSales = reportSum(salesRows, 'total');
+        const netSales = reportSum(salesRows, 'netSales');
+        const newPatients = ledgerRows.reduce((sum, row, index) => sum + numberValue(row.newPt || salesRows[index]?.newPatient), 0);
+        const totalConsultations = reportSum(consultationRows, 'totalConsultations');
+        const fullAgreed = reportSum(consultationRows, 'agreedCount');
+        const partialAgreed = reportSum(consultationRows, 'partialCount');
+        const totalAgreed = fullAgreed + partialAgreed;
+        const consultationAmount = reportSum(consultationRows, 'consultationAmount');
+        const agreedAmount = reportSum(consultationRows, 'agreedAmount');
+        const patientAgreementRate = ratio(totalAgreed, totalConsultations);
+        const amountAgreementRate = ratio(agreedAmount, consultationAmount);
+        const implantTypeNames = Array.from(new Set(treatmentRows.flatMap(row => Object.keys(row.implantTypes || {}))));
+        const implantTypes = normalizeImplantTypes(implantTypeNames.length > 0 ? implantTypeNames.map(name => ({ name })) : DEFAULT_IMPLANT_TYPES);
+        const implantCount = treatmentRows.reduce((sum, row) => sum + numberValue(getReconciledImplantTotal(row, implantTypes)), 0);
+
+        const doctorRevenue = new Map();
+        salesRows.forEach(row => {
+            Object.entries(row.doctorData || {}).forEach(([name, value]) => {
+                const current = doctorRevenue.get(name) || { name, revenue: 0 };
+                current.revenue += numberValue(value?.total || numberValue(value?.pure) + numberValue(value?.insurance));
+                doctorRevenue.set(name, current);
+            });
+        });
+        const doctorRevenueRows = Array.from(doctorRevenue.values())
+            .sort((a, b) => b.revenue - a.revenue)
+            .slice(0, 5)
+            .map(row => ({ ...row, share: ratio(row.revenue, totalSales) }));
+
+        const sourceTotals = {};
+        const ageTotals = {};
+        newPatientRows.forEach(row => {
+            Object.entries(row.sources || {}).forEach(([name, value]) => { sourceTotals[name] = (sourceTotals[name] || 0) + numberValue(value); });
+            Object.entries(row.ages || {}).forEach(([name, value]) => { ageTotals[name] = (ageTotals[name] || 0) + numberValue(value); });
+        });
+        const sourceRows = Object.entries(sourceTotals).sort((a, b) => b[1] - a[1]).slice(0, 3);
+        const ageRows = Object.entries(ageTotals).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+        const diagnosisTotals = new Map();
+        consultationRows.forEach(row => (row.doctorDiagnoses || []).forEach(doctor => {
+            const name = String(doctor.name || '').trim();
+            if (!name) return;
+            const current = diagnosisTotals.get(name) || { name, count: 0, agreedAmount: 0 };
+            current.count += numberValue(doctor.count);
+            current.agreedAmount += numberValue(doctor.agreedAmount || doctor.amount);
+            diagnosisTotals.set(name, current);
+        }));
+        const diagnosisRows = Array.from(diagnosisTotals.values())
+            .sort((a, b) => b.agreedAmount - a.agreedAmount || b.count - a.count)
+            .slice(0, 5)
+            .map(row => ({ ...row, contribution: ratio(row.agreedAmount, agreedAmount) }));
+
+        const consultantTotals = new Map();
+        consultantRows.flatMap(row => row.rows || []).forEach(row => {
+            const name = String(row.name || '').trim();
+            if (!name) return;
+            const current = consultantTotals.get(name) || {
+                name, patientCount: 0, fullAgreed: 0, partialAgreed: 0, totalAgreed: 0, consultationAmount: 0, agreedAmount: 0,
+            };
+            const rowFullAgreed = numberValue(row.fullAgreed);
+            const rowPartialAgreed = numberValue(row.partialAgreed);
+            current.patientCount += numberValue(row.patientCount);
+            current.fullAgreed += rowFullAgreed;
+            current.partialAgreed += rowPartialAgreed;
+            current.totalAgreed += numberValue(row.totalAgreed || rowFullAgreed + rowPartialAgreed);
+            current.consultationAmount += numberValue(row.consultationAmount);
+            current.agreedAmount += numberValue(row.agreedAmount);
+            consultantTotals.set(name, current);
+        });
+        const consultantPerformanceRows = Array.from(consultantTotals.values())
+            .map(row => ({ ...row, patientAgreementRate: ratio(row.totalAgreed, row.patientCount), amountAgreementRate: ratio(row.agreedAmount, row.consultationAmount) }))
+            .sort((a, b) => b.agreedAmount - a.agreedAmount || b.patientAgreementRate - a.patientAgreementRate);
+
+        const reasonTotals = {};
+        rejectedRows.flatMap(row => row.rows || []).forEach(row => {
+            const reason = String(row.reason || row.rejectionReason || '사유 미입력').trim() || '사유 미입력';
+            reasonTotals[reason] = (reasonTotals[reason] || 0) + 1;
+        });
+        const rejectionReasons = Object.entries(reasonTotals).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+        const managementActions = [
+            doctorRevenueRows[0]
+                ? `${doctorRevenueRows[0].name} 원장 중심의 고매출 진료 흐름을 팀에 공유해 매출 재현성을 높이세요.`
+                : '원장별 매출 데이터를 입력해 진료 포트폴리오별 역할을 점검하세요.',
+            sourceRows[0]
+                ? `${sourceRows[0][0]} 유입이 가장 많습니다. 해당 채널의 예약 전환 메시지와 예산을 우선 점검하세요.`
+                : '신환 내원경로를 꾸준히 기록해 다음 달 마케팅 예산의 우선순위를 정하세요.',
+            patientAgreementRate < 50
+                ? '환자 동의율이 50% 미만입니다. 상담 후 24시간 내 후속 연락 기준을 운영하세요.'
+                : '동의율을 유지할 수 있도록 고동의 상담 흐름을 표준 스크립트로 문서화하세요.',
+        ];
+        const consultantInsights = consultantPerformanceRows.length > 0
+            ? consultantPerformanceRows.map(row => `${row.name}: 금액 대비 동의율 ${reportPercent(row.amountAgreementRate)}로 ${row.amountAgreementRate >= amountAgreementRate ? '전체 평균 이상입니다.' : '전체 평균 대비 보완이 필요합니다.'}`).slice(0, 3)
+            : ['상담자별 데이터가 없습니다. 상담자와 상담 결과를 함께 등록해 비교 분석을 시작하세요.'];
+        const improvementActions = rejectionReasons.length > 0
+            ? rejectionReasons.map(([reason]) => `“${reason}” 응대 시 비용·치료기간·대안 설명을 체크리스트로 제공하세요.`)
+            : ['미동의 사유를 필수 입력 항목으로 관리해 이탈 원인을 다음 달부터 추적하세요.'];
+        const executionTasks = [
+            '주간 상담회의에서 상담자별 환자동의율과 금액 대비 동의율을 함께 점검합니다.',
+            '미동의 상위 사유별 표준 응대 문구와 재연락 시점을 담당자별로 배정합니다.',
+            '다음 달 초에 실행 결과를 비교할 수 있도록 상담금액과 최종동의금액 입력을 마감합니다.',
+        ];
+        const listHtml = (items, emptyMessage) => items.length > 0
+            ? `<ol>${items.map(item => `<li>${escapeReportHtml(item)}</li>`).join('')}</ol>`
+            : `<p class="monthly-empty">${escapeReportHtml(emptyMessage)}</p>`;
+        const compactRows = (rows, cells, colspan) => rows.length > 0
+            ? rows.map(row => `<tr>${cells(row).map(cell => `<td>${escapeReportHtml(cell)}</td>`).join('')}</tr>`).join('')
+            : `<tr><td colspan="${colspan}" class="monthly-empty">데이터가 없습니다.</td></tr>`;
+
+        return `
+            <div class="monthly-report-v2">
+                <section class="monthly-page monthly-page-one">
+                    <div class="monthly-report-header">
+                        <div><span>MONTHLY BUSINESS REVIEW</span><h2>${escapeReportHtml(clinicName)}</h2><p>${escapeReportHtml(year)}년 ${escapeReportHtml(reportMonth)} 월간 경영 실적 통합보고서</p></div>
+                        <div class="monthly-period">${escapeReportHtml(year)}.${escapeReportHtml(String(reportMonth).replace('월', '').padStart(2, '0'))}</div>
+                    </div>
+                    <div class="monthly-kpis">
+                        <article><span>총매출</span><strong>${escapeReportHtml(reportWon(totalSales))}</strong><small>당월 청구 기준</small></article>
+                        <article><span>순매출</span><strong>${escapeReportHtml(reportWon(netSales))}</strong><small>총매출 대비 ${escapeReportHtml(reportPercent(ratio(netSales, totalSales)))}</small></article>
+                        <article><span>신환 수</span><strong>${escapeReportHtml(`${reportNumber(newPatients)}명`)}</strong><small>당월 신규 내원</small></article>
+                        <article><span>상담 동의율</span><strong>${escapeReportHtml(reportPercent(patientAgreementRate))}</strong><small>동의 ${escapeReportHtml(`${reportNumber(totalAgreed)} / ${reportNumber(totalConsultations)}건`)}</small></article>
+                        <article><span>임플란트 식립 수</span><strong>${escapeReportHtml(`${reportNumber(implantCount)}건`)}</strong><small>당월 수술 실적</small></article>
+                    </div>
+                    <div class="monthly-grid two-columns">
+                        <section class="monthly-panel"><h3>원장별 매출 비중</h3><div class="monthly-bars">${doctorRevenueRows.length > 0 ? doctorRevenueRows.map(row => `<div><div class="monthly-bar-label"><span>${escapeReportHtml(row.name)}</span><b>${escapeReportHtml(reportPercent(row.share))}</b></div><i><em style="width:${Math.min(row.share, 100)}%"></em></i><small>${escapeReportHtml(reportWon(row.revenue))}</small></div>`).join('') : '<p class="monthly-empty">원장별 매출 데이터가 없습니다.</p>'}</div></section>
+                        <section class="monthly-panel"><h3>주요 내원경로 · 연령대</h3><div class="monthly-split"><div><b>내원경로</b>${sourceRows.length ? sourceRows.map(([name, value]) => `<p><span>${escapeReportHtml(name)}</span><strong>${escapeReportHtml(`${reportNumber(value)}명`)}</strong></p>`).join('') : '<p class="monthly-empty">데이터 없음</p>'}</div><div><b>연령대</b>${ageRows.length ? ageRows.map(([name, value]) => `<p><span>${escapeReportHtml(name)}</span><strong>${escapeReportHtml(`${reportNumber(value)}명`)}</strong></p>`).join('') : '<p class="monthly-empty">데이터 없음</p>'}</div></div></section>
+                    </div>
+                    <div class="monthly-grid two-columns">
+                        <section class="monthly-panel"><h3>원장별 진단수와 매출 기여도</h3><table class="monthly-table"><thead><tr><th>원장</th><th>진단수</th><th>동의금액</th><th>기여도</th></tr></thead><tbody>${compactRows(diagnosisRows, row => [row.name, `${reportNumber(row.count)}건`, reportWon(row.agreedAmount), reportPercent(row.contribution)], 4)}</tbody></table></section>
+                        <section class="monthly-panel monthly-action-panel"><h3>데이터 기반 경영 액션</h3>${listHtml(managementActions, '데이터 입력 후 맞춤형 액션을 제공합니다.')}</section>
+                    </div>
+                </section>
+                <section class="monthly-page monthly-page-two">
+                    <div class="monthly-report-header compact"><div><span>CONSULTATION PERFORMANCE</span><h2>상담 성과 및 실행 과제</h2><p>${escapeReportHtml(clinicName)} · ${escapeReportHtml(year)}년 ${escapeReportHtml(reportMonth)}</p></div><div class="monthly-summary">최종동의금액 <b>${escapeReportHtml(reportWon(agreedAmount))}</b></div></div>
+                    <section class="monthly-panel"><h3>상담자별 성과 비교</h3><table class="monthly-table monthly-consultant-table"><thead><tr><th>상담자</th><th>상담 환자 수</th><th>전체 동의</th><th>부분 동의</th><th>환자 동의율</th><th>상담금액</th><th>최종동의금액</th><th>금액 대비 동의율</th></tr></thead><tbody>${compactRows(consultantPerformanceRows, row => [row.name, `${reportNumber(row.patientCount)}명`, `${reportNumber(row.fullAgreed)}건`, `${reportNumber(row.partialAgreed)}건`, reportPercent(row.patientAgreementRate), reportWon(row.consultationAmount), reportWon(row.agreedAmount), reportPercent(row.amountAgreementRate)], 8)}</tbody></table></section>
+                    <div class="monthly-grid two-columns"><section class="monthly-panel monthly-action-panel"><h3>상담자별 데이터 기반 인사이트</h3>${listHtml(consultantInsights, '상담자별 데이터가 없습니다.')}</section><section class="monthly-panel monthly-action-panel"><h3>미동의 사유 기반 개선안</h3>${listHtml(improvementActions, '미동의 사유 데이터가 없습니다.')}</section></div>
+                    <section class="monthly-panel monthly-action-panel execution"><h3>이번 달 실행 과제 3개</h3>${listHtml(executionTasks, '실행 과제를 등록해 주세요.')}</section>
+                </section>
+            </div>
+        `;
+    };
+
     const handleDownloadReportPdf = async () => {
         const category = REPORT_CATEGORIES.find(item => item.key === reportCategory) || REPORT_CATEGORIES[0];
         if (reportMode === 'bundle' && reportBundleCategories.length === 0) {
             addLog('error', '❌ [PDF 보고서] 통합 보고서에 포함할 카테고리를 1개 이상 선택해 주세요.');
             return;
         }
-        const title = reportMode === 'bundle'
-            ? `${reportYear}년 ${reportPeriodLabel} 통합 보고서`
+        const title = reportMode === 'monthlyManagement'
+            ? `${reportYear}년 ${reportMonth} 월간 경영 실적 통합보고서`
+            : reportMode === 'bundle'
+                ? `${reportYear}년 ${reportPeriodLabel} 통합 보고서`
             : `${reportYear}년 ${reportPeriodLabel} ${category.label}${reportSubTab !== 'all' ? ` - ${reportSubTabLabel}` : ''}`;
+        const pageSize = reportMode === 'monthlyManagement'
+            ? (reportOrientation === 'portrait' ? 'A4 portrait' : 'A4 landscape')
+            : 'A4';
         let sections = '';
         try {
             reportStoreRef.current = await loadReportStoresFromSupabase(reportYear);
-            sections = reportMode === 'bundle'
-                ? buildIntegratedReportSections(reportYear)
-                : buildReportSections(reportCategory, reportYear, reportSubTab);
+            sections = reportMode === 'monthlyManagement'
+                ? buildMonthlyManagementReportSectionsV2(reportYear)
+                : reportMode === 'bundle'
+                    ? buildIntegratedReportSections(reportYear)
+                    : buildReportSections(reportCategory, reportYear, reportSubTab);
         } catch (err) {
             reportStoreRef.current = null;
             addLog('error', `??[PDF 보고서] Supabase 데이터를 불러오지 못했습니다: ${err.message}`);
@@ -2068,7 +2262,7 @@ const Admin = () => {
                 <meta charset="utf-8" />
                 <title>${escapeReportHtml(title)}</title>
                 <style>
-                    @page { size: A4; margin: 16mm; }
+                    @page { size: ${pageSize}; margin: ${reportMode === 'monthlyManagement' ? '10mm' : '16mm'}; }
                     * { box-sizing: border-box; }
                     body { margin: 0; font-family: Arial, 'Malgun Gothic', sans-serif; color: #172033; background: #fff; }
                     header { border-bottom: 2px solid #2563eb; padding-bottom: 14px; margin-bottom: 18px; }
@@ -2076,6 +2270,10 @@ const Admin = () => {
                     h2 { margin: 24px 0 10px; font-size: 16px; }
                     .category-title { margin-top: 0; padding: 10px 12px; border-left: 4px solid #2563eb; background: #eff6ff; font-size: 18px; }
                     .report-section + .report-section { page-break-before: always; margin-top: 22px; }
+                    .monthly-cover { border-top: 7px solid #0b8fbd; padding: 22px 24px 18px; margin-bottom: 20px; background: linear-gradient(135deg, #f8fbff, #eef7fb); }
+                    .monthly-cover-eyebrow { color: #0b8fbd; font-size: 11px; font-weight: 800; letter-spacing: 1.5px; }
+                    .monthly-cover h2 { margin: 8px 0 6px; font-size: 26px; }
+                    .monthly-cover p { margin: 0; color: #64748b; font-size: 12px; }
                     .meta { margin-top: 6px; color: #64748b; font-size: 12px; }
                     .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0 18px; }
                     .card { border: 1px solid #dbe4f0; border-radius: 8px; padding: 12px; background: #f8fafc; }
@@ -2088,6 +2286,45 @@ const Admin = () => {
                     td { color: #172033; }
                     .actions { display: flex; justify-content: flex-end; gap: 8px; margin: 16px 0; }
                     .actions button { border: 0; border-radius: 8px; padding: 10px 16px; background: #2563eb; color: white; font-weight: 800; cursor: pointer; }
+                    .monthly-report-v2 { color: #191f28; }
+                    .monthly-page { min-height: calc(100vh - 20mm); page-break-after: always; break-after: page; }
+                    .monthly-page-two { page-break-after: auto; break-after: auto; }
+                    .monthly-report-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 20px 22px; border-radius: 18px; background: linear-gradient(135deg, #e9f3ff, #f7faff 60%, #f0f7ff); }
+                    .monthly-report-header span { display: block; color: #3182f6; font-size: 10px; font-weight: 800; letter-spacing: 1.2px; }
+                    .monthly-report-header h2 { margin: 5px 0 4px; font-size: 25px; line-height: 1.2; }
+                    .monthly-report-header p { margin: 0; color: #6b7684; font-size: 12px; }
+                    .monthly-period { padding: 8px 11px; border-radius: 10px; background: #fff; color: #3182f6; font-size: 13px; font-weight: 800; white-space: nowrap; }
+                    .monthly-summary { padding: 8px 12px; border-radius: 11px; background: #fff; color: #6b7684; font-size: 11px; }
+                    .monthly-summary b { display: block; margin-top: 3px; color: #191f28; font-size: 16px; }
+                    .monthly-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 9px; margin: 12px 0; }
+                    .monthly-kpis article { min-height: 89px; padding: 13px; border: 1px solid #edf0f5; border-radius: 14px; background: #fff; box-shadow: 0 3px 12px rgba(25, 31, 40, .04); }
+                    .monthly-kpis span { display: block; color: #6b7684; font-size: 11px; font-weight: 700; }
+                    .monthly-kpis strong { display: block; margin-top: 8px; color: #191f28; font-size: 19px; letter-spacing: -.5px; }
+                    .monthly-kpis small { display: block; margin-top: 4px; color: #8b95a1; font-size: 10px; }
+                    .monthly-grid { display: grid; gap: 11px; margin-top: 11px; }
+                    .monthly-grid.two-columns { grid-template-columns: 1fr 1fr; }
+                    .monthly-panel { padding: 14px 15px; border: 1px solid #e9edf2; border-radius: 14px; background: #fff; break-inside: avoid; }
+                    .monthly-panel h3 { margin: 0 0 11px; color: #191f28; font-size: 13px; letter-spacing: -.2px; }
+                    .monthly-bars > div + div { margin-top: 9px; }
+                    .monthly-bar-label { display: flex; justify-content: space-between; gap: 8px; color: #4e5968; font-size: 11px; }
+                    .monthly-bars i { display: block; overflow: hidden; height: 7px; margin: 5px 0 3px; border-radius: 99px; background: #edf2f7; }
+                    .monthly-bars em { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #3182f6, #6aa8ff); }
+                    .monthly-bars small { color: #8b95a1; font-size: 10px; }
+                    .monthly-split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+                    .monthly-split b { color: #6b7684; font-size: 10px; }
+                    .monthly-split p { display: flex; justify-content: space-between; gap: 8px; margin: 8px 0 0; color: #4e5968; font-size: 11px; }
+                    .monthly-split strong { color: #191f28; }
+                    .monthly-table { margin: 0; }
+                    .monthly-table th, .monthly-table td { padding: 6px 5px; font-size: 10px; border-color: #e9edf2; }
+                    .monthly-table th { background: #f6f8fb; color: #6b7684; }
+                    .monthly-consultant-table th, .monthly-consultant-table td { padding: 7px 4px; font-size: 9px; }
+                    .monthly-action-panel { background: #fbfcfe; }
+                    .monthly-action-panel ol { margin: 0; padding-left: 18px; }
+                    .monthly-action-panel li { margin: 0 0 8px; color: #4e5968; font-size: 11px; line-height: 1.45; }
+                    .monthly-action-panel li:last-child { margin-bottom: 0; }
+                    .monthly-action-panel.execution { margin-top: 11px; background: #f1f7ff; border-color: #d8eaff; }
+                    .monthly-empty { margin: 0; color: #8b95a1; font-size: 11px; text-align: center; }
+                    @media (max-width: 700px) { .monthly-kpis { grid-template-columns: repeat(2, 1fr); } .monthly-grid.two-columns { grid-template-columns: 1fr; } }
                     @media print { .actions { display: none; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
                 </style>
             </head>
@@ -5837,7 +6074,7 @@ const Admin = () => {
             <div className="admin-grid">
 
                 {/* PDF 보고서 다운로드 */}
-                <div className="admin-card">
+                <div className="admin-card report-download-card">
                     <div className="admin-card-header">
                         <FileDown size={24} className="admin-card-icon" />
                         <h2>PDF 보고서 다운로드</h2>
@@ -5845,44 +6082,41 @@ const Admin = () => {
                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.86rem', marginBottom: '1rem' }}>
                         카테고리별 업로드 데이터를 PDF용 보고서로 정리합니다. 새 창의 인쇄 화면에서 PDF로 저장할 수 있습니다.
                     </p>
-                    <div style={{ display: 'grid', gap: '0.85rem' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: reportMode === 'single' ? '160px minmax(180px, 1fr) minmax(180px, 1fr)' : '160px minmax(360px, 1fr)', gap: '0.75rem', alignItems: 'end' }}>
-                        <label style={{ display: 'grid', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', alignSelf: 'end' }}>
+                    <div className="report-download-form">
+                        <div className={`report-mode-grid ${reportMode}`}>
+                        <label className="report-field report-mode-field">
                             보고서
-                            <select value={reportMode} onChange={e => setReportMode(e.target.value)} style={selectStyle}>
+                            <select value={reportMode} onChange={e => {
+                                const nextMode = e.target.value;
+                                setReportMode(nextMode);
+                                if (nextMode === 'monthlyManagement') setReportPeriod('month');
+                            }} style={selectStyle}>
                                 <option value="single">단일</option>
                                 <option value="bundle">통합</option>
+                                <option value="monthlyManagement">월간 경영 실적 통합보고서</option>
                             </select>
                         </label>
                         {reportMode === 'single' ? (
                             <>
-                                <label style={{ display: 'grid', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', alignSelf: 'end' }}>
+                                <label className="report-field">
                                     카테고리
                                     <select value={reportCategory} onChange={e => { setReportCategory(e.target.value); setReportSubTab('all'); }} style={selectStyle}>
                                         {REPORT_CATEGORIES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
                                     </select>
                                 </label>
-                                <label style={{ display: 'grid', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', alignSelf: 'end' }}>
+                                <label className="report-field">
                                     세부 탭
                                     <select value={reportSubTab} onChange={e => setReportSubTab(e.target.value)} style={selectStyle}>
                                         {reportSubTabs.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
                                     </select>
                                 </label>
                             </>
-                        ) : (
-                            <div style={{ minWidth: 360, display: 'grid', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                        ) : reportMode === 'bundle' ? (
+                            <div className="report-bundle-field">
                                 포함 카테고리
-                                <div style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                                    gap: '0.35rem',
-                                    padding: '0.45rem 0.6rem',
-                                    border: '1px solid var(--border-color)',
-                                    borderRadius: '0.4rem',
-                                    background: 'var(--card-bg)',
-                                }}>
+                                <div className="report-bundle-options">
                                     {REPORT_CATEGORIES.map(item => (
-                                        <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.76rem', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                                        <label key={item.key} className="report-bundle-option">
                                             <input
                                                 type="checkbox"
                                                 checked={reportBundleCategories.includes(item.key)}
@@ -5898,29 +6132,42 @@ const Admin = () => {
                                     ))}
                                 </div>
                             </div>
+                        ) : (
+                            <div className="report-monthly-description">
+                                선택한 월의 주요 카테고리를 하나의 월간 경영 실적 보고서로 구성합니다.
+                            </div>
                         )}
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '160px 160px 120px auto', gap: '0.75rem', alignItems: 'end' }}>
-                        <label style={{ display: 'grid', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                        <div className={`report-period-grid ${reportMode === 'monthlyManagement' ? 'monthly-management' : ''}`}>
+                        <label className="report-field">
                             연도
                             <select value={reportYear} onChange={e => setReportYear(e.target.value)} style={selectStyle}>
                                 {getReportYears().map(year => <option key={year} value={year}>{year}년</option>)}
                             </select>
                         </label>
-                        <label style={{ display: 'grid', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                        <label className="report-field">
                             기간
-                            <select value={reportPeriod} onChange={e => setReportPeriod(e.target.value)} style={selectStyle}>
+                            <select value={reportMode === 'monthlyManagement' ? 'month' : reportPeriod} onChange={e => setReportPeriod(e.target.value)} disabled={reportMode === 'monthlyManagement'} style={{ ...selectStyle, opacity: reportMode === 'monthlyManagement' ? 0.7 : 1 }}>
                                 {REPORT_PERIODS.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
                             </select>
                         </label>
-                        <label style={{ display: 'grid', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', opacity: reportPeriod === 'month' ? 1 : 0.45 }}>
+                        <label className="report-field" style={{ opacity: reportMode === 'monthlyManagement' || reportPeriod === 'month' ? 1 : 0.45 }}>
                             월
-                            <select value={reportMonth} onChange={e => setReportMonth(e.target.value)} disabled={reportPeriod !== 'month'} style={selectStyle}>
+                            <select value={reportMonth} onChange={e => setReportMonth(e.target.value)} disabled={reportMode !== 'monthlyManagement' && reportPeriod !== 'month'} style={selectStyle}>
                                 {MONTHS.map(month => <option key={month} value={month}>{month}</option>)}
                             </select>
                         </label>
-                        <button onClick={handleDownloadReportPdf} style={{ ...saveBtnStyle, minWidth: 142, height: 38, padding: '0 1rem', display: 'inline-flex', alignItems: 'center', gap: '0.45rem', justifyContent: 'center', whiteSpace: 'nowrap', lineHeight: 1 }}>
+                        {reportMode === 'monthlyManagement' && (
+                            <label className="report-field">
+                                방향
+                                <select value={reportOrientation} onChange={e => setReportOrientation(e.target.value)} style={selectStyle}>
+                                    <option value="landscape">가로</option>
+                                    <option value="portrait">세로</option>
+                                </select>
+                            </label>
+                        )}
+                        <button onClick={handleDownloadReportPdf} className="report-download-button" style={saveBtnStyle}>
                             <FileDown size={16} />
                             PDF 다운로드
                         </button>

@@ -633,6 +633,144 @@
     gap: 1rem;
 }
 
+/* PDF 보고서 설정은 관리자 카드 폭에 따라 자연스럽게 재배치한다. */
+.report-download-card {
+    grid-column: 1 / -1;
+    min-width: 0;
+}
+
+.report-download-form {
+    display: grid;
+    gap: 1rem;
+}
+
+.report-mode-grid,
+.report-period-grid {
+    display: grid;
+    gap: 0.75rem;
+    align-items: end;
+    min-width: 0;
+}
+
+.report-mode-grid.single {
+    grid-template-columns: minmax(140px, 0.7fr) repeat(2, minmax(190px, 1fr));
+}
+
+.report-mode-grid.bundle,
+.report-mode-grid.monthlyManagement {
+    grid-template-columns: minmax(140px, 0.7fr) minmax(0, 2fr);
+}
+
+.report-period-grid {
+    grid-template-columns: repeat(3, minmax(140px, 160px)) minmax(142px, max-content);
+}
+
+.report-period-grid.monthly-management {
+    grid-template-columns: repeat(4, minmax(120px, 160px)) minmax(142px, max-content);
+}
+
+.report-field,
+.report-bundle-field {
+    display: grid;
+    min-width: 0;
+    gap: 0.35rem;
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.report-field select {
+    width: 100%;
+    min-width: 0;
+}
+
+.report-bundle-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.45rem 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: var(--card-bg);
+}
+
+.report-bundle-option {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 0.35rem;
+    color: var(--text-primary);
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.report-monthly-description {
+    display: flex;
+    align-items: center;
+    min-height: 58px;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: var(--card-bg);
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    line-height: 1.5;
+}
+
+.report-download-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 142px;
+    min-height: 38px;
+    gap: 0.45rem;
+    padding: 0 1rem !important;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+    .report-mode-grid.single,
+    .report-mode-grid.bundle,
+    .report-mode-grid.monthlyManagement {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .report-mode-grid.bundle .report-bundle-field,
+    .report-mode-grid.monthlyManagement .report-monthly-description {
+        grid-column: 1 / -1;
+    }
+
+    .report-period-grid,
+    .report-period-grid.monthly-management {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 560px) {
+    .report-mode-grid.single,
+    .report-mode-grid.bundle,
+    .report-mode-grid.monthlyManagement,
+    .report-period-grid,
+    .report-period-grid.monthly-management {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .report-mode-grid.bundle .report-bundle-field,
+    .report-mode-grid.monthlyManagement .report-monthly-description {
+        grid-column: auto;
+    }
+
+    .report-bundle-options {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .report-download-button {
+        width: 100%;
+    }
+}
+
 .admin-card-header {
     display: flex;
     align-items: center;
