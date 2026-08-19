@@ -18,6 +18,7 @@ import AnalysisPeriodControls from '../components/AnalysisPeriodControls';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
+import { useSessionAnalysisPeriod } from '../utils/analysisPeriodSession';
 import './SalesAnalysis.css';
 
 // --- MOCK DATA (100% Matching Structure) ---
@@ -137,10 +138,8 @@ class TabErrorBoundary extends React.Component {
 const SalesAnalysis = () => {
   const { clinicId } = useAuth();
   const activeClinicId = getActiveAnalyticsClinicId(clinicId);
-  const [half, setHalf] = useState('all'); // 기본: 전체
-  const [monthFilter, setMonthFilter] = useState('all');
+  const { selectedYear, setSelectedYear, half, setHalf, monthFilter, setMonthFilter } = useSessionAnalysisPeriod('sales');
   const [subTab, setSubTab] = useState('total'); // 기본탭: 총 매출 현황
-  const [selectedYear, setSelectedYear] = useState(() => getCurrentYearString());
   const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
   const [isYearOpen, setIsYearOpen] = useState(false);
 

@@ -11,6 +11,7 @@ import AnalysisPeriodControls from '../components/AnalysisPeriodControls';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
+import { useSessionAnalysisPeriod } from '../utils/analysisPeriodSession';
 import './SalesAnalysis.css';
 import './TreatmentAnalysis.css';
 
@@ -194,11 +195,9 @@ const collectNewPatientYears = (supabaseMap = null, includeLocal = true) => {
 const NewPatientAnalysis = () => {
     const { clinicId } = useAuth();
     const activeClinicId = getActiveAnalyticsClinicId(clinicId);
-    const [selectedYear, setSelectedYear] = useState(() => getCurrentYearString());
+    const { selectedYear, setSelectedYear, half, setHalf, monthFilter, setMonthFilter } = useSessionAnalysisPeriod('new-patient');
     const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
-    const [half, setHalf] = useState('all');
-    const [monthFilter, setMonthFilter] = useState('all');
     const [subTab, setSubTab] = useState('source');
     const [yearData, setYearData] = useState(() => normalizeYearData([]));
     const [supabaseNewPatientMap, setSupabaseNewPatientMap] = useState(null);

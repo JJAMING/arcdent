@@ -17,6 +17,7 @@ import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData, loadClinicImplantTypes } from '../utils/supabaseAnalyticsStore';
 import { getImplantTypeCounts, getImplantTypeStorageKey, getReconciledImplantTotal, normalizeImplantTypes } from '../utils/implantTypes';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
+import { useSessionAnalysisPeriod } from '../utils/analysisPeriodSession';
 import './TreatmentAnalysis.css';
 import './SalesAnalysis.css';
 
@@ -86,10 +87,8 @@ const buildTreatmentMapFromSupabaseRows = (implantRows = [], insuranceRows = [],
 const TreatmentAnalysis = () => {
     const { clinicId } = useAuth();
     const activeClinicId = getActiveAnalyticsClinicId(clinicId);
-    const [half, setHalf] = useState('all');
-    const [monthFilter, setMonthFilter] = useState('all');
+    const { selectedYear, setSelectedYear, half, setHalf, monthFilter, setMonthFilter } = useSessionAnalysisPeriod('treatment');
     const [subTab, setSubTab] = useState('implant');
-    const [selectedYear, setSelectedYear] = useState(() => getCurrentYearString());
     const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
     const [refreshTick, setRefreshTick] = useState(0);

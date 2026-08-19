@@ -14,6 +14,7 @@ import AnalysisPeriodControls from '../components/AnalysisPeriodControls';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
+import { useSessionAnalysisPeriod } from '../utils/analysisPeriodSession';
 import './TreatmentAnalysis.css';
 import './SalesAnalysis.css';
 
@@ -166,10 +167,8 @@ const PatientAnalysis = () => {
     const { clinicId } = useAuth();
     const activeClinicId = getActiveAnalyticsClinicId(clinicId);
 
-    const [half, setHalf] = useState('all');
-    const [monthFilter, setMonthFilter] = useState('all');
+    const { selectedYear, setSelectedYear, half, setHalf, monthFilter, setMonthFilter } = useSessionAnalysisPeriod('patient');
     const [subTab, setSubTab] = useState('newOld');
-    const [selectedYear, setSelectedYear] = useState(() => getCurrentYearString());
     const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
     const [refreshTick, setRefreshTick] = useState(0);

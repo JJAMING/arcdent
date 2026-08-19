@@ -1,9 +1,19 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
+import { clearSessionAnalysisPeriods } from '../utils/analysisPeriodSession';
 
 const AuthContext = createContext();
 const ADMIN_AUTH_SESSION_KEY = 'arcdent_admin_authenticated';
 const ADMIN_SELECTED_CLINIC_KEY = 'arcdent_admin_selected_clinic_id';
+const ACTIVE_TAB_SESSION_KEY = 'arcdent_active_tab';
+const ADMIN_TAB_REQUESTED_SESSION_KEY = 'arcdent_admin_tab_requested';
+
+const clearUserWorkspaceState = () => {
+    if (typeof sessionStorage === 'undefined') return;
+    sessionStorage.removeItem(ACTIVE_TAB_SESSION_KEY);
+    sessionStorage.removeItem(ADMIN_TAB_REQUESTED_SESSION_KEY);
+    clearSessionAnalysisPeriods();
+};
 
 const clearAdminRuntimeState = () => {
     if (typeof sessionStorage === 'undefined') return;
@@ -111,6 +121,7 @@ export const AuthProvider = ({ children }) => {
         if (nextSession?.user) {
             await loadProfile(nextSession.user);
         } else {
+            clearUserWorkspaceState();
             clearAdminRuntimeState();
             clearProfileState();
         }
@@ -188,6 +199,7 @@ export const AuthProvider = ({ children }) => {
 
     const logout = async () => {
         setLoading(true);
+        clearUserWorkspaceState();
         clearAdminRuntimeState();
         if (isSupabaseConfigured) {
             await supabase.auth.signOut();

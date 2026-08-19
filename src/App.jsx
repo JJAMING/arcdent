@@ -21,11 +21,6 @@ const VALID_TABS = new Set(['home', 'sales', 'treatment', 'patient', 'new-patien
 const getInitialActiveTab = () => {
     if (typeof window === 'undefined') return 'home';
     const savedTab = window.sessionStorage.getItem(ACTIVE_TAB_SESSION_KEY);
-    if (savedTab === 'admin') {
-        window.sessionStorage.removeItem(ACTIVE_TAB_SESSION_KEY);
-        window.sessionStorage.removeItem(ADMIN_TAB_REQUESTED_SESSION_KEY);
-        return 'home';
-    }
     return VALID_TABS.has(savedTab) ? savedTab : 'home';
 };
 
@@ -49,7 +44,9 @@ function AppContent() {
 
     useEffect(() => {
         if (!wasAuthenticatedRef.current && isAuthenticated) {
-            setActiveTab('home');
+            // 로그아웃으로 저장 상태가 정리된 경우에만 HOME으로 시작한다.
+            // 세션이 유지된 채 화면이 다시 로드된 경우에는 마지막 메뉴를 복원한다.
+            setActiveTab(getInitialActiveTab());
         }
         wasAuthenticatedRef.current = isAuthenticated;
     }, [isAuthenticated]);

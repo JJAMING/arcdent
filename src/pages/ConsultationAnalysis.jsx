@@ -12,6 +12,7 @@ import AnalysisPeriodControls from '../components/AnalysisPeriodControls';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
+import { useSessionAnalysisPeriod } from '../utils/analysisPeriodSession';
 import './SalesAnalysis.css';
 import './TreatmentAnalysis.css';
 
@@ -142,11 +143,9 @@ const isDoctorDiagnosisName = (value) => {
 const ConsultationAnalysis = () => {
     const { clinicId } = useAuth();
     const activeClinicId = getActiveAnalyticsClinicId(clinicId);
-    const [selectedYear, setSelectedYear] = useState(() => getCurrentYearString());
+    const { selectedYear, setSelectedYear, half, setHalf, monthFilter, setMonthFilter } = useSessionAnalysisPeriod('consultation');
     const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
-    const [half, setHalf] = useState('all');
-    const [monthFilter, setMonthFilter] = useState('all');
     const [subTab, setSubTab] = useState('overall');
     const [rejectedPage, setRejectedPage] = useState(1);
     const [rejectedConsultantFilter, setRejectedConsultantFilter] = useState('all');

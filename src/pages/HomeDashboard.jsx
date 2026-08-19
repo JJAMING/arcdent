@@ -9,6 +9,7 @@ import ManagementInsight from '../components/ManagementInsight';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
+import { useSessionAnalysisPeriod } from '../utils/analysisPeriodSession';
 import './SalesAnalysis.css';
 import './TreatmentAnalysis.css';
 
@@ -166,11 +167,9 @@ const buildInsuranceFeesDashboardStore = (rows = []) => rows.reduce((store, row)
 const HomeDashboard = () => {
     const { clinicId } = useAuth();
     const activeClinicId = getActiveAnalyticsClinicId(clinicId);
-    const [selectedYear, setSelectedYear] = useState(() => getCurrentYearString());
+    const { selectedYear, setSelectedYear, half, setHalf, monthFilter, setMonthFilter } = useSessionAnalysisPeriod('home');
     const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
-    const [half, setHalf] = useState('all');
-    const [monthFilter, setMonthFilter] = useState('all');
     const [isMonthOpen, setIsMonthOpen] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
     const [stores, setStores] = useState(() => emptyDashboardStores());
