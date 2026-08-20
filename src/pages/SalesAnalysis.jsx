@@ -460,20 +460,28 @@ const SalesAnalysis = () => {
 
   // --- 의사별 데이터 집계 (Stacked Bar + Line 용) ---
   const doctorNames = React.useMemo(() => {
-    const names = new Set();
-    const dataArray = Array.isArray(salesData) ? salesData : [];
+    const doctorRevenueByName = new Map();
+    const dataArray = Array.isArray(currentHalfData) ? currentHalfData : [];
 
     dataArray.forEach(month => {
-      if (month && typeof month === 'object' && month.doctorData && typeof month.doctorData === 'object') {
-        Object.keys(month.doctorData).forEach(name => {
-          if (name && typeof name === 'string' && name.trim() !== '') {
-            names.add(name.trim());
-          }
-        });
-      }
+      if (!month || typeof month !== 'object' || !month.doctorData || typeof month.doctorData !== 'object') return;
+
+      Object.entries(month.doctorData).forEach(([name, value]) => {
+        const normalizedName = String(name || '').trim();
+        if (!normalizedName) return;
+
+        const revenue = typeof value === 'object' && value !== null
+          ? Number(value.pure || 0) + Number(value.insurance || 0)
+          : Number(value || 0);
+        doctorRevenueByName.set(normalizedName, (doctorRevenueByName.get(normalizedName) || 0) + revenue);
+      });
     });
-    return Array.from(names);
-  }, [salesData]);
+
+    // 선택 기간 합계가 5만원 이하인 의사는 퇴사/비활성 의사로 보고 화면에서 제외합니다.
+    return Array.from(doctorRevenueByName.entries())
+      .filter(([, revenue]) => revenue > 50000)
+      .map(([name]) => name);
+  }, [currentHalfData]);
 
   const doctorChartData = React.useMemo(() => {
     const dataArray = Array.isArray(currentHalfData) ? currentHalfData : [];
@@ -594,6 +602,7 @@ const SalesAnalysis = () => {
     return doctorChartData.map(d => {
       const metrics = {
         month: d.month,
+        hasSalesInput: hasRevenueSummary(d),
         pureRatio: toPercent(d.netSales, d.total),
         insRatio: toPercent(d.insurance, d.total),
 
@@ -634,6 +643,19 @@ const SalesAnalysis = () => {
       return metrics;
     });
   }, [doctorChartData, filteredTopPatientsRaw, filteredAgreedPatients, getAgreedPatientMonth]);
+
+  const enteredSummaryMonthlyMetrics = React.useMemo(
+    () => summaryMonthlyMetrics.filter(metric => metric.hasSalesInput),
+    [summaryMonthlyMetrics]
+  );
+  const enteredSummaryMonthCount = enteredSummaryMonthlyMetrics.length;
+  const getEnteredSummaryAverage = (metricKey) => {
+    if (enteredSummaryMonthCount === 0) return 0;
+    return enteredSummaryMonthlyMetrics.reduce(
+      (sum, metric) => sum + Number(metric[metricKey] || 0),
+      0
+    ) / enteredSummaryMonthCount;
+  };
 
   const summaryPercentAxisMax = React.useMemo(() => {
     const largestValue = Math.max(
@@ -1586,7 +1608,7 @@ const SalesAnalysis = () => {
                       <tr>
                         <th style={{ width: '80px' }}>비중</th>
                         <th style={{ width: '120px' }}>구분</th>
-                        <th style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>평균</th>
+                        <th style={{ backgroundColor: '#fef3c7', color: '#92400e', whiteSpace: 'nowrap' }}>평균 (입력 {enteredSummaryMonthCount}개월)</th>
                         {summaryMonthlyMetrics.map(d => <th key={d.month}>{d.month}</th>)}
                         <th style={{ width: '80px' }}>증감</th>
                         <th>비고</th>
@@ -1597,7 +1619,7 @@ const SalesAnalysis = () => {
                       <tr>
                         <td rowSpan="3" className="bg-light-gray" style={{ color: '#000', fontWeight: '900' }}>매출대비</td>
                         <td className="text-left"><span className="marker" style={{ background: '#3b82f6' }}></span> 진료비 상위</td>
-                        <td className="bg-yellow font-bold" style={{ color: '#3b82f6' }}>{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.topFeeRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        <td className="bg-yellow font-bold" style={{ color: '#3b82f6' }}>{getEnteredSummaryAverage('topFeeRatio').toFixed(1)}%</td>
                         {summaryMonthlyMetrics.map(d => <td key={d.month} style={{ color: '#000' }}>{d.topFeeRatio}%</td>)}
                         {(() => {
                            const last = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-1].topFeeRatio);
@@ -1610,7 +1632,7 @@ const SalesAnalysis = () => {
                       </tr>
                       <tr>
                         <td className="text-left"><span className="marker" style={{ background: '#ef4444' }}></span> 동의환자결재율</td>
-                        <td className="bg-yellow font-bold" style={{ color: '#ef4444' }}>{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.agreedCollectionRate), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        <td className="bg-yellow font-bold" style={{ color: '#ef4444' }}>{getEnteredSummaryAverage('agreedCollectionRate').toFixed(1)}%</td>
                         {summaryMonthlyMetrics.map(d => <td key={d.month} style={{ color: '#000' }}>{d.agreedCollectionRate}%</td>)}
                         {(() => {
                            const last = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-1].agreedCollectionRate);
@@ -1623,7 +1645,7 @@ const SalesAnalysis = () => {
                       </tr>
                       <tr>
                         <td className="text-left"><span className="marker" style={{ background: '#10b981' }}></span> 신환 수익</td>
-                        <td className="bg-yellow font-bold" style={{ color: '#10b981' }}>{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.newPatientRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        <td className="bg-yellow font-bold" style={{ color: '#10b981' }}>{getEnteredSummaryAverage('newPatientRatio').toFixed(1)}%</td>
                         {summaryMonthlyMetrics.map(d => <td key={d.month} style={{ color: '#000' }}>{d.newPatientRatio}%</td>)}
                         {(() => {
                            const last = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-1].newPatientRatio);
@@ -1639,7 +1661,7 @@ const SalesAnalysis = () => {
                       <tr style={{ borderTop: '2px solid var(--border-color)' }}>
                         <td rowSpan="2" className="bg-light-gray" style={{ color: '#000', fontWeight: '900' }}>총매출</td>
                         <td className="text-left no-marker">순수매출</td>
-                        <td className="bg-yellow font-bold">{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.pureRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        <td className="bg-yellow font-bold">{getEnteredSummaryAverage('pureRatio').toFixed(1)}%</td>
                         {summaryMonthlyMetrics.map(d => <td key={d.month} style={{ color: '#000' }}>{d.pureRatio}%</td>)}
                         {(() => {
                            const last = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-1].pureRatio);
@@ -1652,7 +1674,7 @@ const SalesAnalysis = () => {
                       </tr>
                       <tr>
                         <td className="text-left no-marker">보험청구매출</td>
-                        <td className="bg-yellow font-bold">{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.insRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        <td className="bg-yellow font-bold">{getEnteredSummaryAverage('insRatio').toFixed(1)}%</td>
                         {summaryMonthlyMetrics.map(d => <td key={d.month} style={{ color: '#000' }}>{d.insRatio}%</td>)}
                         {(() => {
                            const last = Number(summaryMonthlyMetrics[summaryMonthlyMetrics.length-1].insRatio);
@@ -1668,21 +1690,21 @@ const SalesAnalysis = () => {
                       <tr style={{ borderTop: '2px solid var(--border-color)' }}>
                         <td rowSpan="3" className="bg-light-gray" style={{ color: '#000', fontWeight: '900' }}>순수매출</td>
                         <td className="text-left no-marker">카드</td>
-                        <td className="bg-yellow font-bold">{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.cardRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        <td className="bg-yellow font-bold">{getEnteredSummaryAverage('cardRatio').toFixed(1)}%</td>
                         {summaryMonthlyMetrics.map(d => <td key={d.month} style={{ color: '#000' }}>{d.cardRatio}%</td>)}
                         <td>-</td>
                         <td>카드 결제 비중</td>
                       </tr>
                       <tr>
                         <td className="text-left no-marker">현금</td>
-                        <td className="bg-yellow font-bold">{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.cashRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        <td className="bg-yellow font-bold">{getEnteredSummaryAverage('cashRatio').toFixed(1)}%</td>
                         {summaryMonthlyMetrics.map(d => <td key={d.month} style={{ color: '#000' }}>{d.cashRatio}%</td>)}
                         <td>-</td>
                         <td>현금 수납 비중</td>
                       </tr>
                       <tr>
                         <td className="text-left no-marker">기타/무통장</td>
-                        <td className="bg-yellow font-bold">{(summaryMonthlyMetrics.reduce((s, d) => s + Number(d.otherRatio), 0) / summaryMonthlyMetrics.length).toFixed(1)}%</td>
+                        <td className="bg-yellow font-bold">{getEnteredSummaryAverage('otherRatio').toFixed(1)}%</td>
                         {summaryMonthlyMetrics.map(d => <td key={d.month} style={{ color: '#000' }}>{d.otherRatio}%</td>)}
                         <td>-</td>
                         <td>온라인/기타 수납 비중</td>

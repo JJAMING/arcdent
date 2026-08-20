@@ -369,12 +369,20 @@ const TreatmentAnalysis = () => {
                 ];
                 const dentSeries = [
                     { key: 'insDentStep1', name: '틀니 1단계', color: '#f59e0b' },
-                    { key: 'insDentStep5', name: '틀니 5단계', color: '#fb923c' },
-                    { key: 'insDentStep6', name: '틀니 6단계', color: '#ef4444' },
+                    { key: 'insDentStep56', name: '틀니(5,6단계)', color: '#fb923c' },
                 ];
 
                 // 데이터 없으면 insImp/insDent로 확인해 fallback
-                const safeD = (d, key) => Number(d[key] || 0);
+                const safeD = (d, key) => {
+                    if (key === 'insDentStep56') {
+                        return Number(d?.insDentStep5 || 0) + Number(d?.insDentStep6 || 0);
+                    }
+                    return Number(d?.[key] || 0);
+                };
+                const insuranceStageChartData = currentHalfData.map(row => ({
+                    ...row,
+                    insDentStep56: safeD(row, 'insDentStep56'),
+                }));
 
                 return (
                     <div className="tab-pane">
@@ -420,7 +428,7 @@ const TreatmentAnalysis = () => {
                                 {/* 우측: 단계별 그룹 바차트 */}
                                 <DashboardCard
                                     title="단계별 사용량"
-                                    subtitle="임플 1·2·3단계 / 틀니 1·5·6단계"
+                                    subtitle="임플 1·2·3단계 / 틀니 1단계·(5,6단계)"
                                 >
                                     <div style={{ height: 350, width: '100%' }}>
                                         {isMonthlyView ? (
@@ -437,7 +445,7 @@ const TreatmentAnalysis = () => {
                                         ) : (
                                         <ResponsiveContainer>
                                             <BarChart
-                                                data={currentHalfData}
+                                                data={insuranceStageChartData}
                                                 margin={{ top: 28, right: 20, left: 0, bottom: 0 }}
                                                 barCategoryGap="10%"
                                                 barGap={2}
@@ -468,13 +476,6 @@ const TreatmentAnalysis = () => {
                                             selectedIndex={selectedMonthlyIndex}
                                             monthLabels={perfData.map((item) => item.month)}
                                             rows={[
-                                                {
-                                                    key: 'insurance-implant-total',
-                                                    label: '보험 임플 합계',
-                                                    unit: '건',
-                                                    color: '#4472c4',
-                                                    values: perfData.map((item) => safeD(item, 'insImp')),
-                                                },
                                                 ...impSeries.map((series) => ({
                                                     key: series.key,
                                                     label: series.name,
@@ -482,13 +483,6 @@ const TreatmentAnalysis = () => {
                                                     color: series.color,
                                                     values: perfData.map((item) => safeD(item, series.key)),
                                                 })),
-                                                {
-                                                    key: 'insurance-denture-total',
-                                                    label: '보험 틀니 합계',
-                                                    unit: '건',
-                                                    color: '#f59e0b',
-                                                    values: perfData.map((item) => safeD(item, 'insDent')),
-                                                },
                                                 ...dentSeries.map((series) => ({
                                                     key: series.key,
                                                     label: series.name,
@@ -496,13 +490,6 @@ const TreatmentAnalysis = () => {
                                                     color: series.color,
                                                     values: perfData.map((item) => safeD(item, series.key)),
                                                 })),
-                                                {
-                                                    key: 'insurance-treatment-total',
-                                                    label: '보험 진료 총합계',
-                                                    unit: '건',
-                                                    color: '#64748b',
-                                                    values: perfData.map((item) => safeD(item, 'insImp') + safeD(item, 'insDent')),
-                                                },
                                             ]}
                                         />
                                     ) : (
@@ -515,12 +502,6 @@ const TreatmentAnalysis = () => {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {/* 보험 임플 합계 */}
-                                            <tr className="highlight-row">
-                                                <td className="row-header"><PlusCircle size={14} /> 보험 임플 합계</td>
-                                                {currentHalfData.map(d => <td key={d.month} className="font-bold">{safeD(d,'insImp')}건</td>)}
-                                                <td className="font-bold" style={{ fontSize: '1.1rem' }}>{currentHalfData.reduce((s,d)=>s+safeD(d,'insImp'),0)}건</td>
-                                            </tr>
                                             {impSeries.map(({ key, name, color }) => (
                                                 <tr key={key}>
                                                     <td className="row-header">
@@ -535,12 +516,6 @@ const TreatmentAnalysis = () => {
                                             {/* 구분선 */}
                                             <tr><td colSpan={currentHalfData.length + 2} style={{ height: 1, padding: 0, background: 'var(--border-color)' }} /></tr>
 
-                                            {/* 보험 틀니 합계 */}
-                                            <tr className="highlight-row">
-                                                <td className="row-header"><PlusCircle size={14} /> 보험 틀니 합계</td>
-                                                {currentHalfData.map(d => <td key={d.month} className="font-bold">{safeD(d,'insDent')}건</td>)}
-                                                <td className="font-bold" style={{ fontSize: '1.1rem' }}>{currentHalfData.reduce((s,d)=>s+safeD(d,'insDent'),0)}건</td>
-                                            </tr>
                                             {dentSeries.map(({ key, name, color }) => (
                                                 <tr key={key}>
                                                     <td className="row-header">
@@ -552,12 +527,6 @@ const TreatmentAnalysis = () => {
                                                 </tr>
                                             ))}
 
-                                            {/* 전체 합계 */}
-                                            <tr className="highlight-row" style={{ borderTop: '2px solid var(--border-color)' }}>
-                                                <td className="row-header font-bold"><PlusCircle size={14} /> 보험 진료 총합계</td>
-                                                {currentHalfData.map(d => <td key={d.month} className="font-bold">{safeD(d,'insImp')+safeD(d,'insDent')}건</td>)}
-                                                <td className="font-bold" style={{ fontSize: '1.1rem' }}>{currentHalfData.reduce((s,d)=>s+safeD(d,'insImp')+safeD(d,'insDent'),0)}건</td>
-                                            </tr>
                                         </tbody>
                                     </table>
                                     )}

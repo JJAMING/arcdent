@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList, LineChart, Line
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList
 } from 'recharts';
 import { Calendar, ChevronDown, ClipboardCheck, MapPin, Users, WalletCards } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
@@ -191,6 +191,32 @@ const collectNewPatientYears = (supabaseMap = null, includeLocal = true) => {
     }
     return Array.from(years).sort((a, b) => Number(b) - Number(a));
 };
+
+const buildMonthlyTopThreeRankData = (monthlyRows, series) => (
+    monthlyRows.map((row) => {
+        const ranked = series
+            .map(({ name, color }) => ({
+                name,
+                color,
+                value: Number(row[name] || 0),
+            }))
+            .filter((item) => item.value > 0)
+            .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name, 'ko'));
+
+        return {
+            ...row,
+            rank1: ranked[0]?.value || 0,
+            rank1Name: ranked[0]?.name || '',
+            rank1Color: ranked[0]?.color || '#2563eb',
+            rank2: ranked[1]?.value || 0,
+            rank2Name: ranked[1]?.name || '',
+            rank2Color: ranked[1]?.color || '#60a5fa',
+            rank3: ranked[2]?.value || 0,
+            rank3Name: ranked[2]?.name || '',
+            rank3Color: ranked[2]?.color || '#93c5fd',
+        };
+    })
+);
 
 const NewPatientAnalysis = () => {
     const { clinicId } = useAuth();
@@ -446,6 +472,11 @@ const NewPatientAnalysis = () => {
         })
     ), [currentHalfData, treatmentSourceSummary]);
 
+    const monthlyTreatmentRankChartData = useMemo(
+        () => buildMonthlyTopThreeRankData(monthlyTreatmentChartData, treatmentSourceSummary),
+        [monthlyTreatmentChartData, treatmentSourceSummary]
+    );
+
     const totalNewPatients = sourceSummary.reduce((sum, item) => sum + item.value, 0);
 
     const insightPeriodLabel = monthFilter !== 'all'
@@ -512,6 +543,11 @@ const NewPatientAnalysis = () => {
             return row;
         })
     ), [currentHalfData, sourceSummary]);
+
+    const monthlyUnitPriceRankChartData = useMemo(
+        () => buildMonthlyTopThreeRankData(monthlyUnitPriceChartData, sourceSummary),
+        [monthlyUnitPriceChartData, sourceSummary]
+    );
 
     const monthlySourceChartData = useMemo(() => (
         currentHalfData.map(month => ({
@@ -856,19 +892,24 @@ const NewPatientAnalysis = () => {
     const renderTreatmentConversionTooltip = ({ active, label, payload }) => {
         if (!active) return null;
 
-        const highlightedName = payload?.[0]?.payload?.name || payload?.[0]?.name;
+        const highlightedPayload = payload?.[0];
+        const highlightedName = highlightedPayload?.payload?.[`${highlightedPayload?.dataKey}Name`]
+            || highlightedPayload?.payload?.name
+            || highlightedPayload?.name;
         const selectedMonth = label
             ? currentHalfData.find(month => month.month === label)
             : null;
         const selectedMonthChart = label
             ? monthlyTreatmentChartData.find(month => month.month === label)
             : null;
-        const rows = treatmentRankByTotalRatio.map(({ name, color, totalRatio, value }) => ({
-            name,
-            color,
-            ratio: selectedMonthChart ? Number(selectedMonthChart[name] || 0) : totalRatio,
-            count: selectedMonth ? Number((selectedMonth.sources || {})[name] || 0) : value,
-        }));
+        const rows = (selectedMonthChart ? treatmentSourceSummary : treatmentRankByTotalRatio)
+            .map(({ name, color, totalRatio, value }) => ({
+                name,
+                color,
+                ratio: selectedMonthChart ? Number(selectedMonthChart[name] || 0) : totalRatio,
+                count: selectedMonth ? Number((selectedMonth.sources || {})[name] || 0) : value,
+            }))
+            .sort((a, b) => b.ratio - a.ratio || b.count - a.count || a.name.localeCompare(b.name, 'ko'));
 
         return renderTreatmentConversionTooltipPanel({
             title: label ? `${label} 내원경로별 치료 이행율` : `${insightPeriodLabel} 내원경로별 치료 이행율`,
@@ -878,10 +919,25 @@ const NewPatientAnalysis = () => {
     };
 
     const renderUnitPriceTooltip = ({ active, label, payload }) => {
-        if (!active || !payload?.length) return null;
-        const sortedPayload = [...payload]
-            .filter(item => Number(item.value || 0) > 0)
-            .sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
+        if (!active) return null;
+        const selectedMonth = label
+            ? monthlyUnitPriceChartData.find((month) => month.month === label)
+            : null;
+        const sortedRows = (selectedMonth
+            ? sourceSummary.map(({ name, color }) => ({
+                name,
+                color,
+                value: Number(selectedMonth[name] || 0),
+            }))
+            : (payload || []).map((item) => ({
+                name: item.payload?.[`${item.dataKey}Name`] || item.name,
+                color: item.color,
+                value: Number(item.value || 0),
+            })))
+            .filter((item) => item.value > 0)
+            .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name, 'ko'));
+
+        if (!sortedRows.length) return null;
 
         return (
             <div style={{
@@ -894,8 +950,8 @@ const NewPatientAnalysis = () => {
                 color: 'var(--text-primary)',
             }}>
                 <div style={{ fontWeight: 700, marginBottom: '0.45rem' }}>{label}</div>
-                {sortedPayload.map(item => (
-                    <div key={item.dataKey} style={{ color: item.color, lineHeight: 1.8 }}>
+                {sortedRows.map((item) => (
+                    <div key={item.name} style={{ color: item.color, lineHeight: 1.8 }}>
                         {item.name} : {formatWon(item.value)}
                     </div>
                 ))}
@@ -920,7 +976,10 @@ const NewPatientAnalysis = () => {
                             </div>
 
                             <div className="dashboard-grid" style={{ gridTemplateColumns: '2fr 1fr' }}>
-                                <DashboardCard title="내원 경로별 치료 이행율" subtitle="월별 총 비율 추이">
+                                <DashboardCard
+                                    title="내원 경로별 치료 이행율"
+                                    subtitle={isMonthlyView ? '선택 월 내원경로별 치료 이행율' : '월별 내원경로 TOP 3'}
+                                >
                                     <div style={{ height: 340, width: '100%' }}>
                                         {isMonthlyView ? (
                                             <MonthlySnapshotBarChart
@@ -937,26 +996,31 @@ const NewPatientAnalysis = () => {
                                             />
                                         ) : (
                                         <ResponsiveContainer>
-                                            <LineChart data={monthlyTreatmentChartData} margin={{ top: 24, right: 24, left: 0, bottom: 0 }}>
+                                            <BarChart data={monthlyTreatmentRankChartData} margin={{ top: 24, right: 24, left: 0, bottom: 0 }} barCategoryGap="24%" barGap={4}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                                                 <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                                                <YAxis tick={{ fontSize: 12 }} width={42} tickFormatter={(v) => `${v}%`} />
-                                                <Tooltip content={renderTreatmentConversionTooltip} cursor={false} wrapperStyle={{ zIndex: 10 }} />
-                                                <Legend verticalAlign="top" height={36} iconType="line" wrapperStyle={{ fontSize: '11px' }} />
-                                                {topTreatmentConversionRows.map(({ name, color }) => (
-                                                    <Line
-                                                        key={name}
-                                                        type="monotone"
-                                                        dataKey={name}
-                                                        name={name}
-                                                        stroke={color}
-                                                        strokeWidth={2.5}
-                                                        dot={{ r: 3, strokeWidth: 2, fill: 'var(--card-bg)' }}
-                                                        activeDot={{ r: 5 }}
-                                                        connectNulls
-                                                    />
-                                                ))}
-                                            </LineChart>
+                                                <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} width={42} tickFormatter={(v) => `${v}%`} />
+                                                <Tooltip
+                                                    content={renderTreatmentConversionTooltip}
+                                                    cursor={{ fill: 'rgba(59, 130, 246, 0.06)' }}
+                                                    offset={18}
+                                                    allowEscapeViewBox={{ x: false, y: true }}
+                                                    reverseDirection={{ x: false, y: true }}
+                                                    wrapperStyle={{ zIndex: 20, pointerEvents: 'none' }}
+                                                />
+                                                <Bar dataKey="rank1" name="1위" fill="#2563eb" radius={[4, 4, 0, 0]}>
+                                                    {monthlyTreatmentRankChartData.map((entry) => <Cell key={`${entry.month}-rank1`} fill={entry.rank1Color} />)}
+                                                    <LabelList dataKey="rank1" position="top" formatter={(value) => Number(value) > 0 ? '1위' : ''} style={{ fontSize: 10, fill: '#334155', fontWeight: 700 }} />
+                                                </Bar>
+                                                <Bar dataKey="rank2" name="2위" fill="#60a5fa" radius={[4, 4, 0, 0]}>
+                                                    {monthlyTreatmentRankChartData.map((entry) => <Cell key={`${entry.month}-rank2`} fill={entry.rank2Color} />)}
+                                                    <LabelList dataKey="rank2" position="top" formatter={(value) => Number(value) > 0 ? '2위' : ''} style={{ fontSize: 10, fill: '#334155', fontWeight: 700 }} />
+                                                </Bar>
+                                                <Bar dataKey="rank3" name="3위" fill="#93c5fd" radius={[4, 4, 0, 0]}>
+                                                    {monthlyTreatmentRankChartData.map((entry) => <Cell key={`${entry.month}-rank3`} fill={entry.rank3Color} />)}
+                                                    <LabelList dataKey="rank3" position="top" formatter={(value) => Number(value) > 0 ? '3위' : ''} style={{ fontSize: 10, fill: '#334155', fontWeight: 700 }} />
+                                                </Bar>
+                                            </BarChart>
                                         </ResponsiveContainer>
                                         )}
                                     </div>
@@ -1191,7 +1255,10 @@ const NewPatientAnalysis = () => {
                 return (
                     <div className="tab-pane">
                         <div className="dashboard-stack">
-                            <DashboardCard title="내원 경로별 객단가">
+                            <DashboardCard
+                                title="내원 경로별 객단가"
+                                subtitle={isMonthlyView ? '선택 월 내원경로별 객단가' : '월별 객단가 TOP 3'}
+                            >
                                 <div style={{ height: 360, width: '100%' }}>
                                     {isMonthlyView ? (
                                         <MonthlySnapshotBarChart
@@ -1207,26 +1274,30 @@ const NewPatientAnalysis = () => {
                                         />
                                     ) : (
                                     <ResponsiveContainer>
-                                        <LineChart data={monthlyUnitPriceChartData} margin={{ top: 24, right: 28, left: 20, bottom: 0 }}>
+                                        <BarChart data={monthlyUnitPriceRankChartData} margin={{ top: 24, right: 28, left: 20, bottom: 0 }} barCategoryGap="24%" barGap={4}>
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                                             <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                                             <YAxis tick={{ fontSize: 11 }} width={72} tickFormatter={(v) => formatWon(v)} />
-                                            <Tooltip content={renderUnitPriceTooltip} />
-                                            <Legend verticalAlign="top" height={36} iconType="line" wrapperStyle={{ fontSize: '11px' }} />
-                                            {sourceSummary.map(({ name, color }) => (
-                                                <Line
-                                                    key={name}
-                                                    type="monotone"
-                                                    dataKey={name}
-                                                    name={name}
-                                                    stroke={color}
-                                                    strokeWidth={2.5}
-                                                    dot={{ r: 3, strokeWidth: 2, fill: 'var(--card-bg)' }}
-                                                    activeDot={{ r: 5 }}
-                                                    connectNulls
-                                                />
-                                            ))}
-                                        </LineChart>
+                                            <Tooltip
+                                                content={renderUnitPriceTooltip}
+                                                cursor={{ fill: 'rgba(59, 130, 246, 0.06)' }}
+                                                offset={18}
+                                                reverseDirection={{ x: false, y: true }}
+                                                wrapperStyle={{ zIndex: 20, pointerEvents: 'none' }}
+                                            />
+                                            <Bar dataKey="rank1" name="1위" fill="#2563eb" radius={[4, 4, 0, 0]}>
+                                                {monthlyUnitPriceRankChartData.map((entry) => <Cell key={`${entry.month}-rank1`} fill={entry.rank1Color} />)}
+                                                <LabelList dataKey="rank1" position="top" formatter={(value) => Number(value) > 0 ? '1위' : ''} style={{ fontSize: 10, fill: '#334155', fontWeight: 700 }} />
+                                            </Bar>
+                                            <Bar dataKey="rank2" name="2위" fill="#60a5fa" radius={[4, 4, 0, 0]}>
+                                                {monthlyUnitPriceRankChartData.map((entry) => <Cell key={`${entry.month}-rank2`} fill={entry.rank2Color} />)}
+                                                <LabelList dataKey="rank2" position="top" formatter={(value) => Number(value) > 0 ? '2위' : ''} style={{ fontSize: 10, fill: '#334155', fontWeight: 700 }} />
+                                            </Bar>
+                                            <Bar dataKey="rank3" name="3위" fill="#93c5fd" radius={[4, 4, 0, 0]}>
+                                                {monthlyUnitPriceRankChartData.map((entry) => <Cell key={`${entry.month}-rank3`} fill={entry.rank3Color} />)}
+                                                <LabelList dataKey="rank3" position="top" formatter={(value) => Number(value) > 0 ? '3위' : ''} style={{ fontSize: 10, fill: '#334155', fontWeight: 700 }} />
+                                            </Bar>
+                                        </BarChart>
                                     </ResponsiveContainer>
                                     )}
                                 </div>
@@ -1366,7 +1437,14 @@ const NewPatientAnalysis = () => {
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                                                 <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                                                 <YAxis tick={{ fontSize: 12 }} width={42} />
-                                                <Tooltip content={renderSourceBarTooltip} cursor={false} wrapperStyle={{ zIndex: 10 }} />
+                                                <Tooltip
+                                                    content={renderSourceBarTooltip}
+                                                    cursor={{ fill: 'rgba(59, 130, 246, 0.06)' }}
+                                                    offset={18}
+                                                    allowEscapeViewBox={{ x: false, y: true }}
+                                                    reverseDirection={{ x: false, y: true }}
+                                                    wrapperStyle={{ zIndex: 20, pointerEvents: 'none' }}
+                                                />
                                                 {sourceSummary.map(({ name, color }) => (
                                                     <Bar key={name} dataKey={name} name={name} fill={color} maxBarSize={34} radius={[3,3,0,0]} />
                                                 ))}
