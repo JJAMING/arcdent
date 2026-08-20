@@ -973,7 +973,12 @@ const NewPatientAnalysis = () => {
                                                     barCategoryGap="18%"
                                                 >
                                                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-color)" />
-                                                    <XAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11 }} />
+                                                    <XAxis
+                                                        type="number"
+                                                        domain={[0, 100]}
+                                                        tickFormatter={(value) => `${Math.round(Number(value) || 0)}%`}
+                                                        tick={{ fontSize: 11 }}
+                                                    />
                                                     <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={92} />
                                                     <Tooltip
                                                         contentStyle={{ borderRadius: '12px', fontSize: '12px' }}

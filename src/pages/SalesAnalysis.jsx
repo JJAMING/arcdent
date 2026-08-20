@@ -19,6 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
 import { useSessionAnalysisPeriod } from '../utils/analysisPeriodSession';
+import { DEFAULT_CLINIC_FEATURE_SETTINGS, loadClinicFeatureSettings } from '../utils/clinicFeatureSettings';
 import './SalesAnalysis.css';
 
 // --- MOCK DATA (100% Matching Structure) ---
@@ -47,6 +48,7 @@ const createEmptySalesData = () => SALES_MONTHS.map(month => ({
   cash: 0,
   card: 0,
   other: 0,
+  cashOmission: 0,
   newPatient: 0,
   agreed: 0,
   newPatientSales: 0,
@@ -142,6 +144,8 @@ const SalesAnalysis = () => {
   const [subTab, setSubTab] = useState('total'); // 기본탭: 총 매출 현황
   const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
   const [isYearOpen, setIsYearOpen] = useState(false);
+  const [salesRefreshTick, setSalesRefreshTick] = useState(0);
+  const [clinicFeatureSettings, setClinicFeatureSettings] = useState(DEFAULT_CLINIC_FEATURE_SETTINGS);
 
   const [salesDataMap, setSalesDataMap] = useState(() => ({ [getCurrentYearString()]: createEmptySalesData() }));
   const [salesData, setSalesData] = useState(() => createEmptySalesData());
@@ -238,16 +242,43 @@ const SalesAnalysis = () => {
 
     // Storage 이벤트 리스너
     const handleStorageChange = (e) => {
+      if (e.type === 'salesDataUpdated') {
+        setSalesRefreshTick(current => current + 1);
+        return;
+      }
       if (e.type === 'activeClinicChanged' || e.key === 'parsed_sales_data' || e.key === 'treatment_plan_data' || e.key === 'top_patients_raw_data') {
         window.location.reload();
       }
     };
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('activeClinicChanged', handleStorageChange);
+    window.addEventListener('salesDataUpdated', handleStorageChange);
     return () => {
       cancelled = true;
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('activeClinicChanged', handleStorageChange);
+      window.removeEventListener('salesDataUpdated', handleStorageChange);
+    };
+  }, [activeClinicId, salesRefreshTick]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadFeatures = async () => {
+      try {
+        const settings = await loadClinicFeatureSettings(activeClinicId);
+        if (!cancelled) setClinicFeatureSettings(settings);
+      } catch (error) {
+        console.warn('[SalesAnalysis] clinic feature settings load fallback:', error.message);
+        if (!cancelled) setClinicFeatureSettings(DEFAULT_CLINIC_FEATURE_SETTINGS);
+      }
+    };
+
+    loadFeatures();
+    const handleFeatureUpdate = () => loadFeatures();
+    window.addEventListener('clinicFeatureSettingsUpdated', handleFeatureUpdate);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('clinicFeatureSettingsUpdated', handleFeatureUpdate);
     };
   }, [activeClinicId]);
 
@@ -262,28 +293,40 @@ const SalesAnalysis = () => {
     }
   };
 
+  const isCashOmissionEnabled = clinicFeatureSettings.salesCashOmission;
+  const totalSalesLabel = isCashOmissionEnabled ? '총매출(현금누락 포함)' : '총매출';
+  const salesDataWithCashOmission = React.useMemo(() => {
+    if (!Array.isArray(salesData)) return [];
+
+    return salesData.map(row => ({
+      ...row,
+      // 원본 total은 그대로 보존하고, 기능 사용 치과의 화면에만 현금누락을 합산합니다.
+      total: Number(row?.total || 0) + (isCashOmissionEnabled ? Number(row?.cashOmission || 0) : 0),
+    }));
+  }, [salesData, isCashOmissionEnabled]);
+
   const currentHalfData = monthFilter !== 'all'
-    ? (Array.isArray(salesData) ? salesData.filter(row => row.month === monthFilter) : [])
-    : half === 'all' ? (Array.isArray(salesData) ? salesData : [])
-      : half === 'first' ? (Array.isArray(salesData) ? salesData.slice(0, 6) : [])
-        : (Array.isArray(salesData) ? salesData.slice(6, 12) : []);
+    ? salesDataWithCashOmission.filter(row => row.month === monthFilter)
+    : half === 'all' ? salesDataWithCashOmission
+      : half === 'first' ? salesDataWithCashOmission.slice(0, 6)
+        : salesDataWithCashOmission.slice(6, 12);
   const isMonthlyView = monthFilter !== 'all';
-  const selectedMonthlySalesIndex = isMonthlyView && Array.isArray(salesData)
-    ? salesData.findIndex((row) => row?.month === monthFilter)
+  const selectedMonthlySalesIndex = isMonthlyView
+    ? salesDataWithCashOmission.findIndex((row) => row?.month === monthFilter)
     : -1;
   const selectedMonthlySales = selectedMonthlySalesIndex >= 0
-    ? salesData[selectedMonthlySalesIndex]
+    ? salesDataWithCashOmission[selectedMonthlySalesIndex]
     : null;
   const previousMonthlySales = selectedMonthlySalesIndex > 0
-    ? salesData[selectedMonthlySalesIndex - 1]
+    ? salesDataWithCashOmission[selectedMonthlySalesIndex - 1]
     : null;
   const monthlySalesDetailRows = isMonthlyView && selectedMonthlySales
     ? [
         { key: 'netSales', label: '순매출', unit: '원', color: '#3b82f6' },
         { key: 'insurance', label: '보험청구', unit: '원', color: '#10b981' },
-        { key: 'total', label: '총매출', unit: '원', color: '#f59e0b' },
+        ...(isCashOmissionEnabled ? [{ key: 'cashOmission', label: '현금누락', unit: '원', color: '#ef4444' }] : []),
+        { key: 'total', label: totalSalesLabel, unit: '원', color: '#f59e0b' },
         { key: 'newPatient', label: '신환 수', unit: '명', color: '#ec4899' },
-        { key: 'agreed', label: '동의 건수', unit: '건', color: '#8b5cf6' },
       ].map((metric) => {
         const currentValue = Number(selectedMonthlySales?.[metric.key] || 0);
         const previousValue = previousMonthlySales
@@ -293,9 +336,9 @@ const SalesAnalysis = () => {
         const changeRate = previousValue && previousValue > 0
           ? (changeValue / previousValue) * 100
           : null;
-        const trendValues = salesData.map((row) => Number(row?.[metric.key] || 0));
+        const trendValues = salesDataWithCashOmission.map((row) => Number(row?.[metric.key] || 0));
         const trendMaximum = Math.max(...trendValues, 1);
-        const cumulativeValue = salesData
+        const cumulativeValue = salesDataWithCashOmission
           .slice(0, selectedMonthlySalesIndex + 1)
           .reduce((sum, row) => sum + Number(row?.[metric.key] || 0), 0);
 
@@ -665,7 +708,7 @@ const SalesAnalysis = () => {
                     valueLabel="금액"
                     formatValue={(value) => `${Number(value || 0).toLocaleString()}원`}
                     data={doctorChartData.flatMap((row) => [
-                      { name: '총매출', value: row.total, color: '#f59e0b' },
+                      { name: totalSalesLabel, value: row.total, color: '#f59e0b' },
                       { name: '순매출', value: row.netSales, color: '#3b82f6' },
                       { name: '보험청구', value: row.insurance, color: '#10b981' },
                     ])}
@@ -685,7 +728,7 @@ const SalesAnalysis = () => {
                       <Legend verticalAlign="top" height={36}/>
                       <Bar dataKey="netSales" name="순매출" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
                       <Bar dataKey="insurance" name="보험청구" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40} />
-                      <Line type="monotone" dataKey="total" name="총합계" stroke="#f59e0b" strokeWidth={3} dot={{ r: 5, fill: '#f59e0b' }}>
+                      <Line type="monotone" dataKey="total" name={totalSalesLabel} stroke="#f59e0b" strokeWidth={3} dot={{ r: 5, fill: '#f59e0b' }}>
                         <LabelList dataKey="total" content={<CustomizedLineLabel stroke="#f59e0b" />} />
                       </Line>
                     </ComposedChart>
@@ -766,17 +809,19 @@ const SalesAnalysis = () => {
                           <td className="row-header"><span className="marker green"></span> 보험청구</td>
                           {doctorChartData.map(d => <td key={d.month}>{Number(d.insurance || 0).toLocaleString()}원</td>)}
                         </tr>
+                        {isCashOmissionEnabled && (
+                          <tr>
+                            <td className="row-header"><span className="marker" style={{ background: '#ef4444' }}></span> 현금누락</td>
+                            {doctorChartData.map(d => <td key={d.month}>{Number(d.cashOmission || 0).toLocaleString()}원</td>)}
+                          </tr>
+                        )}
                         <tr className="font-bold">
-                          <td className="row-header"><span className="marker-yellow"></span> 총매출</td>
+                          <td className="row-header"><span className="marker-yellow"></span> {totalSalesLabel}</td>
                           {doctorChartData.map(d => <td key={d.month}>{Number(d.total || 0).toLocaleString()}원</td>)}
                         </tr>
                         <tr>
                           <td className="row-header"><TrendingUp size={14} /> 신환 수</td>
                           {currentHalfData.map(d => <td key={d.month}>{d.newPatient || 0}</td>)}
-                        </tr>
-                        <tr>
-                          <td className="row-header"><Activity size={14} /> 동의 건수</td>
-                          {doctorChartData.map(d => <td key={d.month}>{d.agreed || 0}</td>)}
                         </tr>
                       </tbody>
                     </table>
@@ -1296,7 +1341,7 @@ const SalesAnalysis = () => {
           return (
             <div style={{ maxWidth: '420px', padding: '0.8rem 0.9rem', background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '10px', boxShadow: '0 10px 24px rgba(15, 23, 42, 0.14)' }}>
               <div style={{ marginBottom: '0.45rem', color: 'var(--text-primary)', fontWeight: 800 }}>{label} 매출</div>
-              <div style={{ marginBottom: '0.55rem', color: '#6366f1', fontWeight: 800 }}>병원 총매출 {Number(row.total || 0).toLocaleString()}원</div>
+              <div style={{ marginBottom: '0.55rem', color: '#6366f1', fontWeight: 800 }}>병원 {totalSalesLabel} {Number(row.total || 0).toLocaleString()}원</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.35rem 0.8rem' }}>
                 {doctorRows.map(({ name, color, value }) => (
                   <div key={name} style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem', minWidth: 0 }}>
@@ -1321,7 +1366,7 @@ const SalesAnalysis = () => {
                 {isMonthlyView ? (
                   <>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.35rem', color: 'var(--text-secondary)', fontSize: '0.84rem', fontWeight: 700 }}>
-                      병원 총매출 {Number(doctorChartData[0]?.total || 0).toLocaleString()}원
+                      병원 {totalSalesLabel} {Number(doctorChartData[0]?.total || 0).toLocaleString()}원
                     </div>
                     <MonthlySnapshotBarChart
                       valueLabel="의사 매출"
@@ -1330,21 +1375,21 @@ const SalesAnalysis = () => {
                         name,
                         value: Number(doctorChartData[0]?.[name] || 0),
                         color: doctorColors[idx % doctorColors.length],
-                        detail: `병원 총매출 대비 ${Number(doctorChartData[0]?.total || 0) > 0 ? ((Number(doctorChartData[0]?.[name] || 0) / Number(doctorChartData[0]?.total || 1)) * 100).toFixed(1) : '0.0'}%`,
+                        detail: `병원 ${totalSalesLabel} 대비 ${Number(doctorChartData[0]?.total || 0) > 0 ? ((Number(doctorChartData[0]?.[name] || 0) / Number(doctorChartData[0]?.total || 1)) * 100).toFixed(1) : '0.0'}%`,
                       }))}
                     />
                   </>
                 ) : (
                   <div style={{ display: 'grid', gap: '1rem' }}>
                     <div style={{ paddingBottom: '0.5rem', borderBottom: '1px solid var(--border-color)' }}>
-                      <div style={{ margin: '0 0 0.25rem 0.35rem', color: 'var(--text-secondary)', fontSize: '0.83rem', fontWeight: 800 }}>병원 총매출</div>
+                      <div style={{ margin: '0 0 0.25rem 0.35rem', color: 'var(--text-secondary)', fontSize: '0.83rem', fontWeight: 800 }}>병원 {totalSalesLabel}</div>
                       <ResponsiveContainer width="100%" height={145}>
                         <ComposedChart syncId="doctor-sales-month" data={doctorChartData} margin={{ top: 12, right: 30, left: 20, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                           <XAxis dataKey="month" hide />
                           <YAxis stroke="var(--text-secondary)" width={80} tickFormatter={(v) => `${Math.floor(v / 10000).toLocaleString()}만`} />
                           <Tooltip content={renderDoctorSalesTooltip} />
-                          <Line type="monotone" dataKey="total" name="병원 총매출" stroke="#6366f1" strokeWidth={3} dot={{ r: 5, fill: '#6366f1' }} isAnimationActive={false} />
+                          <Line type="monotone" dataKey="total" name={`병원 ${totalSalesLabel}`} stroke="#6366f1" strokeWidth={3} dot={{ r: 5, fill: '#6366f1' }} isAnimationActive={false} />
                         </ComposedChart>
                       </ResponsiveContainer>
                     </div>
@@ -1411,10 +1456,10 @@ const SalesAnalysis = () => {
                         })),
                         {
                           key: 'hospital-total',
-                          label: '병원 총매출',
+                          label: `병원 ${totalSalesLabel}`,
                           unit: '원',
                           color: '#64748b',
-                          values: salesData.map((item) => Number(item.total || 0)),
+                          values: salesDataWithCashOmission.map((item) => Number(item.total || 0)),
                         },
                       ]}
                     />
@@ -1468,7 +1513,7 @@ const SalesAnalysis = () => {
 
                       {/* 총매출 행 */}
                       <tr className="font-bold" style={{ borderTop: '2px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
-                        <td className="row-header"><span className="marker-yellow"></span> 총매출</td>
+                        <td className="row-header"><span className="marker-yellow"></span> {totalSalesLabel}</td>
                         {(currentHalfData || []).map(d => {
                           const monthEntry = doctorChartData.find(e => e.month === d.month);
                           const totalVal = monthEntry ? monthEntry.total : Number(d?.total || 0);

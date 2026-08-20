@@ -15,6 +15,7 @@ import {
     saveAnalyticsData,
 } from '../utils/supabaseAnalyticsStore';
 import { DEFAULT_IMPLANT_TYPES, IMPLANT_TYPE_COLORS, getImplantTypeCounts, getReconciledImplantTotal, normalizeImplantTypes } from '../utils/implantTypes';
+import { DEFAULT_CLINIC_FEATURE_SETTINGS, loadClinicFeatureSettings, saveClinicFeatureSettings } from '../utils/clinicFeatureSettings';
 import { getCurrentYearString, getRollingYearOptions } from '../utils/dateUtils';
 import { useAuth } from '../context/AuthContext';
 import './Admin.css';
@@ -44,6 +45,7 @@ const cancelBtnStyle = {
 
 const YEARS  = getRollingYearOptions({ past: 3, future: 1 });
 const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+const createCashOmissionValues = () => Object.fromEntries(MONTHS.map(month => [month, '']));
 const getLabRequestReportKey = (item = {}) => {
     const category = String(item.category || item.group || item.type || item.kind || '미분류').trim() || '미분류';
     const type = String(item.name || item.labType || item.item || item.type || '미분류').trim() || '미분류';
@@ -941,6 +943,15 @@ const Admin = () => {
     const [implantTypeSaving, setImplantTypeSaving] = useState(false);
     const [implantTypeError, setImplantTypeError] = useState('');
     const [implantTypeSuccess, setImplantTypeSuccess] = useState('');
+    const [clinicFeatureSettings, setClinicFeatureSettings] = useState(DEFAULT_CLINIC_FEATURE_SETTINGS);
+    const [clinicFeatureLoading, setClinicFeatureLoading] = useState(false);
+    const [clinicFeatureSaving, setClinicFeatureSaving] = useState(false);
+    const [clinicFeatureError, setClinicFeatureError] = useState('');
+    const [clinicFeatureSuccess, setClinicFeatureSuccess] = useState('');
+    const [cashOmissionYear, setCashOmissionYear] = useState(() => getCurrentYearString());
+    const [cashOmissionValues, setCashOmissionValues] = useState(createCashOmissionValues);
+    const [cashOmissionLoading, setCashOmissionLoading] = useState(false);
+    const [cashOmissionSaving, setCashOmissionSaving] = useState(false);
     const [auditLogs, setAuditLogs] = useState([]);
     const [auditLoading, setAuditLoading] = useState(false);
     const [auditError, setAuditError] = useState('');
@@ -1115,6 +1126,74 @@ const Admin = () => {
         };
     }, [hasAdminPanelAccess, selectedAdminClinicId]);
 
+    useEffect(() => {
+        if (!hasAdminPanelAccess || !selectedAdminClinicId) {
+            setClinicFeatureSettings(DEFAULT_CLINIC_FEATURE_SETTINGS);
+            setClinicFeatureError('');
+            return;
+        }
+
+        let isMounted = true;
+        const loadSettings = async () => {
+            setClinicFeatureLoading(true);
+            setClinicFeatureError('');
+            setClinicFeatureSuccess('');
+            try {
+                const settings = await loadClinicFeatureSettings(selectedAdminClinicId);
+                if (isMounted) setClinicFeatureSettings(settings);
+            } catch (err) {
+                if (isMounted) {
+                    setClinicFeatureSettings(DEFAULT_CLINIC_FEATURE_SETTINGS);
+                    setClinicFeatureError(`치과별 기능 설정을 불러오지 못했습니다: ${err.message}`);
+                }
+            } finally {
+                if (isMounted) setClinicFeatureLoading(false);
+            }
+        };
+
+        loadSettings();
+        return () => {
+            isMounted = false;
+        };
+    }, [hasAdminPanelAccess, selectedAdminClinicId]);
+
+    useEffect(() => {
+        if (!hasAdminPanelAccess || !selectedAdminClinicId) {
+            setCashOmissionValues(createCashOmissionValues());
+            return;
+        }
+
+        let isMounted = true;
+        const loadCashOmissionValues = async () => {
+            setCashOmissionLoading(true);
+            try {
+                const rows = await loadAnalyticsData({
+                    clinicId: selectedAdminClinicId,
+                    category: 'sales',
+                    subCategory: 'total_revenue',
+                    year: cashOmissionYear,
+                });
+                const values = createCashOmissionValues();
+                rows.forEach(row => {
+                    const month = `${Number(row.month || 0)}월`;
+                    if (Object.prototype.hasOwnProperty.call(values, month)) {
+                        values[month] = Number(row.payload?.cashOmission || 0) || '';
+                    }
+                });
+                if (isMounted) setCashOmissionValues(values);
+            } catch (err) {
+                if (isMounted) setClinicFeatureError(`현금누락 입력값을 불러오지 못했습니다: ${err.message}`);
+            } finally {
+                if (isMounted) setCashOmissionLoading(false);
+            }
+        };
+
+        loadCashOmissionValues();
+        return () => {
+            isMounted = false;
+        };
+    }, [hasAdminPanelAccess, selectedAdminClinicId, cashOmissionYear]);
+
     const handleAdminLogin = async (event) => {
         event.preventDefault();
         setAdminLoginError('');
@@ -1285,6 +1364,75 @@ const Admin = () => {
             setImplantTypeError(err.message || '임플란트 종류 저장에 실패했습니다.');
         } finally {
             setImplantTypeSaving(false);
+        }
+    };
+
+    const saveClinicFeatures = async () => {
+        if (!selectedAdminClinicId) {
+            setClinicFeatureError('기능 설정을 저장할 치과를 먼저 선택해 주세요.');
+            return;
+        }
+
+        setClinicFeatureSaving(true);
+        setClinicFeatureError('');
+        setClinicFeatureSuccess('');
+        try {
+            const saved = await saveClinicFeatureSettings({
+                clinicId: selectedAdminClinicId,
+                settings: clinicFeatureSettings,
+            });
+            setClinicFeatureSettings(saved);
+            setClinicFeatureSuccess(`${selectedAdminClinic?.name || '선택 치과'}의 기능 설정을 저장했습니다.`);
+            window.dispatchEvent(new Event('clinicFeatureSettingsUpdated'));
+        } catch (err) {
+            setClinicFeatureError(`치과별 기능 설정 저장에 실패했습니다: ${err.message}`);
+        } finally {
+            setClinicFeatureSaving(false);
+        }
+    };
+
+    const updateCashOmissionValue = (month, value) => {
+        const digitsOnly = String(value || '').replace(/[^0-9]/g, '');
+        setCashOmissionValues(current => ({
+            ...current,
+            [month]: digitsOnly ? Number(digitsOnly) : '',
+        }));
+        setClinicFeatureSuccess('');
+    };
+
+    const saveCashOmissionValues = async () => {
+        if (!selectedAdminClinicId) {
+            setClinicFeatureError('현금누락을 저장할 치과를 먼저 선택해 주세요.');
+            return;
+        }
+
+        setCashOmissionSaving(true);
+        setClinicFeatureError('');
+        setClinicFeatureSuccess('');
+        try {
+            const [savedSettings] = await Promise.all([
+                saveClinicFeatureSettings({
+                    clinicId: selectedAdminClinicId,
+                    settings: clinicFeatureSettings,
+                }),
+                ...MONTHS.map(month => saveSelectedClinicAnalytics({
+                    category: 'sales',
+                    subCategory: 'total_revenue',
+                    year: cashOmissionYear,
+                    month,
+                    payload: { cashOmission: Number(cashOmissionValues[month] || 0) },
+                    mergeExisting: true,
+                    auditSummary: { feature: 'sales_cash_omission', label: '현금누락 월별 입력' },
+                })),
+            ]);
+            setClinicFeatureSettings(savedSettings);
+            setClinicFeatureSuccess(`${cashOmissionYear}년 현금누락 월별 입력값을 저장했습니다.`);
+            window.dispatchEvent(new Event('clinicFeatureSettingsUpdated'));
+            window.dispatchEvent(new Event('salesDataUpdated'));
+        } catch (err) {
+            setClinicFeatureError(`현금누락 저장에 실패했습니다: ${err.message}`);
+        } finally {
+            setCashOmissionSaving(false);
         }
     };
 
@@ -5497,7 +5645,7 @@ const Admin = () => {
                     className={`admin-panel-tab ${adminPanelTab === 'implantTypes' ? 'active' : ''}`}
                     onClick={() => setAdminPanelTab('implantTypes')}
                 >
-                    임플란트 종류
+                    치과별 기능 설정
                 </button>
                 <button
                     type="button"
@@ -6238,14 +6386,95 @@ const Admin = () => {
                 <div className="admin-card admin-implant-types-card">
                     <div className="admin-card-header">
                         <FileSpreadsheet size={24} className="admin-card-icon" />
-                        <h2>임플란트 종류 설정</h2>
+                        <h2>치과별 기능 설정</h2>
                     </div>
                     <p className="admin-helper-text">
-                        선택한 치과에서 사용하는 임플란트 종류를 입력해 주세요. 엑셀 업로드 시 이 목록과 같은 이름을 찾아 임플란트 수술통계에 반영합니다.
+                        현재 선택한 치과에만 적용되는 기능과 운영 기준을 설정합니다. 다른 치과의 분석 화면이나 데이터에는 영향을 주지 않습니다.
                     </p>
                     <div className="admin-implant-clinic-note">
                         대상 치과: <strong>{selectedAdminClinic?.name || '치과 미선택'}</strong>
                     </div>
+                    {clinicFeatureError && <div className="admin-history-error">{clinicFeatureError}</div>}
+                    {clinicFeatureSuccess && <div className="admin-implant-success">{clinicFeatureSuccess}</div>}
+                    <section className="clinic-settings-section">
+                        <div className="clinic-settings-section-header">
+                            <div>
+                                <h3>매출분석 옵션</h3>
+                                <p>현금누락 항목을 사용할 치과에서만 켜고 월별 금액을 직접 입력합니다.</p>
+                            </div>
+                            <label className="clinic-feature-toggle">
+                                <input
+                                    type="checkbox"
+                                    checked={clinicFeatureSettings.salesCashOmission}
+                                    disabled={clinicFeatureLoading || !selectedAdminClinicId}
+                                    onChange={event => setClinicFeatureSettings(current => ({
+                                        ...current,
+                                        salesCashOmission: event.target.checked,
+                                    }))}
+                                />
+                                <span>현금누락 사용</span>
+                            </label>
+                        </div>
+                        <div className="clinic-settings-actions">
+                            <button
+                                type="button"
+                                className="admin-implant-primary-btn"
+                                onClick={saveClinicFeatures}
+                                disabled={clinicFeatureLoading || clinicFeatureSaving || !selectedAdminClinicId}
+                            >
+                                {clinicFeatureSaving ? '설정 저장 중...' : '기능 설정 저장'}
+                            </button>
+                        </div>
+                        {clinicFeatureSettings.salesCashOmission && (
+                            <div className="cash-omission-editor">
+                                <div className="cash-omission-editor-header">
+                                    <div>
+                                        <h4>현금누락 월별 입력</h4>
+                                        <p>입력값은 선택한 치과의 해당 연도 매출 데이터에만 저장됩니다.</p>
+                                    </div>
+                                    <label>
+                                        <span>연도</span>
+                                        <select value={cashOmissionYear} onChange={event => setCashOmissionYear(event.target.value)}>
+                                            {getReportYears().map(year => <option key={year} value={year}>{year}년</option>)}
+                                        </select>
+                                    </label>
+                                </div>
+                                <div className="cash-omission-grid">
+                                    {MONTHS.map(month => (
+                                        <label key={month}>
+                                            <span>{month}</span>
+                                            <input
+                                                type="text"
+                                                inputMode="numeric"
+                                                value={cashOmissionValues[month] === '' ? '' : Number(cashOmissionValues[month] || 0).toLocaleString('ko-KR')}
+                                                onChange={event => updateCashOmissionValue(month, event.target.value)}
+                                                placeholder="0"
+                                                disabled={cashOmissionLoading || cashOmissionSaving}
+                                            />
+                                            <small>원</small>
+                                        </label>
+                                    ))}
+                                </div>
+                                <div className="clinic-settings-actions">
+                                    <button
+                                        type="button"
+                                        className="admin-implant-primary-btn"
+                                        onClick={saveCashOmissionValues}
+                                        disabled={cashOmissionLoading || cashOmissionSaving || !selectedAdminClinicId}
+                                    >
+                                        {cashOmissionSaving ? '월별 금액 저장 중...' : '현금누락 월별 금액 저장'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </section>
+                    <section className="clinic-settings-section">
+                        <div className="clinic-settings-section-header">
+                            <div>
+                                <h3>임플란트 종류</h3>
+                                <p>엑셀 업로드 시 이 목록과 같은 이름을 찾아 임플란트 수술통계에 반영합니다.</p>
+                            </div>
+                        </div>
                     {implantTypeError && <div className="admin-history-error">{implantTypeError}</div>}
                     {implantTypeSuccess && <div className="admin-implant-success">{implantTypeSuccess}</div>}
                     <div className="admin-implant-type-list">
@@ -6285,6 +6514,7 @@ const Admin = () => {
                             {implantTypeSaving ? '저장 중...' : '저장'}
                         </button>
                     </div>
+                    </section>
                 </div>
             )}
 

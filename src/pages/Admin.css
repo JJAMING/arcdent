@@ -252,6 +252,135 @@
     font-weight: 800;
 }
 
+.clinic-settings-section {
+    display: grid;
+    gap: 1rem;
+    padding: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.85rem;
+    background: var(--bg-color);
+}
+
+.clinic-settings-section + .clinic-settings-section {
+    margin-top: 1rem;
+}
+
+.clinic-settings-section-header,
+.cash-omission-editor-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.clinic-settings-section h3,
+.cash-omission-editor h4 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 900;
+}
+
+.clinic-settings-section p,
+.cash-omission-editor p {
+    margin: 0.35rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    line-height: 1.5;
+}
+
+.clinic-feature-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 40px;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.6rem;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.clinic-feature-toggle input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent-primary);
+}
+
+.clinic-settings-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.65rem;
+}
+
+.cash-omission-editor {
+    display: grid;
+    gap: 0.9rem;
+    padding: 1rem;
+    border-radius: 0.75rem;
+    border: 1px solid rgba(59, 130, 246, 0.22);
+    background: rgba(59, 130, 246, 0.05);
+}
+
+.cash-omission-editor-header > label {
+    display: grid;
+    gap: 0.35rem;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.cash-omission-editor-header select {
+    min-height: 38px;
+    padding: 0 0.65rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.55rem;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    font-weight: 800;
+}
+
+.cash-omission-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.65rem;
+}
+
+.cash-omission-grid > label {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.55rem 0.6rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.6rem;
+    background: var(--card-bg);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.cash-omission-grid input {
+    width: 100%;
+    min-width: 0;
+    padding: 0.4rem 0.45rem;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--text-primary);
+    text-align: right;
+    font-size: 0.84rem;
+    font-weight: 800;
+}
+
+.cash-omission-grid small {
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+}
+
 .admin-implant-type-list {
     display: grid;
     gap: 0.65rem;
@@ -508,6 +637,24 @@
 
     .admin-history-summary {
         max-width: 160px;
+    }
+
+    .clinic-settings-section-header,
+    .cash-omission-editor-header {
+        flex-direction: column;
+    }
+
+    .cash-omission-editor-header > label,
+    .cash-omission-editor-header select {
+        width: 100%;
+    }
+
+    .cash-omission-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .clinic-settings-actions .admin-implant-primary-btn {
+        width: 100%;
     }
 }
 
