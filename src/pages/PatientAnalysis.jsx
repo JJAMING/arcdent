@@ -95,24 +95,12 @@ const formatOneDecimalPatient = (value, empty = '-') => {
     });
 };
 
-const getTotalReceptionPatients = (data) => {
+const getDailyVisitCount = (data) => {
     const workDays = Number(data.workDays || 0);
-    const newPt = Number(data.newPt || 0);
-    const oldPt = Number(data.oldPt || 0);
-    const patientTotal = newPt + oldPt;
+    const totalVisits = Number(data.totalVisits || 0);
 
-    if (patientTotal > 0 && workDays > 0) {
-        return roundToOneDecimal(patientTotal / workDays);
-    }
-
-    const savedTotal = Number(data.total);
-    if (data.total != null && Number.isFinite(savedTotal) && savedTotal > 0 && !(patientTotal > 0 && savedTotal < 1)) {
-        return roundToOneDecimal(data.total);
-    }
-
-    const savedAvgTotal = Number(data.avgTotalPt);
-    if (data.avgTotalPt != null && Number.isFinite(savedAvgTotal) && savedAvgTotal > 0 && !(patientTotal > 0 && savedAvgTotal < 1)) {
-        return roundToOneDecimal(data.avgTotalPt);
+    if (totalVisits > 0 && workDays > 0) {
+        return roundToOneDecimal(totalVisits / workDays);
     }
 
     return null;
@@ -432,7 +420,7 @@ const PatientAnalysis = () => {
                                 </DashboardCard>
 
                                 {/* 우: 일평균 환자수 */}
-                                <DashboardCard title="일평균 환자수" subtitle="총 접수환자수 ÷ 진료일수">
+                                <DashboardCard title="일평균 환자수" subtitle="총 내원횟수 ÷ 진료일수">
                                     <div className="treatment-data-table-container">
                                         <table className="treatment-data-table">
                                             <thead>
@@ -485,16 +473,17 @@ const PatientAnalysis = () => {
                                                     </td>
                                                 </tr>
                                                 <tr className="highlight-row">
-                                                    <td className="row-header"><PlusCircle size={14} /> 총 내원 일평균</td>
+                                                    <td className="row-header"><PlusCircle size={14} /> 총 내원횟수 일평균</td>
                                                     {currentHalfData.map(d => {
-                                                        const totalDailyVisit = getTotalReceptionPatients(d);
-                                                        return <td key={d.month} className="font-bold">{formatOneDecimalPatient(totalDailyVisit)}명</td>;
+                                                        const totalDailyVisit = getDailyVisitCount(d);
+                                                        return <td key={d.month} className="font-bold">{formatOneDecimalPatient(totalDailyVisit)}회</td>;
                                                     })}
                                                     <td className="font-bold" style={{ fontSize: '1.05rem' }}>
                                                         {(() => {
                                                             const totalDays = currentHalfData.reduce((s, d) => s + (d.workDays || 0), 0);
-                                                            return totalDays ? formatOneDecimalPatient((totalNew + totalOld) / totalDays) : '-';
-                                                        })()}명
+                                                            const totalVisits = currentHalfData.reduce((s, d) => s + Number(d.totalVisits || 0), 0);
+                                                            return totalDays && totalVisits > 0 ? formatOneDecimalPatient(totalVisits / totalDays) : '-';
+                                                        })()}회
                                                     </td>
                                                 </tr>
                                             </tbody>
