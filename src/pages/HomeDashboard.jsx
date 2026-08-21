@@ -419,18 +419,25 @@ const HomeDashboard = () => {
         const currentNewPatientSales = sum(currentSalesRows, 'newPatientSales');
         const currentRevenueRate = currentNetSales > 0 ? (currentNewPatientSales / currentNetSales) * 100 : 0;
         const pushCompareMessage = (label, currentValue, previousValue, unit) => {
+            const lastCharacterCode = String(label || '').trim().charCodeAt(String(label || '').trim().length - 1);
+            const hasFinalConsonant = lastCharacterCode >= 0xac00
+                && lastCharacterCode <= 0xd7a3
+                && (lastCharacterCode - 0xac00) % 28 !== 0;
+            const topicParticle = hasFinalConsonant ? '은' : '는';
+            const subjectParticle = hasFinalConsonant ? '이' : '가';
+
             if (previousValue <= 0 && currentValue <= 0) return;
             if (previousValue <= 0) {
                 messages.push({
                     type: 'neutral',
-                    text: `${currentLabel} ${label}은 ${unit(currentValue)}입니다. ${compareLabel} 비교 데이터가 부족합니다.`,
+                    text: `${currentLabel} ${label}${topicParticle} ${unit(currentValue)}입니다. ${compareLabel} 비교 데이터가 부족합니다.`,
                 });
                 return;
             }
             const diffRate = ((currentValue - previousValue) / previousValue) * 100;
             messages.push({
                 type: diffRate >= 0 ? 'up' : 'down',
-                text: `${currentLabel} ${label}이 ${compareLabel} ${Math.abs(diffRate).toFixed(1)}% ${diffRate >= 0 ? '증가' : '감소'}했습니다.`,
+                text: `${currentLabel} ${label}${subjectParticle} ${compareLabel} ${Math.abs(diffRate).toFixed(1)}% ${diffRate >= 0 ? '증가' : '감소'}했습니다.`,
             });
         };
 
