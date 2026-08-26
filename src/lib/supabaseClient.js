@@ -15,3 +15,17 @@ export const supabase = isSupabaseConfigured
         },
     })
     : null;
+
+// Keeps the app's active session untouched while checking an administrator's
+// password again to unlock administrator mode.
+export const createPasswordVerificationClient = () => (
+    isSupabaseConfigured
+        ? createClient(supabaseUrl, supabaseAnonKey, {
+            auth: {
+                persistSession: false,
+                autoRefreshToken: false,
+                detectSessionInUrl: false,
+            },
+        })
+        : null
+);

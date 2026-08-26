@@ -5,7 +5,7 @@ import Tesseract from 'tesseract.js';
 import { parseImplantExcel } from '../utils/implantExcelParser';
 import { parseInsuranceExcel } from '../utils/insuranceExcelParser';
 import { parseLedgerImage, parseLedgerText, extractYearMonthFromFileName } from '../utils/ledgerImageParser';
-import { supabase } from '../lib/supabaseClient';
+import { createPasswordVerificationClient, supabase } from '../lib/supabaseClient';
 import {
     loadClinicImplantTypes,
     loadAnalyticsAuditLogs,
@@ -142,13 +142,7 @@ const NEW_PATIENT_STORAGE_KEY = 'new_patient_analysis_data';
 const CONSULTATION_CONSULTANT_STORAGE_KEY = 'consultation_consultant_data';
 const CONSULTATION_REJECTED_STORAGE_KEY = 'consultation_rejected_data';
 const ADMIN_AUTH_SESSION_KEY = 'arcdent_admin_authenticated';
-const ADMIN_AUTH_PENDING_KEY = 'arcdent_admin_auth_pending';
 const AGE_RANGES = ['0대', '10대', '20대', '30대', '40대', '50대', '60대', '70대+'];
-const normalizeAdminLoginId = (value) => {
-    const loginId = value.trim();
-    if (loginId.includes('@')) return loginId;
-    return `${loginId}@arcdent.local`;
-};
 const OCR_FIELDS = [
     { key: 'workDays', label: '진료일수',        unit: '일' },
     { key: 'newPt',    label: '신환',            unit: '명' },
@@ -907,15 +901,14 @@ const notifyNewPatientAnalysisUpdated = ({ year, month }) => {
 };
 
 const Admin = () => {
-    const { isAdmin, profileError } = useAuth();
+    const { isAdmin, loading: authLoading, profileError, user } = useAuth();
     const fileInputRef  = useRef(null);
     const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => (
         sessionStorage.getItem(ADMIN_AUTH_SESSION_KEY) === 'true'
     ));
-    const [adminLoginId, setAdminLoginId] = useState('');
     const [adminLoginPassword, setAdminLoginPassword] = useState('');
     const [adminLoginError, setAdminLoginError] = useState('');
-    const [verifiedAdminUserId, setVerifiedAdminUserId] = useState('');
+    const [adminPasswordChecking, setAdminPasswordChecking] = useState(false);
     const [uploadLog, setUploadLog]       = useState([]);
     const [isDragOver, setIsDragOver]     = useState(false);
     const [pendingNewPatientUploads, setPendingNewPatientUploads] = useState([]);
@@ -962,7 +955,7 @@ const Admin = () => {
         month: 'all',
     });
     const [selectedAuditLog, setSelectedAuditLog] = useState(null);
-    const hasAdminPanelAccess = isAdminAuthenticated && (isAdmin || Boolean(verifiedAdminUserId));
+    const hasAdminPanelAccess = isAdmin && isAdminAuthenticated;
 
     // OCR 모달
     const [ocrModal, setOcrModal]   = useState(null);
@@ -973,16 +966,11 @@ const Admin = () => {
     }, []);
 
     useEffect(() => {
-        if (!isAdmin) {
-            if (verifiedAdminUserId) return;
-            if (sessionStorage.getItem(ADMIN_AUTH_PENDING_KEY) === 'true') return;
-            sessionStorage.removeItem(ADMIN_AUTH_SESSION_KEY);
-            setIsAdminAuthenticated(false);
-            setVerifiedAdminUserId('');
-            return;
-        }
-        sessionStorage.removeItem(ADMIN_AUTH_PENDING_KEY);
-    }, [isAdmin, verifiedAdminUserId]);
+        if (authLoading || isAdmin) return;
+        sessionStorage.removeItem(ADMIN_AUTH_SESSION_KEY);
+        sessionStorage.removeItem('arcdent_admin_selected_clinic_id');
+        setIsAdminAuthenticated(false);
+    }, [authLoading, isAdmin]);
 
     useEffect(() => {
         if (!hasAdminPanelAccess) return;
@@ -1194,105 +1182,114 @@ const Admin = () => {
         };
     }, [hasAdminPanelAccess, selectedAdminClinicId, cashOmissionYear]);
 
-    const handleAdminLogin = async (event) => {
+    const handleAdminPasswordVerification = async (event) => {
         event.preventDefault();
         setAdminLoginError('');
 
-        const email = normalizeAdminLoginId(adminLoginId);
-        if (!adminLoginId.trim() || !adminLoginPassword) {
-            setAdminLoginError('관리자 계정 아이디와 비밀번호를 입력해 주세요.');
+        if (!isAdmin || !user?.email) {
+            setAdminLoginError('현재 로그인한 계정의 관리자 권한을 확인할 수 없습니다. 다시 로그인해 주세요.');
             return;
         }
 
-        sessionStorage.setItem(ADMIN_AUTH_PENDING_KEY, 'true');
-
-        const { data, error } = await supabase.auth.signInWithPassword({
-            email,
-            password: adminLoginPassword,
-        });
-
-        if (error || !data?.user?.id) {
-            sessionStorage.removeItem(ADMIN_AUTH_PENDING_KEY);
-            setAdminLoginError('관리자 계정 아이디 또는 비밀번호가 올바르지 않습니다.');
+        if (!adminLoginPassword) {
+            setAdminLoginError('관리자 비밀번호를 입력해 주세요.');
             return;
         }
 
-        const { data: profileData, error: profileFetchError } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('user_id', data.user.id)
-            .maybeSingle();
-
-        if (profileFetchError || profileData?.role !== 'admin') {
-            await supabase.auth.signOut();
-            sessionStorage.removeItem(ADMIN_AUTH_PENDING_KEY);
-            sessionStorage.removeItem(ADMIN_AUTH_SESSION_KEY);
-            sessionStorage.removeItem('arcdent_admin_selected_clinic_id');
-            setIsAdminAuthenticated(false);
-            setAdminLoginError('관리자 권한이 없는 계정입니다. 관리자 계정으로 로그인해 주세요.');
+        const verificationClient = createPasswordVerificationClient();
+        if (!verificationClient) {
+            setAdminLoginError('Supabase 연결 설정을 확인할 수 없습니다.');
             return;
         }
 
-        setVerifiedAdminUserId(data.user.id);
-        sessionStorage.removeItem(ADMIN_AUTH_PENDING_KEY);
-        sessionStorage.setItem(ADMIN_AUTH_SESSION_KEY, 'true');
-        setIsAdminAuthenticated(true);
-        setAdminLoginError('');
-        setAdminLoginPassword('');
+        setAdminPasswordChecking(true);
+        try {
+            const { data, error } = await verificationClient.auth.signInWithPassword({
+                email: user.email,
+                password: adminLoginPassword,
+            });
+
+            if (error || data?.user?.id !== user.id) {
+                setAdminLoginError('비밀번호가 올바르지 않습니다.');
+                return;
+            }
+
+            await verificationClient.auth.signOut({ scope: 'local' });
+            sessionStorage.setItem(ADMIN_AUTH_SESSION_KEY, 'true');
+            setIsAdminAuthenticated(true);
+            setAdminLoginPassword('');
+        } catch (error) {
+            setAdminLoginError(error.message || '비밀번호 확인 중 오류가 발생했습니다.');
+        } finally {
+            setAdminPasswordChecking(false);
+        }
     };
 
     const handleAdminLogout = async () => {
-        sessionStorage.removeItem(ADMIN_AUTH_PENDING_KEY);
         sessionStorage.removeItem(ADMIN_AUTH_SESSION_KEY);
         sessionStorage.removeItem('arcdent_admin_selected_clinic_id');
         setIsAdminAuthenticated(false);
-        setVerifiedAdminUserId('');
-        setAdminLoginId('');
         setAdminLoginPassword('');
         setAdminLoginError('');
         await supabase.auth.signOut();
     };
 
+    if (authLoading) {
+        return (
+            <div className="admin-auth-container">
+                <div className="admin-auth-card">
+                    <div className="admin-auth-header">
+                        <LockKeyhole size={34} className="admin-auth-icon" />
+                        <h1>관리자 권한 확인 중</h1>
+                        <p>현재 로그인한 계정의 권한을 확인하고 있습니다.</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (!isAdmin) {
+        return (
+            <div className="admin-auth-container">
+                <div className="admin-auth-card">
+                    <div className="admin-auth-header">
+                        <LockKeyhole size={34} className="admin-auth-icon" />
+                        <h1>관리자 모드 접근 제한</h1>
+                        <p>현재 로그인한 계정에는 관리자 권한이 없습니다.</p>
+                    </div>
+                    {profileError && <div className="admin-auth-error">{profileError}</div>}
+                </div>
+            </div>
+        );
+    }
+
     if (!hasAdminPanelAccess) {
         return (
             <div className="admin-auth-container">
-                <form className="admin-auth-card" onSubmit={handleAdminLogin}>
+                <form className="admin-auth-card" onSubmit={handleAdminPasswordVerification}>
                     <div className="admin-auth-header">
                         <LockKeyhole size={34} className="admin-auth-icon" />
-                        <h1>관리자 계정 로그인</h1>
-                        <p>관리자 모드는 Supabase 관리자 계정으로 로그인한 경우에만 이용할 수 있습니다.</p>
+                        <h1>관리자 모드 잠금 해제</h1>
+                        <p>현재 로그인한 관리자 계정의 비밀번호를 입력해 주세요. 확인 상태는 로그아웃 전까지 유지됩니다.</p>
                     </div>
 
                     {adminLoginError && (
                         <div className="admin-auth-error">{adminLoginError}</div>
                     )}
-                    {!isAdmin && profileError && (
-                        <div className="admin-auth-error">{profileError}</div>
-                    )}
-
                     <label className="admin-auth-field">
-                        <span>관리자 계정 아이디</span>
-                        <input
-                            type="text"
-                            value={adminLoginId}
-                            onChange={(event) => setAdminLoginId(event.target.value)}
-                            autoComplete="username"
-                            autoFocus
-                        />
-                    </label>
-
-                    <label className="admin-auth-field">
-                        <span>비밀번호</span>
+                        <span>관리자 비밀번호</span>
                         <input
                             type="password"
                             value={adminLoginPassword}
                             onChange={(event) => setAdminLoginPassword(event.target.value)}
                             autoComplete="current-password"
+                            autoFocus
+                            disabled={adminPasswordChecking}
                         />
                     </label>
 
-                    <button type="submit" className="admin-auth-submit">
-                        관리자 모드 진입
+                    <button type="submit" className="admin-auth-submit" disabled={adminPasswordChecking}>
+                        {adminPasswordChecking ? '확인 중...' : '관리자 모드 진입'}
                     </button>
                 </form>
             </div>
