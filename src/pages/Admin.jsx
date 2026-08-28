@@ -185,6 +185,15 @@ const parseNumber = (val) => {
     return 0;
 };
 
+const hasSuspiciousTotalVisits = ({ totalVisits, newPt, oldPt }) => {
+    const visits = Number(totalVisits || 0);
+    const patientCount = Number(newPt || 0) + Number(oldPt || 0);
+
+    // Monthly visits above five times the monthly patient count are almost
+    // always an OCR or spreadsheet-column mapping error, not visit activity.
+    return visits > 0 && patientCount > 0 && visits > patientCount * 5;
+};
+
 const normalizeHeader = (val) => String(val ?? '').trim().replace(/\s+/g, '');
 
 const isNewPatientPathDistributionFile = (filename) => (
@@ -3674,6 +3683,11 @@ const Admin = () => {
                                     patientLedger.totalVisits = 0;
                                     patientLedger.total = 0;
                                 }
+                                if (hasSuspiciousTotalVisits(patientLedger)) {
+                                    patientLedger.totalVisits = 0;
+                                    patientLedger.total = 0;
+                                    addLog('warning', `⚠️ [환자분석/총환자수] ${fileName}: 총 내원횟수가 신환·구환 합계 대비 비정상적으로 커 저장에서 제외했습니다. 원본 파일을 확인해 주세요.`);
+                                }
                                 if (patientLedger.totalVisits && patientLedger.workDays) {
                                     patientLedger.total = parseFloat((patientLedger.totalVisits / patientLedger.workDays).toFixed(1));
                                 }
@@ -5380,6 +5394,11 @@ const Admin = () => {
                         pd.totalVisits = '';
                         pd.total = '';
                     }
+                    if (hasSuspiciousTotalVisits(pd)) {
+                        pd.totalVisits = '';
+                        pd.total = '';
+                        addLog('warning', `⚠️ [환자분석/총환자수] ${file.name}: 총 내원횟수가 신환·구환 합계 대비 비정상적으로 커 확인이 필요합니다.`);
+                    }
                     if (pd.totalVisits && pd.workDays) {
                         pd.total = parseFloat((pd.totalVisits / pd.workDays).toFixed(1));
                     }
@@ -5512,6 +5531,10 @@ const Admin = () => {
         if (data.totalVisits && patientCountTotal && data.totalVisits < patientCountTotal) {
             data.totalVisits = 0;
             data.total = 0;
+        }
+        if (hasSuspiciousTotalVisits(data)) {
+            addLog('error', '총 내원횟수가 신환·구환 합계 대비 비정상적으로 큽니다. 원본 값을 확인한 뒤 다시 저장해 주세요.');
+            return;
         }
 
         await saveSelectedClinicAnalytics({

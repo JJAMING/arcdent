@@ -420,7 +420,7 @@ const PatientAnalysis = () => {
                                 </DashboardCard>
 
                                 {/* 우: 일평균 환자수 */}
-                                <DashboardCard title="일평균 환자수" subtitle="총 내원횟수 ÷ 진료일수">
+                                <DashboardCard title="일평균 환자수" subtitle="총 내원환자 ÷ 진료일수">
                                     <div className="treatment-data-table-container">
                                         <table className="treatment-data-table">
                                             <thead>
@@ -473,17 +473,17 @@ const PatientAnalysis = () => {
                                                     </td>
                                                 </tr>
                                                 <tr className="highlight-row">
-                                                    <td className="row-header"><PlusCircle size={14} /> 총 내원횟수 일평균</td>
+                                                    <td className="row-header"><PlusCircle size={14} /> 일평균 총 내원환자</td>
                                                     {currentHalfData.map(d => {
                                                         const totalDailyVisit = getDailyVisitCount(d);
-                                                        return <td key={d.month} className="font-bold">{formatOneDecimalPatient(totalDailyVisit)}회</td>;
+                                                        return <td key={d.month} className="font-bold">{formatOneDecimalPatient(totalDailyVisit)}명</td>;
                                                     })}
                                                     <td className="font-bold" style={{ fontSize: '1.05rem' }}>
                                                         {(() => {
                                                             const totalDays = currentHalfData.reduce((s, d) => s + (d.workDays || 0), 0);
                                                             const totalVisits = currentHalfData.reduce((s, d) => s + Number(d.totalVisits || 0), 0);
                                                             return totalDays && totalVisits > 0 ? formatOneDecimalPatient(totalVisits / totalDays) : '-';
-                                                        })()}회
+                                                        })()}명
                                                     </td>
                                                 </tr>
                                             </tbody>
