@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import Tesseract from 'tesseract.js';
 import { parseImplantExcel } from '../utils/implantExcelParser';
 import { parseInsuranceExcel } from '../utils/insuranceExcelParser';
+import { parseInsuranceAdjustmentExcel } from '../utils/insuranceAdjustmentExcelParser';
 import { parseLedgerImage, parseLedgerText, extractYearMonthFromFileName } from '../utils/ledgerImageParser';
 import { createPasswordVerificationClient, supabase } from '../lib/supabaseClient';
 import {
@@ -83,6 +84,7 @@ const AUDIT_SUBCATEGORY_LABELS = {
     implant_surgery: '임플란트',
     insurance_treatment: '보험 임플/틀니',
     fee_stats: '보험수가별 통계',
+    adjustment_review: '조정건수/금액',
     total_patients_ledger: '총 환자수(신환/구환)',
     lab_requests: '기공물 의뢰 현황',
     path_distribution: '신환 내원경로 현황',
@@ -215,8 +217,16 @@ const isInsuranceClaimFile = (filename) => (
     /^[12]\d{3}년.*보험청구액/.test(normalizeHeader(filename))
 );
 
+const isInsuranceAdjustmentReviewFile = (filename) => (
+    normalizeHeader(filename).includes('조정심사불능내역')
+);
+
 const notifyInsuranceClaimUpdated = ({ year }) => {
     window.dispatchEvent(new CustomEvent('insuranceClaimUpdated', { detail: { year } }));
+};
+
+const notifyInsuranceAdjustmentUpdated = ({ year }) => {
+    window.dispatchEvent(new CustomEvent('insuranceAdjustmentUpdated', { detail: { year } }));
 };
 
 const parseInsuranceClaimRows = (rows, fileName) => {
@@ -3363,6 +3373,36 @@ const Admin = () => {
                             resolve('newPatientRevenue');
                         }
                         // 보험청구액 → 보험청구분석
+                        else if (isInsuranceAdjustmentReviewFile(fileName)) {
+                            try {
+                                const parsed = await parseInsuranceAdjustmentExcel(file);
+                                for (const row of parsed.rows || []) {
+                                    await saveSelectedClinicAnalytics({
+                                        category: 'insurance',
+                                        subCategory: 'adjustment_review',
+                                        year: parsed.year,
+                                        month: row.month,
+                                        payload: row,
+                                        auditSummary: {
+                                            subCategoryLabel: AUDIT_SUBCATEGORY_LABELS.adjustment_review,
+                                            rowCount: parsed.rows.length,
+                                        },
+                                        auditMetadata: {
+                                            feature: 'insurance_adjustment_review',
+                                            subCategoryLabel: AUDIT_SUBCATEGORY_LABELS.adjustment_review,
+                                        },
+                                    });
+                                }
+                                notifyInsuranceAdjustmentUpdated(parsed);
+                                const adjustmentCount = parsed.rows.reduce((sum, row) => sum + Number(row.adjustmentCount || 0), 0);
+                                const failureCount = parsed.rows.reduce((sum, row) => sum + Number(row.failureCount || 0), 0);
+                                addLog('success', `✅ [보험청구분석/조정건수·금액] ${parsed.year}년 업로드 완료 (조정 ${adjustmentCount.toLocaleString()}건 / 불능 ${failureCount.toLocaleString()}건)`);
+                                updatedCount++;
+                                resolve('insuranceAdjustmentReview');
+                            } catch (err) {
+                                reject(err.message || err);
+                            }
+                        }
                         else if (isInsuranceClaimFile(fileName)) {
                             try {
                                 const parsed = await parseInsuranceClaimExcel(file);
@@ -3788,6 +3828,8 @@ const Admin = () => {
                 } else if (flag === 'newPatientRevenue') {
                     // handled inside processFile
                 } else if (flag === 'insuranceClaim') {
+                    // handled inside processFile
+                } else if (flag === 'insuranceAdjustmentReview') {
                     // handled inside processFile
                 } else if (flag === 'treatmentPlan') {
                     // handled inside processFile

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList,
-    LineChart, Line
+    LineChart, Line, Legend
 } from 'recharts';
 import { ListChecks, ShieldCheck, WalletCards } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
@@ -28,6 +28,16 @@ const createEmptyClaimYearData = () => MONTHS.map(month => ({
 const createEmptyFeeYearData = () => MONTHS.map(month => ({
     month,
     fees: [],
+}));
+
+const createEmptyAdjustmentYearData = () => MONTHS.map(month => ({
+    month,
+    adjustmentCount: 0,
+    adjustmentAmount: 0,
+    failureCount: 0,
+    failureAmount: 0,
+    claimAmount: 0,
+    reviewDecisionAmount: 0,
 }));
 
 const normalizeClaimYearData = (rows) => {
@@ -103,12 +113,50 @@ const buildFeeMapFromSupabaseRows = (rows = []) => rows.reduce((map, row) => {
     return map;
 }, {});
 
+const buildAdjustmentMapFromSupabaseRows = (rows = []) => rows.reduce((map, row) => {
+    const year = String(row.year || '');
+    const monthLabel = `${Number(row.month || 0)}월`;
+    if (!year || !MONTHS.includes(monthLabel)) return map;
+    if (!map[year]) map[year] = createEmptyAdjustmentYearData();
+    const target = map[year].find(item => item.month === monthLabel);
+    if (target) {
+        const payload = row.payload || {};
+        target.adjustmentCount = Number(payload.adjustmentCount || 0);
+        target.adjustmentAmount = Number(payload.adjustmentAmount || 0);
+        target.failureCount = Number(payload.failureCount || 0);
+        target.failureAmount = Number(payload.failureAmount || 0);
+        target.claimAmount = Number(payload.claimAmount || 0);
+        target.reviewDecisionAmount = Number(payload.reviewDecisionAmount || 0);
+    }
+    return map;
+}, {});
+
 const formatWon = (value) => `${Math.round(Number(value || 0)).toLocaleString()}원`;
 const formatShortWon = (value) => {
     const number = Number(value || 0);
     if (number >= 100000000) return `${(number / 100000000).toFixed(1)}억`;
     if (number >= 10000) return `${Math.round(number / 10000).toLocaleString()}만`;
     return number.toLocaleString();
+};
+
+const AdjustmentTooltip = ({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+    const row = payload[0]?.payload || {};
+
+    return (
+        <div style={{
+            minWidth: '210px', padding: '0.8rem 0.9rem', borderRadius: '0.7rem',
+            border: '1px solid var(--border-color)', background: 'var(--card-bg)',
+            boxShadow: '0 8px 24px rgba(15, 23, 42, 0.14)', fontSize: '0.82rem', lineHeight: 1.55,
+        }}>
+            <div style={{ fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.4rem' }}>{label}</div>
+            <div style={{ color: '#2563eb', fontWeight: 700 }}>조정건수 {Number(row.adjustmentCount || 0).toLocaleString()}건</div>
+            <div style={{ color: '#f97316', fontWeight: 700 }}>불능건수 {Number(row.failureCount || 0).toLocaleString()}건</div>
+            <div style={{ borderTop: '1px solid var(--border-color)', margin: '0.5rem 0' }} />
+            <div>조정금액 <strong>{formatWon(row.adjustmentAmount)}</strong></div>
+            <div>불능금액 <strong>{formatWon(row.failureAmount)}</strong></div>
+        </div>
+    );
 };
 
 const monthSelectWrapStyle = { display: 'flex', alignItems: 'center', gap: '0.55rem' };
@@ -148,15 +196,23 @@ const InsuranceAnalysis = () => {
     const [feePage, setFeePage] = useState(1);
     const [claimYearData, setClaimYearData] = useState(() => createEmptyClaimYearData());
     const [feeYearData, setFeeYearData] = useState(() => createEmptyFeeYearData());
+    const [adjustmentYearData, setAdjustmentYearData] = useState(() => createEmptyAdjustmentYearData());
     const [supabaseClaimMap, setSupabaseClaimMap] = useState(null);
     const [supabaseFeeMap, setSupabaseFeeMap] = useState(null);
+    const [supabaseAdjustmentMap, setSupabaseAdjustmentMap] = useState(null);
 
-    const refreshYears = (claimMap = supabaseClaimMap, feeMap = supabaseFeeMap, includeLocal = !activeClinicId) => {
+    const refreshYears = (
+        claimMap = supabaseClaimMap,
+        feeMap = supabaseFeeMap,
+        adjustmentMap = supabaseAdjustmentMap,
+        includeLocal = !activeClinicId
+    ) => {
         const years = new Set(getDefaultYearOptions());
         try {
             // Supabase 전환 후 로컬 캐시는 연도 산정에 사용하지 않습니다.
             Object.keys(claimMap || {}).forEach(year => years.add(year));
             Object.keys(feeMap || {}).forEach(year => years.add(year));
+            Object.keys(adjustmentMap || {}).forEach(year => years.add(year));
         } catch (e) {
             console.error(e);
         }
@@ -173,16 +229,20 @@ const InsuranceAnalysis = () => {
         const loadData = async () => {
             let nextClaimMap = null;
             let nextFeeMap = null;
+            let nextAdjustmentMap = null;
             if (activeClinicId) {
                 try {
-                    const [claimRows, feeRows] = await Promise.all([
+                    const [claimRows, feeRows, adjustmentRows] = await Promise.all([
                         loadAnalyticsData({ clinicId: activeClinicId, category: 'insurance', subCategory: 'claim' }),
                         loadAnalyticsData({ clinicId: activeClinicId, category: 'insurance', subCategory: 'fee_stats' }),
+                        loadAnalyticsData({ clinicId: activeClinicId, category: 'insurance', subCategory: 'adjustment_review' }),
                     ]);
                     const claimMap = buildClaimMapFromSupabaseRows(claimRows);
                     const feeMap = buildFeeMapFromSupabaseRows(feeRows);
+                    const adjustmentMap = buildAdjustmentMapFromSupabaseRows(adjustmentRows);
                     nextClaimMap = Object.keys(claimMap).length > 0 ? claimMap : null;
                     nextFeeMap = Object.keys(feeMap).length > 0 ? feeMap : null;
+                    nextAdjustmentMap = Object.keys(adjustmentMap).length > 0 ? adjustmentMap : null;
                 } catch (e) {
                     console.error('[InsuranceAnalysis] Supabase data load error:', e);
                 }
@@ -191,9 +251,11 @@ const InsuranceAnalysis = () => {
             if (cancelled) return;
             setSupabaseClaimMap(nextClaimMap);
             setSupabaseFeeMap(nextFeeMap);
-            refreshYears(nextClaimMap, nextFeeMap, false);
+            setSupabaseAdjustmentMap(nextAdjustmentMap);
+            refreshYears(nextClaimMap, nextFeeMap, nextAdjustmentMap, false);
             setClaimYearData(nextClaimMap?.[selectedYear] || createEmptyClaimYearData());
             setFeeYearData(nextFeeMap?.[selectedYear] || createEmptyFeeYearData());
+            setAdjustmentYearData(nextAdjustmentMap?.[selectedYear] || createEmptyAdjustmentYearData());
         };
 
         loadData();
@@ -207,14 +269,17 @@ const InsuranceAnalysis = () => {
             refreshYears();
             setClaimYearData(createEmptyClaimYearData());
             setFeeYearData(createEmptyFeeYearData());
+            setAdjustmentYearData(createEmptyAdjustmentYearData());
         };
         window.addEventListener('insuranceClaimUpdated', handleUpdate);
         window.addEventListener('insuranceFeeStatsUpdated', handleUpdate);
+        window.addEventListener('insuranceAdjustmentUpdated', handleUpdate);
         window.addEventListener('storage', handleUpdate);
         window.addEventListener('activeClinicChanged', handleUpdate);
         return () => {
             window.removeEventListener('insuranceClaimUpdated', handleUpdate);
             window.removeEventListener('insuranceFeeStatsUpdated', handleUpdate);
+            window.removeEventListener('insuranceAdjustmentUpdated', handleUpdate);
             window.removeEventListener('storage', handleUpdate);
             window.removeEventListener('activeClinicChanged', handleUpdate);
         };
@@ -233,6 +298,13 @@ const InsuranceAnalysis = () => {
         if (half === 'second') return feeYearData.slice(6, 12);
         return feeYearData;
     }, [half, monthFilter, feeYearData]);
+
+    const currentAdjustmentData = useMemo(() => {
+        if (monthFilter !== 'all') return adjustmentYearData.filter(row => row.month === monthFilter);
+        if (half === 'first') return adjustmentYearData.slice(0, 6);
+        if (half === 'second') return adjustmentYearData.slice(6, 12);
+        return adjustmentYearData;
+    }, [half, monthFilter, adjustmentYearData]);
     const isMonthlyView = monthFilter !== 'all';
 
     const totalClaim = currentClaimData.reduce((sum, row) => sum + Number(row.amount || 0), 0);
@@ -246,6 +318,15 @@ const InsuranceAnalysis = () => {
     const periodLabel = monthFilter !== 'all'
         ? monthFilter
         : half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
+
+    const totalAdjustmentCount = currentAdjustmentData.reduce((sum, row) => sum + Number(row.adjustmentCount || 0), 0);
+    const totalAdjustmentAmount = currentAdjustmentData.reduce((sum, row) => sum + Number(row.adjustmentAmount || 0), 0);
+    const totalFailureCount = currentAdjustmentData.reduce((sum, row) => sum + Number(row.failureCount || 0), 0);
+    const totalFailureAmount = currentAdjustmentData.reduce((sum, row) => sum + Number(row.failureAmount || 0), 0);
+    const totalAdjustmentClaimAmount = currentAdjustmentData.reduce((sum, row) => sum + Number(row.claimAmount || 0), 0);
+    const totalReviewDecisionAmount = currentAdjustmentData.reduce((sum, row) => sum + Number(row.reviewDecisionAmount || 0), 0);
+    const reviewDifference = totalAdjustmentClaimAmount - totalReviewDecisionAmount;
+    const reductionRate = totalAdjustmentClaimAmount > 0 ? (reviewDifference / totalAdjustmentClaimAmount) * 100 : 0;
 
     const feeRows = useMemo(() => {
         const grouped = {};
@@ -272,6 +353,9 @@ const InsuranceAnalysis = () => {
     const topPatientFees = feeRows.slice().sort((a, b) => b.patients - a.patients).slice(0, 5);
     const topVisitFees = feeRows.slice().sort((a, b) => b.visits - a.visits).slice(0, 5);
     const insuranceInsightText = (() => {
+        if (subTab === 'adjustment') {
+            return `${selectedYear}년 ${periodLabel} 기준 조정 ${totalAdjustmentCount.toLocaleString()}건, 심사불능 ${totalFailureCount.toLocaleString()}건입니다. 청구금액 ${formatWon(totalAdjustmentClaimAmount)} 대비 심사결정 차액은 ${formatWon(reviewDifference)}이며 감액률은 ${reductionRate.toFixed(1)}%입니다.`;
+        }
         if (subTab === 'fee') {
             const topPatientFee = topPatientFees[0];
             const topVisitFee = topVisitFees[0];
@@ -398,6 +482,94 @@ const InsuranceAnalysis = () => {
                 </DashboardCard>
             </div>
         </>
+    );
+
+    const renderAdjustmentTab = () => (
+        <div className="dashboard-stack">
+            <div className="dashboard-grid" style={{ gridTemplateColumns: 'minmax(0, 1.85fr) minmax(260px, 0.75fr)' }}>
+                <DashboardCard title="월별 조정·불능 건수" subtitle="막대는 건수이며, 마우스 오버 시 조정·불능 금액을 확인할 수 있습니다.">
+                    <div style={{ height: 360, width: '100%' }}>
+                        <ResponsiveContainer>
+                            <BarChart data={currentAdjustmentData} margin={{ top: 28, right: 24, left: 8, bottom: 0 }} barGap={6}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+                                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={42} />
+                                <Tooltip content={<AdjustmentTooltip />} cursor={{ fill: 'rgba(59, 130, 246, 0.06)' }} />
+                                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 4 }} />
+                                <Bar dataKey="adjustmentCount" name="조정건수" fill="#2563eb" radius={[4, 4, 0, 0]} maxBarSize={46}>
+                                    <LabelList dataKey="adjustmentCount" position="top" formatter={(value) => Number(value || 0) > 0 ? value : ''} style={{ fontSize: 11, fill: '#2563eb', fontWeight: 700 }} />
+                                </Bar>
+                                <Bar dataKey="failureCount" name="불능건수" fill="#f97316" radius={[4, 4, 0, 0]} maxBarSize={46}>
+                                    <LabelList dataKey="failureCount" position="top" formatter={(value) => Number(value || 0) > 0 ? value : ''} style={{ fontSize: 11, fill: '#f97316', fontWeight: 700 }} />
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </DashboardCard>
+
+                <DashboardCard title="심사결정 요약" subtitle={`${periodLabel} 기준`}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', paddingTop: '0.25rem' }}>
+                        <div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 700 }}>청구금액</div>
+                            <div style={{ fontSize: '1.25rem', color: 'var(--text-primary)', fontWeight: 800 }}>{formatWon(totalAdjustmentClaimAmount)}</div>
+                        </div>
+                        <div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 700 }}>심사결정금액</div>
+                            <div style={{ fontSize: '1.25rem', color: '#2563eb', fontWeight: 800 }}>{formatWon(totalReviewDecisionAmount)}</div>
+                        </div>
+                        <div style={{ borderTop: '1px solid var(--border-color)', margin: '0.15rem 0' }} />
+                        <div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 700 }}>심사결정 차액</div>
+                            <div style={{ fontSize: '1.35rem', color: reviewDifference > 0 ? '#ef4444' : '#10b981', fontWeight: 800 }}>{formatWon(reviewDifference)}</div>
+                        </div>
+                        <div style={{ padding: '0.7rem 0.8rem', borderRadius: '0.65rem', background: '#fff7ed' }}>
+                            <div style={{ fontSize: '0.78rem', color: '#9a3412', fontWeight: 700 }}>감액률</div>
+                            <div style={{ fontSize: '1.35rem', color: '#ea580c', fontWeight: 800 }}>{reductionRate.toFixed(1)}%</div>
+                        </div>
+                    </div>
+                </DashboardCard>
+            </div>
+
+            <DashboardCard title="월별 조정·심사불능 상세" subtitle="월별 조정·불능 현황과 청구금액 대비 심사결정금액입니다.">
+                <div className="treatment-data-table-container">
+                    <table className="treatment-data-table">
+                        <thead>
+                            <tr>
+                                <th className="row-header">월별</th>
+                                <th>조정건수</th>
+                                <th>조정금액</th>
+                                <th>불능건수</th>
+                                <th>불능금액</th>
+                                <th>청구금액</th>
+                                <th>심사결정금액</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {currentAdjustmentData.map(row => (
+                                <tr key={row.month}>
+                                    <td className="row-header"><ShieldCheck size={14} style={{ color: '#2563eb' }} />{row.month}</td>
+                                    <td className="font-bold" style={{ color: '#2563eb' }}>{Number(row.adjustmentCount || 0).toLocaleString()}건</td>
+                                    <td>{formatWon(row.adjustmentAmount)}</td>
+                                    <td className="font-bold" style={{ color: '#f97316' }}>{Number(row.failureCount || 0).toLocaleString()}건</td>
+                                    <td>{formatWon(row.failureAmount)}</td>
+                                    <td>{formatWon(row.claimAmount)}</td>
+                                    <td className="font-bold">{formatWon(row.reviewDecisionAmount)}</td>
+                                </tr>
+                            ))}
+                            <tr className="highlight-row">
+                                <td className="row-header">합계</td>
+                                <td className="font-bold">{totalAdjustmentCount.toLocaleString()}건</td>
+                                <td className="font-bold">{formatWon(totalAdjustmentAmount)}</td>
+                                <td className="font-bold">{totalFailureCount.toLocaleString()}건</td>
+                                <td className="font-bold">{formatWon(totalFailureAmount)}</td>
+                                <td className="font-bold">{formatWon(totalAdjustmentClaimAmount)}</td>
+                                <td className="font-bold">{formatWon(totalReviewDecisionAmount)}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </DashboardCard>
+        </div>
     );
 
     const renderFeeLines = (topFees, data, dataKeyLabel) => (
@@ -599,10 +771,14 @@ const InsuranceAnalysis = () => {
                         <ListChecks size={20} />
                         <span>보험수가별 통계</span>
                     </li>
+                    <li className={subTab === 'adjustment' ? 'active' : ''} onClick={() => setSubTab('adjustment')}>
+                        <ShieldCheck size={20} />
+                        <span>조정건수/금액</span>
+                    </li>
                 </ul>
             </nav>
 
-            {subTab === 'claim' ? renderClaimTab() : renderFeeTab()}
+            {subTab === 'claim' ? renderClaimTab() : subTab === 'fee' ? renderFeeTab() : renderAdjustmentTab()}
 
             <ManagementInsight
                 categoryKey="insurance"
