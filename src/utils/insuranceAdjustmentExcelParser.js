@@ -16,6 +16,15 @@ const parseMonth = (value) => {
     if (value instanceof Date && !Number.isNaN(value.getTime())) return value.getMonth() + 1;
     if (typeof value === 'number' && value >= 1 && value <= 12) return Math.floor(value);
 
+    // 엑셀에서 "01월"로 보이는 날짜 셀은 실제로는 날짜 일련번호(예: 46023)로 읽힐 수 있습니다.
+    // 2026년 등 일반적인 업로드 연도 범위의 Excel 날짜값을 월로 변환합니다.
+    if (typeof value === 'number' && value >= 20000 && value <= 60000) {
+        // Excel의 1900 날짜 체계(윤년 버그 보정 포함)를 UTC 날짜로 변환합니다.
+        const excelDate = new Date(Date.UTC(1899, 11, 30) + (value * 24 * 60 * 60 * 1000));
+        const month = excelDate.getUTCMonth() + 1;
+        if (month >= 1 && month <= 12) return month;
+    }
+
     const text = String(value ?? '').trim();
     const match = text.match(/(\d{1,2})\s*월/) || text.match(/[./-](\d{1,2})(?!\d)/) || text.match(/^(\d{1,2})$/);
     const month = Number(match?.[1]);
