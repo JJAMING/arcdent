@@ -62,6 +62,90 @@ const parseNum = (str) => {
     return isNaN(n) ? null : n;
 };
 
+const getLedgerDataQuality = (data = {}) => {
+    const fields = ['workDays', 'newPt', 'oldPt', 'totalVisits'];
+    const detectedCount = fields.filter(field => Number(data[field]) > 0).length;
+    const workDays = Number(data.workDays || 0);
+    const newPt = Number(data.newPt || 0);
+    const oldPt = Number(data.oldPt || 0);
+    const totalVisits = Number(data.totalVisits || 0);
+    const patientTotal = newPt + oldPt;
+    const difference = Math.abs(totalVisits - patientTotal);
+    const isConsistent = patientTotal > 0 && totalVisits > 0 && difference <= Math.max(3, patientTotal * 0.05);
+    const hasValidWorkDays = workDays >= 1 && workDays <= 31;
+
+    return (detectedCount * 3) + (isConsistent ? 3 : 0) + (hasValidWorkDays ? 1 : 0);
+};
+
+export const getLedgerValidationWarnings = (data = {}) => {
+    const warnings = [];
+    const workDays = Number(data.workDays || 0);
+    const newPt = Number(data.newPt || 0);
+    const oldPt = Number(data.oldPt || 0);
+    const totalVisits = Number(data.totalVisits || 0);
+    const patientTotal = newPt + oldPt;
+
+    if (workDays > 31) warnings.push('진료일수가 31일을 초과합니다. 원본 이미지를 확인해 주세요.');
+    if (patientTotal > 0 && totalVisits > 0 && Math.abs(totalVisits - patientTotal) > Math.max(3, patientTotal * 0.05)) {
+        warnings.push('신환·구환 합계와 총 내원횟수가 크게 다릅니다. OCR 숫자를 확인해 주세요.');
+    }
+    if (totalVisits > 0 && workDays > 0 && totalVisits / workDays > 200) {
+        warnings.push('일평균 총 내원이 비정상적으로 큽니다. 숫자 인식 오류일 수 있습니다.');
+    }
+
+    return warnings;
+};
+
+const createEnhancedLedgerImage = async (file) => {
+    if (!file?.type?.startsWith('image/')) return file;
+
+    const objectUrl = URL.createObjectURL(file);
+    try {
+        const image = await new Promise((resolve, reject) => {
+            const element = new Image();
+            element.onload = () => resolve(element);
+            element.onerror = () => reject(new Error('이미지 전처리를 위한 원본을 읽지 못했습니다.'));
+            element.src = objectUrl;
+        });
+        const sourceWidth = image.naturalWidth || image.width;
+        const sourceHeight = image.naturalHeight || image.height;
+        const longestSide = Math.max(sourceWidth, sourceHeight);
+        const scale = Math.min(2.5, Math.max(1, 2800 / Math.max(longestSide, 1)));
+        const width = Math.max(1, Math.round(sourceWidth * scale));
+        const height = Math.max(1, Math.round(sourceHeight * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context) return file;
+
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, width, height);
+        context.filter = 'grayscale(1) contrast(1.65) brightness(1.08)';
+        context.drawImage(image, 0, 0, width, height);
+        context.filter = 'none';
+
+        const imageData = context.getImageData(0, 0, width, height);
+        const pixels = imageData.data;
+        for (let index = 0; index < pixels.length; index += 4) {
+            const luminance = (pixels[index] * 0.299) + (pixels[index + 1] * 0.587) + (pixels[index + 2] * 0.114);
+            const enhanced = Math.max(0, Math.min(255, ((luminance - 128) * 1.25) + 128));
+            pixels[index] = enhanced;
+            pixels[index + 1] = enhanced;
+            pixels[index + 2] = enhanced;
+        }
+        context.putImageData(imageData, 0, 0);
+
+        return await new Promise((resolve, reject) => {
+            canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error('OCR용 이미지 변환에 실패했습니다.'))), 'image/png');
+        });
+    } catch (error) {
+        return file;
+    } finally {
+        URL.revokeObjectURL(objectUrl);
+    }
+};
+
 // ── OCR 텍스트에서 핵심 수치 파싱 ────────────────────────────────────────────
 export const parseLedgerText = (text) => {
     const result = {
@@ -124,14 +208,17 @@ export const parseLedgerText = (text) => {
     // 전체 텍스트에서 각 패턴 탐색
     for (const { field, patterns } of fieldPatterns) {
         for (const pattern of patterns) {
-            const m = text.match(pattern);
-            if (m) {
-                const val = parseNum(m[1]);
-                if (val !== null) {
-                    result[field] = val;
-                    break;
+            for (const source of [...lines, text]) {
+                const m = source.match(pattern);
+                if (m) {
+                    const val = parseNum(m[1]);
+                    if (val !== null) {
+                        result[field] = val;
+                        break;
+                    }
                 }
             }
+            if (result[field] !== null) break;
         }
     }
 
@@ -164,9 +251,12 @@ export const parseLedgerText = (text) => {
         result.total = parseFloat((result.totalVisits / result.workDays).toFixed(1));
     }
 
-    // 구환 일평균 계산 ((newPt + oldPt) / workDays)
-    if ((result.newPt !== null || result.oldPt !== null) && result.workDays) {
-        result.avgOldPt = parseFloat((((result.newPt || 0) + (result.oldPt || 0)) / result.workDays).toFixed(1));
+    // 평균은 OCR이 읽은 보조 값 대신 핵심 수치로 다시 계산해 일관성을 유지합니다.
+    if (result.newPt !== null && result.workDays) {
+        result.avgNewPt = parseFloat((result.newPt / result.workDays).toFixed(1));
+    }
+    if (result.oldPt !== null && result.workDays) {
+        result.avgOldPt = parseFloat((result.oldPt / result.workDays).toFixed(1));
     }
 
     return result;
@@ -184,16 +274,32 @@ export const loadLedgerData = () => {
 
 // ── 메인 API: 이미지 파일 → OCR → 파싱 → 반환 (저장은 caller 책임) ────────────
 export const parseLedgerImage = async (file, onProgress) => {
-    // 1) OCR 실행
-    const result = await Tesseract.recognize(file, 'kor+eng', {
+    const recognize = async (source, reportProgress) => Tesseract.recognize(source, 'kor+eng', {
         logger: (m) => {
-            if (m.status === 'recognizing text' && onProgress) {
+            if (reportProgress && m.status === 'recognizing text' && onProgress) {
                 onProgress(Math.round(m.progress * 100));
             }
         },
     });
 
-    const rawText = result.data.text;
+    // 월간장부처럼 작은 글자와 표 선이 많은 이미지는 고해상도·명암 보정본으로 먼저 읽고,
+    // 핵심 값이 부족하면 원본 결과와 비교해 더 신뢰도 높은 값을 사용합니다.
+    const enhancedFile = await createEnhancedLedgerImage(file);
+    const enhancedResult = await recognize(enhancedFile, true);
+    let rawText = enhancedResult.data.text;
+    let parsedData = parseLedgerText(rawText);
+    let ocrMode = 'enhanced';
+
+    if (getLedgerDataQuality(parsedData) < 16) {
+        const originalResult = await recognize(file, false);
+        const originalText = originalResult.data.text;
+        const originalData = parseLedgerText(originalText);
+        if (getLedgerDataQuality(originalData) > getLedgerDataQuality(parsedData)) {
+            rawText = originalText;
+            parsedData = originalData;
+            ocrMode = 'original-fallback';
+        }
+    }
 
     // 2) 연·월 파싱 (파일명 우선 → OCR 텍스트 fallback)
     let yearMonth = extractYearMonthFromFileName(file.name);
@@ -201,12 +307,11 @@ export const parseLedgerImage = async (file, onProgress) => {
         yearMonth = extractYearMonthFromText(rawText);
     }
 
-    // 3) 수치 파싱
-    const parsedData = parseLedgerText(rawText);
-
     return {
         yearMonth,          // null 이면 사용자 수동 입력 필요
         parsedData,
         rawText,
+        ocrMode,
+        validationWarnings: getLedgerValidationWarnings(parsedData),
     };
 };

@@ -5,7 +5,7 @@ import Tesseract from 'tesseract.js';
 import { parseImplantExcel } from '../utils/implantExcelParser';
 import { parseInsuranceExcel } from '../utils/insuranceExcelParser';
 import { parseInsuranceAdjustmentExcel } from '../utils/insuranceAdjustmentExcelParser';
-import { parseLedgerImage, parseLedgerText, extractYearMonthFromFileName } from '../utils/ledgerImageParser';
+import { getLedgerValidationWarnings, parseLedgerImage, parseLedgerText, extractYearMonthFromFileName } from '../utils/ledgerImageParser';
 import { createPasswordVerificationClient, supabase } from '../lib/supabaseClient';
 import {
     loadClinicImplantTypes,
@@ -150,7 +150,7 @@ const OCR_FIELDS = [
     { key: 'newPt',    label: '신환',            unit: '명' },
     { key: 'oldPt',    label: '구환',            unit: '명' },
     { key: 'totalVisits', label: '총 내원횟수', unit: '회' },
-    { key: 'total',    label: '총 접수 환자 수 (자동)', unit: '명', readOnly: true },
+    { key: 'total',    label: '일평균 총 내원', unit: '명', readOnly: true },
     { key: 'avgNewPt', label: '신환 일평균',      unit: '명' },
     { key: 'avgOldPt', label: '구환 일평균 (자동)', unit: '명', readOnly: true },
 ];
@@ -5417,7 +5417,7 @@ const Admin = () => {
                     yearMonth: ym || { year: getCurrentYearString(), month: '1월' },
                     yearMonthDetected: !!ym,
                     parsedData: { workDays: '', newPt: '', oldPt: '', totalVisits: '', total: '', avgNewPt: '', avgOldPt: '' },
-                    rawText: '', status: 'loading',
+                    rawText: '', validationWarnings: [], ocrMode: '', status: 'loading',
                 });
                 setOcrProcessingFile(file.name);
 
@@ -5426,11 +5426,7 @@ const Admin = () => {
                         setOcrModal(prev => prev ? { ...prev, ocrProgress: progress } : prev);
                     });
 
-                    // 구환 일평균 자동 계산: 구환 / 진료일수
-                    const pd = result.parsedData;
-                    if (pd.oldPt && pd.workDays && !pd.avgOldPt) {
-                        pd.avgOldPt = parseFloat((pd.oldPt / pd.workDays).toFixed(1));
-                    }
+                    const pd = { ...result.parsedData };
                     const patientCountTotal = Number(pd.newPt || 0) + Number(pd.oldPt || 0);
                     if (pd.totalVisits && patientCountTotal && Number(pd.totalVisits) < patientCountTotal) {
                         pd.totalVisits = '';
@@ -5443,6 +5439,12 @@ const Admin = () => {
                     }
                     if (pd.totalVisits && pd.workDays) {
                         pd.total = parseFloat((pd.totalVisits / pd.workDays).toFixed(1));
+                    }
+                    if (pd.newPt && pd.workDays) {
+                        pd.avgNewPt = parseFloat((pd.newPt / pd.workDays).toFixed(1));
+                    }
+                    if (pd.oldPt && pd.workDays) {
+                        pd.avgOldPt = parseFloat((pd.oldPt / pd.workDays).toFixed(1));
                     }
 
                     setOcrModal(prev => prev ? {
@@ -5460,6 +5462,8 @@ const Admin = () => {
                             avgOldPt: pd.avgOldPt ?? '',
                         },
                         rawText: result.rawText,
+                        validationWarnings: getLedgerValidationWarnings(pd),
+                        ocrMode: result.ocrMode || '',
                     } : prev);
                 } catch (err) {
                     setOcrModal(prev => prev ? { ...prev, status: 'done', ocrProgress: 100 } : prev);
@@ -5498,9 +5502,13 @@ const Admin = () => {
             } else if (!isNaN(totalVisits) && !isNaN(workDays) && workDays > 0) {
                 updated.parsedData.total = parseFloat((totalVisits / workDays).toFixed(1));
             }
+            if (!isNaN(newPt) && !isNaN(workDays) && workDays > 0) {
+                updated.parsedData.avgNewPt = parseFloat((newPt / workDays).toFixed(1));
+            }
             if (!isNaN(oldPt) && !isNaN(workDays) && workDays > 0) {
                 updated.parsedData.avgOldPt = parseFloat((oldPt / workDays).toFixed(1));
             }
+            updated.validationWarnings = getLedgerValidationWarnings(updated.parsedData);
             return updated;
         });
     };
@@ -6247,6 +6255,19 @@ const Admin = () => {
                         </div>
 
                         {/* 빈 값 경고 */}
+                        {ocrModal.type !== 'consultationOverall' && (ocrModal.validationWarnings || []).length > 0 && (
+                            <div style={{
+                                marginTop: '1rem', padding: '0.75rem 1rem',
+                                background: '#fff7ed', border: '1px solid #fdba74',
+                                borderRadius: '0.6rem', fontSize: '0.82rem', color: '#9a3412',
+                            }}>
+                                <strong>OCR 확인이 필요합니다.</strong>
+                                <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.15rem' }}>
+                                    {ocrModal.validationWarnings.map(warning => <li key={warning}>{warning}</li>)}
+                                </ul>
+                            </div>
+                        )}
+
                         {(() => {
                             const keyFields = ocrModal.type === 'consultationOverall'
                                 ? ['totalConsultations', 'agreedCount', 'partialCount', 'newPatients', 'oldPatients', 'totalPatients', 'diagnosisAmount', 'consultationAmount', 'agreedAmount']
