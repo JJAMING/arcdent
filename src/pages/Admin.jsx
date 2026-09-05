@@ -1733,6 +1733,16 @@ const Admin = () => {
         };
     };
 
+    // "신규환자 내원경로분포"와 "내원경로별 치료이행율"은 별도 엑셀로 업로드되어 같은
+    // 경로라도 띄어쓰기가 다르게 입력될 수 있습니다(예: "가족소개" vs "가족 소개").
+    // 내부 공백을 제거해 병합 키를 통일하지 않으면 신환수/비율이 서로 다른 행으로 쪼개집니다.
+    const normalizeNewPatientSourceKey = (name) => String(name || '').trim().replace(/\s+/g, '');
+    const normalizeNewPatientRatios = (ratios = {}) => Object.entries(ratios).reduce((acc, [name, value]) => {
+        const key = normalizeNewPatientSourceKey(name);
+        if (key) acc[key] = value;
+        return acc;
+    }, {});
+
     const mapNewPatientPathReportPayload = (payload = {}) => {
         const rows = Array.isArray(payload.rows) ? payload.rows : [];
         if (rows.length === 0) return payload || {};
@@ -1746,7 +1756,7 @@ const Admin = () => {
         const sourceNonInsurancePatients = {};
 
         rows.forEach(item => {
-            const path = item.path || item.name || item.source;
+            const path = normalizeNewPatientSourceKey(item.path || item.name || item.source);
             if (!path) return;
             const newPatient = Number(item.newPatient || item.newPatients || item.count || 0);
             const oldPatient = Number(item.oldPatient || item.oldPatients || 0);
@@ -1768,8 +1778,8 @@ const Admin = () => {
             sourceAvgFee,
             sourceInsurancePatients,
             sourceNonInsurancePatients,
-            sourceInsuranceRatios: payload.insuranceRatios || {},
-            sourceNonInsuranceRatios: payload.nonInsuranceRatios || {},
+            sourceInsuranceRatios: normalizeNewPatientRatios(payload.insuranceRatios || {}),
+            sourceNonInsuranceRatios: normalizeNewPatientRatios(payload.nonInsuranceRatios || {}),
             pathDistributionSummary: payload.summary || {},
             rows,
         };

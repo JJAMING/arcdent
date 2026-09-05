@@ -105,6 +105,17 @@ const loadNewPatientData = (year) => {
     return normalizeYearData([]);
 };
 
+// 내원경로 이름은 "신규환자 내원경로분포"와 "내원경로별 치료이행율"이 서로 다른 엑셀
+// 파일로 업로드되기 때문에, 같은 경로라도 띄어쓰기가 다르게 입력되는 경우가 있습니다
+// (예: "가족소개" vs "가족 소개"). 내부 공백을 제거해 병합 키를 통일하지 않으면 같은
+// 경로가 신환수/비율 각각 다른 행으로 쪼개져 두 파일 다 반쪽짜리 데이터로 보입니다.
+const normalizeSourcePathKey = (name) => String(name || '').trim().replace(/\s+/g, '');
+const normalizeSourceKeyedObject = (obj = {}) => Object.entries(obj).reduce((acc, [name, value]) => {
+    const key = normalizeSourcePathKey(name);
+    if (key) acc[key] = value;
+    return acc;
+}, {});
+
 const buildNewPatientMapFromSupabaseRows = (pathRows = [], ageRows = []) => {
     const map = {};
     const ensureMonth = (year, monthNumber) => {
@@ -130,18 +141,19 @@ const buildNewPatientMapFromSupabaseRows = (pathRows = [], ageRows = []) => {
             const sourceNonInsurancePatients = {};
 
             rows.forEach(item => {
-                const path = item.path;
+                const path = normalizeSourcePathKey(item.path);
                 if (!path) return;
                 const newPatient = Number(item.newPatient || 0);
                 const oldPatient = Number(item.oldPatient || item.oldPatients || 0);
                 const visitPatient = Number(item.visitPatient || item.visitPatients || item.visitPatientsCount || (newPatient + oldPatient) || 0);
-                sources[path] = newPatient;
-                sourceOldPatients[path] = oldPatient;
-                sourceVisitPatients[path] = visitPatient;
-                sourceRevenue[path] = Number(item.totalFee || 0);
+                // 같은 파일 안에서도 띄어쓰기 변형으로 같은 경로가 두 행으로 나뉠 수 있어 누적 합산합니다.
+                sources[path] = (sources[path] || 0) + newPatient;
+                sourceOldPatients[path] = (sourceOldPatients[path] || 0) + oldPatient;
+                sourceVisitPatients[path] = (sourceVisitPatients[path] || 0) + visitPatient;
+                sourceRevenue[path] = (sourceRevenue[path] || 0) + Number(item.totalFee || 0);
                 sourceAvgFee[path] = Number(item.avgFee || 0);
-                sourceInsurancePatients[path] = Number(item.insurancePatients || 0);
-                sourceNonInsurancePatients[path] = Number(item.nonInsurancePatients || 0);
+                sourceInsurancePatients[path] = (sourceInsurancePatients[path] || 0) + Number(item.insurancePatients || 0);
+                sourceNonInsurancePatients[path] = (sourceNonInsurancePatients[path] || 0) + Number(item.nonInsurancePatients || 0);
             });
 
             Object.assign(target, {
@@ -159,13 +171,13 @@ const buildNewPatientMapFromSupabaseRows = (pathRows = [], ageRows = []) => {
         if (payload.insuranceRatios && Object.keys(payload.insuranceRatios).length > 0) {
             target.sourceInsuranceRatios = {
                 ...(target.sourceInsuranceRatios || {}),
-                ...payload.insuranceRatios,
+                ...normalizeSourceKeyedObject(payload.insuranceRatios),
             };
         }
         if (payload.nonInsuranceRatios && Object.keys(payload.nonInsuranceRatios).length > 0) {
             target.sourceNonInsuranceRatios = {
                 ...(target.sourceNonInsuranceRatios || {}),
-                ...payload.nonInsuranceRatios,
+                ...normalizeSourceKeyedObject(payload.nonInsuranceRatios),
             };
         }
     });
