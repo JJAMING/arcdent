@@ -1942,12 +1942,14 @@ const Admin = () => {
                 ` : ''}
                 ${includeTab('topPatients') ? `
                     <h2>진료비 상위</h2>
-                    ${reportTable(['환자명', '차트번호', '총 진료비', '수납액'], topPatients.map(item => [
-                        item.patientName || item.name || item.환자명 || '-',
-                        item.chartNo || item.chartNumber || item.차트번호 || '-',
-                        reportWon(item.totalAmount || item.totalFee || item.총진료비 || item.amount),
-                        reportWon(item.paidAmount || item.payment || item.수납액 || 0),
-                    ]))}
+                    ${reportTable(['환자명', '차트번호', '총 진료비', '수납액'], [...topPatients]
+                        .sort((a, b) => Number(b.revenue || b.totalAmount || b.totalFee || b.총진료비 || b.amount || 0) - Number(a.revenue || a.totalAmount || a.totalFee || a.총진료비 || a.amount || 0))
+                        .map(item => [
+                            item.patientName || item.name || item.환자명 || '-',
+                            item.chartNo || item.chartNumber || item.차트번호 || '-',
+                            reportWon(item.revenue || item.totalAmount || item.totalFee || item.총진료비 || item.amount || 0),
+                            reportWon(item.paid || item.paidAmount || item.payment || item.수납액 || 0),
+                        ]))}
                 ` : ''}
                 ${includeTab('newPatientRevenue') ? `
                     <h2>신환수익비교</h2>
@@ -2053,6 +2055,7 @@ const Admin = () => {
         if (category === 'newPatient') {
             const sourceTotals = {};
             const treatmentRates = {};
+            const nonInsuranceTreatmentRates = {};
             const ageTotals = {};
             const avgFeeTotals = {};
             const avgFeeCounts = {};
@@ -2066,6 +2069,14 @@ const Admin = () => {
                         treatmentRates[name] = treatmentRates[name] || { sum: 0, count: 0 };
                         treatmentRates[name].sum += rate;
                         treatmentRates[name].count += 1;
+                    }
+                });
+                Object.entries(row.sourceNonInsuranceRatios || {}).forEach(([name, value]) => {
+                    const rate = Number((value?.nonInsurance ?? value?.nonInsuranceRate ?? value) || 0);
+                    if (rate > 0) {
+                        nonInsuranceTreatmentRates[name] = nonInsuranceTreatmentRates[name] || { sum: 0, count: 0 };
+                        nonInsuranceTreatmentRates[name].sum += rate;
+                        nonInsuranceTreatmentRates[name].count += 1;
                     }
                 });
                 Object.entries(row.ages || {}).forEach(([name, value]) => {
@@ -2091,9 +2102,14 @@ const Admin = () => {
                 ` : ''}
                 ${includeTab('treatmentRate') ? `
                     <h2>내원 경로별 치료 이행율</h2>
-                    ${reportTable(['내원경로', '보험 항목 비율'], Object.entries(treatmentRates).map(([name, value]) => [
-                        name, reportPercent(value.count ? value.sum / value.count : 0),
-                    ]))}
+                    ${reportTable(['내원경로', '보험 항목 비율', '비보험 항목 비율'], Object.entries(treatmentRates).map(([name, value]) => {
+                        const nonInsurance = nonInsuranceTreatmentRates[name];
+                        return [
+                            name,
+                            reportPercent(value.count ? value.sum / value.count : 0),
+                            reportPercent(nonInsurance?.count ? nonInsurance.sum / nonInsurance.count : 0),
+                        ];
+                    }))}
                 ` : ''}
                 ${includeTab('age') ? `
                     <h2>연령별 신환 현황</h2>
