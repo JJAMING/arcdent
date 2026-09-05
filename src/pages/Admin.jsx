@@ -151,7 +151,7 @@ const OCR_FIELDS = [
     { key: 'oldPt',    label: '구환',            unit: '명' },
     { key: 'totalVisits', label: '총 내원횟수', unit: '회' },
     { key: 'total',    label: '일평균 총 내원', unit: '명', readOnly: true },
-    { key: 'avgNewPt', label: '신환 일평균',      unit: '명' },
+    { key: 'avgNewPt', label: '신환 일평균 (자동)', unit: '명', readOnly: true },
     { key: 'avgOldPt', label: '구환 일평균 (자동)', unit: '명', readOnly: true },
 ];
 
