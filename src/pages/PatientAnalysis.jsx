@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import {
     Calendar, ChevronDown, Users, UserPlus, UserCheck,
-    Wrench, PlusCircle, Stethoscope
+    Wrench, PlusCircle, Stethoscope, X
 } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
 import MonthlySnapshotBarChart from '../components/MonthlySnapshotBarChart';
@@ -49,18 +49,43 @@ const CHART_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#1
 const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
 const LAB_ROWS_PER_PAGE = 10;
 
-// Inlay and onlay are reported as one combined lab category regardless of the source group.
+// 메인 화면에 항상 노출할 핵심 기공물 종류 (나머지는 "기타" 합계로 묶여 상세보기 팝업에서만 표시됩니다)
+// 크라운·브릿지는 원본 데이터의 "구분" 값 자체가 "Cr./Br."처럼 이미 하나로 합쳐진 경우가 많아
+// 인레이·온레이와 마찬가지로 구분하지 않고 하나의 항목으로 합산합니다.
+const FOCUS_LAB_TYPES = ['인레이·온레이', '크라운·브릿지'];
+// 월별로 어떤 조합이 먼저 감지되는지에 따라 색이 바뀌지 않도록 항목별 색을 고정합니다.
+const FOCUS_LAB_COLORS = {
+    '인레이·온레이': '#10b981', // 초록
+    '크라운·브릿지': '#f59e0b', // 주황
+};
+const ETC_LAB_COLOR = '#94a3b8';
+
+// 완전한 한글 단어는 "구분"·"기공물종류" 어디에 있어도 안전하게 인식할 수 있습니다.
+const CROWN_BRIDGE_WORD_PATTERN = /(크라운|브릿지|브리지)/;
+// "Cr"/"Br" 같은 영문 축약형은 Co-Cr, Ni-Cr 같은 합금 재료명과 혼동될 수 있어 단독으로는
+// "기공물종류"에서만 인정하고, "구분" 값 자체는 두 축약형이 함께("Cr./Br." 등) 있을 때만 인정합니다.
+const CROWN_ABBR_PATTERN = /\bcr\b/i;
+const BRIDGE_ABBR_PATTERN = /\bbr\b/i;
+const isCrownBridgeAbbrCombo = (label) => CROWN_ABBR_PATTERN.test(label) && BRIDGE_ABBR_PATTERN.test(label);
+
+// 인레이·온레이/크라운·브릿지는 재료(구분)와 무관하게 하나의 항목으로 합산해 표시합니다.
 const normalizeLabRequestForDisplay = (item = {}) => {
     const category = String(item.category || '미분류').trim() || '미분류';
     const type = String(item.type || item.name || '미분류').trim() || '미분류';
-    const normalizedLabel = `${category}${type}`.replace(/\s+/g, '');
+    const normalizedCategory = category.replace(/\s+/g, '');
+    const normalizedType = type.replace(/\s+/g, '');
+    const normalizedLabel = `${normalizedCategory}${normalizedType}`;
 
     if (/(인레이|온레이)/.test(normalizedLabel)) {
-        return {
-            ...item,
-            category: '통합',
-            type: '인레이·온레이',
-        };
+        return { ...item, category: '통합', type: '인레이·온레이' };
+    }
+    if (
+        CROWN_BRIDGE_WORD_PATTERN.test(normalizedLabel) ||
+        CROWN_ABBR_PATTERN.test(normalizedType) ||
+        BRIDGE_ABBR_PATTERN.test(normalizedType) ||
+        isCrownBridgeAbbrCombo(normalizedCategory)
+    ) {
+        return { ...item, category: '통합', type: '크라운·브릿지' };
     }
 
     return { ...item, category, type };
@@ -161,6 +186,7 @@ const PatientAnalysis = () => {
     const [isYearOpen, setIsYearOpen] = useState(false);
     const [refreshTick, setRefreshTick] = useState(0);
     const [labPage, setLabPage] = useState(1);
+    const [isLabDetailOpen, setIsLabDetailOpen] = useState(false);
 
     // lazy initializer: 마운트 즉시 localStorage 읽기
     const [patientData, setPatientData] = useState(() => buildMergedData(getCurrentYearString(), {}));
@@ -691,8 +717,28 @@ const PatientAnalysis = () => {
                     (currentLabPage - 1) * LAB_ROWS_PER_PAGE,
                     currentLabPage * LAB_ROWS_PER_PAGE
                 );
-                const topLabSeries = totalByLab.slice(0, 10);
-                const chartLabSeries = topLabSeries;
+                // 메인 화면은 인레이·온레이/크라운·브릿지 2개 핵심 항목 + 나머지 전체를 합산한
+                // "기타" 항목만 보여줍니다. 재료별 세부 내역은 상세보기 팝업에서 확인합니다.
+                const focusLabSeries = FOCUS_LAB_TYPES.map((focusType) => {
+                    const matched = totalByLab.filter(row => row.type === focusType);
+                    return {
+                        key: `focus_${focusType}`,
+                        name: focusType,
+                        total: matched.reduce((s, r) => s + r.total, 0),
+                        color: FOCUS_LAB_COLORS[focusType] || matched[0]?.color || CHART_COLORS[0],
+                        getValue: (d) => matched.reduce((s, r) => s + r.getValue(d), 0),
+                    };
+                });
+                const etcLabRows = totalByLab.filter(row => !FOCUS_LAB_TYPES.includes(row.type));
+                const etcLabSeries = {
+                    key: 'lab_etc_summary',
+                    name: '기타',
+                    total: etcLabRows.reduce((s, r) => s + r.total, 0),
+                    color: ETC_LAB_COLOR,
+                    getValue: (d) => etcLabRows.reduce((s, r) => s + r.getValue(d), 0),
+                };
+                const mainLabSeries = [...focusLabSeries, etcLabSeries];
+                const chartLabSeries = mainLabSeries;
                 const labChartData = currentHalfData.map((d) => {
                     const row = { ...d };
                     chartLabSeries.forEach(({ key, getValue }) => {
@@ -702,10 +748,10 @@ const PatientAnalysis = () => {
                 });
                 const grandTotal = totalByLab.reduce((s, v) => s + v.total, 0);
                 const renderLabPieTooltip = ({ active, payload }) => {
-                    if (!active || topLabSeries.length === 0) return null;
+                    if (!active || mainLabSeries.length === 0) return null;
 
                     const activeName = payload?.[0]?.payload?.name || payload?.[0]?.name;
-                    const rows = topLabSeries
+                    const rows = mainLabSeries
                         .filter(item => Number(item.total || 0) > 0)
                         .sort((a, b) => Number(b.total || 0) - Number(a.total || 0));
 
@@ -763,31 +809,35 @@ const PatientAnalysis = () => {
                 return (
                     <div className="tab-pane">
                         <div className="dashboard-stack">
-                            {/* KPI 요약 */}
+                            {/* KPI 요약 + 상세보기 */}
+                            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsLabDetailOpen(true)}
+                                    style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+                                        padding: '0.5rem 0.9rem', borderRadius: '0.6rem',
+                                        border: '1px solid var(--border-color)', background: 'var(--card-bg)',
+                                        color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700,
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    재료별 상세보기
+                                </button>
+                            </div>
                             <div className="patient-kpi-row">
-                                {topLabSeries.map(({ name, category, type, total, color }) => {
-                                    const categoryLabel = category && category !== '기본' ? category : '';
-                                    const itemLabel = type || name;
-                                    const fullLabel = categoryLabel ? `${categoryLabel} - ${itemLabel}` : itemLabel;
-
-                                    return (
-                                        <div key={name} className="patient-kpi-card lab-request-kpi-card" style={{ borderTop: `3px solid ${color}` }} title={fullLabel}>
-                                            {categoryLabel && (
-                                                <span className="lab-request-kpi-category" style={{ color, backgroundColor: `${color}14` }}>
-                                                    {categoryLabel}
-                                                </span>
-                                            )}
-                                            <span className="lab-request-kpi-title">{itemLabel}</span>
-                                            <span className="kpi-value" style={{ color }}>{total}건</span>
-                                            <span className="kpi-sub">비율 {((total / grandTotal) * 100).toFixed(1)}%</span>
-                                        </div>
-                                    );
-                                })}
+                                {mainLabSeries.map(({ key, name, total, color }) => (
+                                    <div key={key} className="patient-kpi-card lab-request-kpi-card" style={{ borderTop: `3px solid ${color}` }} title={name}>
+                                        <span className="lab-request-kpi-title">{name}</span>
+                                        <span className="kpi-value" style={{ color }}>{total.toLocaleString()}건</span>
+                                        <span className="kpi-sub">비율 {grandTotal > 0 ? ((total / grandTotal) * 100).toFixed(1) : '0.0'}%</span>
+                                    </div>
+                                ))}
                             </div>
 
                             <div className="dashboard-grid" style={{ gridTemplateColumns: '2fr 1fr' }}>
                                 {/* 좌: 월별 종류 그룹 바차트 */}
-                                <DashboardCard title="기공물 종류별 월간 의뢰 현황" subtitle="의뢰 건수 상위 10개">
+                                <DashboardCard title="기공물 종류별 월간 의뢰 현황" subtitle="인레이·온레이 · 크라운·브릿지 · 기타">
                                     <div style={{ height: 350, width: '100%' }}>
                                         {isMonthlyView ? (
                                             <MonthlySnapshotBarChart
@@ -824,8 +874,8 @@ const PatientAnalysis = () => {
                                     <div style={{ height: 280, width: '100%' }}>
                                         <ResponsiveContainer>
                                             <PieChart>
-                                                <Pie data={topLabSeries} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="total">
-                                                    {topLabSeries.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                                                <Pie data={mainLabSeries} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="total">
+                                                    {mainLabSeries.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                                                 </Pie>
                                                 <Tooltip content={renderLabPieTooltip} />
                                                 <Legend verticalAlign="bottom" height={20} iconSize={10} wrapperStyle={{ fontSize: '11px' }} />
@@ -834,87 +884,124 @@ const PatientAnalysis = () => {
                                     </div>
                                 </DashboardCard>
                             </div>
+                        </div>
 
-                            {/* 상세 테이블 */}
-                            <DashboardCard title="기공물 의뢰 상세 데이터">
-                                <div className="treatment-data-table-container">
-                                    <table className="treatment-data-table">
-                                        <thead>
-                                            <tr>
-                                                <th className="row-header">구분</th>
-                                                <th>기공물 종류</th>
-                                                {currentHalfData.map(d => <th key={d.month}>{d.month}</th>)}
-                                                <th>합계</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {pagedDetailLabRows.map(({ key, category, type, color, getValue }) => (
-                                                <tr key={key}>
-                                                    <td className="row-header">
-                                                        <span style={{ display:'inline-block', width:10, height:10, borderRadius:'2px', background:color, marginRight:6, verticalAlign:'middle' }} />
-                                                        {category}
-                                                    </td>
-                                                    <td>{type}</td>
-                                                    {currentHalfData.map(d => <td key={d.month}>{getValue(d)}건</td>)}
-                                                    <td className="font-bold">{currentHalfData.reduce((s, d) => s + getValue(d), 0)}건</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                                {detailLabRows.length > LAB_ROWS_PER_PAGE && (
-                                    <div className="pagination-container">
+                        {/* 상세보기 팝업: 재료(구분)별 전체 내역 */}
+                        {isLabDetailOpen && (
+                            <div
+                                onClick={() => setIsLabDetailOpen(false)}
+                                style={{
+                                    position: 'fixed', inset: 0,
+                                    background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    zIndex: 1000, padding: '1rem',
+                                }}
+                            >
+                                <div
+                                    onClick={(e) => e.stopPropagation()}
+                                    style={{
+                                        background: 'var(--card-bg)', borderRadius: '1.2rem',
+                                        boxShadow: '0 24px 60px rgba(0,0,0,0.3)',
+                                        width: '100%', maxWidth: '960px',
+                                        maxHeight: '85vh', overflowY: 'auto', padding: '1.75rem',
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '1.2rem' }}>
+                                        <div>
+                                            <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                                기공물 의뢰 상세 데이터
+                                            </h2>
+                                            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                                                재료(구분) · 기공물 종류별 전체 내역입니다.
+                                            </p>
+                                        </div>
                                         <button
-                                            className="pagination-btn"
-                                            disabled={currentLabPage === 1}
-                                            onClick={() => setLabPage(1)}
+                                            onClick={() => setIsLabDetailOpen(false)}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
                                         >
-                                            처음
-                                        </button>
-                                        <button
-                                            className="pagination-btn"
-                                            disabled={currentLabPage === 1}
-                                            onClick={() => setLabPage(prev => Math.max(1, prev - 1))}
-                                        >
-                                            이전
-                                        </button>
-
-                                        {Array.from({ length: Math.min(5, labTotalPages) }, (_, i) => {
-                                            let pageNum;
-                                            if (labTotalPages <= 5) pageNum = i + 1;
-                                            else if (currentLabPage <= 3) pageNum = i + 1;
-                                            else if (currentLabPage >= labTotalPages - 2) pageNum = labTotalPages - 4 + i;
-                                            else pageNum = currentLabPage - 2 + i;
-
-                                            return (
-                                                <button
-                                                    key={pageNum}
-                                                    className={`pagination-number ${currentLabPage === pageNum ? 'active' : ''}`}
-                                                    onClick={() => setLabPage(pageNum)}
-                                                >
-                                                    {pageNum}
-                                                </button>
-                                            );
-                                        })}
-
-                                        <button
-                                            className="pagination-btn"
-                                            disabled={currentLabPage === labTotalPages}
-                                            onClick={() => setLabPage(prev => Math.min(labTotalPages, prev + 1))}
-                                        >
-                                            다음
-                                        </button>
-                                        <button
-                                            className="pagination-btn"
-                                            disabled={currentLabPage === labTotalPages}
-                                            onClick={() => setLabPage(labTotalPages)}
-                                        >
-                                            끝
+                                            <X size={22} />
                                         </button>
                                     </div>
-                                )}
-                            </DashboardCard>
-                        </div>
+
+                                    <div className="treatment-data-table-container">
+                                        <table className="treatment-data-table">
+                                            <thead>
+                                                <tr>
+                                                    <th className="row-header">구분</th>
+                                                    <th>기공물 종류</th>
+                                                    {currentHalfData.map(d => <th key={d.month}>{d.month}</th>)}
+                                                    <th>합계</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {pagedDetailLabRows.map(({ key, category, type, color, getValue }) => (
+                                                    <tr key={key}>
+                                                        <td className="row-header">
+                                                            <span style={{ display:'inline-block', width:10, height:10, borderRadius:'2px', background:color, marginRight:6, verticalAlign:'middle' }} />
+                                                            {category}
+                                                        </td>
+                                                        <td>{type}</td>
+                                                        {currentHalfData.map(d => <td key={d.month}>{getValue(d)}건</td>)}
+                                                        <td className="font-bold">{currentHalfData.reduce((s, d) => s + getValue(d), 0)}건</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    {detailLabRows.length > LAB_ROWS_PER_PAGE && (
+                                        <div className="pagination-container">
+                                            <button
+                                                className="pagination-btn"
+                                                disabled={currentLabPage === 1}
+                                                onClick={() => setLabPage(1)}
+                                            >
+                                                처음
+                                            </button>
+                                            <button
+                                                className="pagination-btn"
+                                                disabled={currentLabPage === 1}
+                                                onClick={() => setLabPage(prev => Math.max(1, prev - 1))}
+                                            >
+                                                이전
+                                            </button>
+
+                                            {Array.from({ length: Math.min(5, labTotalPages) }, (_, i) => {
+                                                let pageNum;
+                                                if (labTotalPages <= 5) pageNum = i + 1;
+                                                else if (currentLabPage <= 3) pageNum = i + 1;
+                                                else if (currentLabPage >= labTotalPages - 2) pageNum = labTotalPages - 4 + i;
+                                                else pageNum = currentLabPage - 2 + i;
+
+                                                return (
+                                                    <button
+                                                        key={pageNum}
+                                                        className={`pagination-number ${currentLabPage === pageNum ? 'active' : ''}`}
+                                                        onClick={() => setLabPage(pageNum)}
+                                                    >
+                                                        {pageNum}
+                                                    </button>
+                                                );
+                                            })}
+
+                                            <button
+                                                className="pagination-btn"
+                                                disabled={currentLabPage === labTotalPages}
+                                                onClick={() => setLabPage(prev => Math.min(labTotalPages, prev + 1))}
+                                            >
+                                                다음
+                                            </button>
+                                            <button
+                                                className="pagination-btn"
+                                                disabled={currentLabPage === labTotalPages}
+                                                onClick={() => setLabPage(labTotalPages)}
+                                            >
+                                                끝
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 );
             }
