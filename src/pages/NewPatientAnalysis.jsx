@@ -17,6 +17,7 @@ import './TreatmentAnalysis.css';
 
 const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#64748b'];
+
 const AGE_RANGES = ['0대', '10대', '20대', '30대', '40대', '50대', '60대', '70대+'];
 const AGE_RATIO_SCOPES = [
     { value: 'all', label: '전체 비율' },
@@ -1509,7 +1510,12 @@ const NewPatientAnalysis = () => {
                                         <thead>
                                             <tr>
                                                 <th className="row-header" style={compactMonthCellStyle}>월</th>
-                                                {detailSourceSummary.map(({ name }) => <th key={name}>{name}</th>)}
+                                                {detailSourceSummary.map(({ name, color }) => (
+                                                    <th key={name} style={{ color }}>
+                                                        <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: color, marginRight: 6, verticalAlign: 'middle' }} />
+                                                        {name}
+                                                    </th>
+                                                ))}
                                                 <th>총 신환 합계</th>
                                             </tr>
                                         </thead>
