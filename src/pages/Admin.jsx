@@ -2137,7 +2137,7 @@ const Admin = () => {
         }
 
         if (category === 'consultation') {
-            const consultantList = consultantRows.flatMap(row => row.rows || []);
+            const consultantList = consultantRows.flatMap(row => (row.rows || []).map(item => ({ ...item, month: row.month })));
             const rejectedList = rejectedRows.flatMap(row => row.rows || []);
             return `
                 ${reportCards([
@@ -2155,21 +2155,20 @@ const Admin = () => {
                         reportWon(row.diagnosisAmount), reportWon(row.consultationAmount), reportWon(row.agreedAmount), reportPercent(row.consultationAgreementRate),
                     ]))}
                     <h2>의사별 진단수 / 동의금액</h2>
-                    ${reportTable(['의사', '진단수', '동의금액'], consultationRows.flatMap(row => (row.doctorDiagnoses || []).map(doctor => [
-                        doctor.name, `${reportNumber(doctor.count)}건`, reportWon(doctor.agreedAmount),
+                    ${reportTable(['월', '의사', '진단수', '동의금액'], consultationRows.flatMap(row => (row.doctorDiagnoses || []).map(doctor => [
+                        row.month, doctor.name, `${reportNumber(doctor.count)}건`, reportWon(doctor.agreedAmount),
                     ])))}
                 ` : ''}
                 ${includeTab('consultant') ? `
                     <h2>상담자별 동의율</h2>
-                    ${reportTable(['상담자', '환자수', '총 동의수', '상담금액', '동의금액', '금액대비 동의율'], consultantList.map(row => [
-                        row.name, `${reportNumber(row.patientCount)}명`, `${reportNumber(row.totalAgreed)}명`, reportWon(row.consultationAmount), reportWon(row.agreedAmount), reportPercent(row.amountAgreementRate),
+                    ${reportTable(['월', '상담자', '환자수', '총 동의수', '상담금액', '동의금액', '금액대비 동의율'], consultantList.map(row => [
+                        row.month, row.name, `${reportNumber(row.patientCount)}명`, `${reportNumber(row.totalAgreed)}명`, reportWon(row.consultationAmount), reportWon(row.agreedAmount), reportPercent(row.amountAgreementRate),
                     ]))}
                 ` : ''}
                 ${includeTab('rejected') ? `
                     <h2>미동의 환자 현황</h2>
-                    ${reportTable(['담당 Dr', '신환', '구환', '환자성함', '내원날짜', '상담자', '미동의사유', '진단금액', '상담금액', '최종동의금액', '비동의금액'], rejectedList.map(row => [
-                        row.doctor || '-', row.newPatient || '', row.oldPatient || '', row.patientName || '-', row.visitDate || '-', row.consultant || '-',
-                        row.reason || '-', reportWon(row.diagnosisAmount), reportWon(row.consultationAmount), reportWon(row.agreedAmount), reportWon(row.rejectedAmount),
+                    ${reportTable(['월', '비동의금액 합계'], rejectedRows.map(row => [
+                        row.month, reportWon((row.rows || []).reduce((sum, item) => sum + Number(item.rejectedAmount || 0), 0)),
                     ]))}
                 ` : ''}
             `;
