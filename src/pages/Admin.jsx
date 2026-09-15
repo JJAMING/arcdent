@@ -936,7 +936,7 @@ const Admin = () => {
     const [reportMode, setReportMode] = useState('single');
     const [reportCategory, setReportCategory] = useState('home');
     const [reportSubTab, setReportSubTab] = useState('all');
-    const [reportBundleCategories, setReportBundleCategories] = useState(['home', 'sales', 'patient', 'newPatient', 'consultation']);
+    const [reportBundleCategories, setReportBundleCategories] = useState(() => REPORT_CATEGORIES.map(item => item.key));
     const [reportYear, setReportYear] = useState(() => getCurrentYearString());
     const [availableReportYears, setAvailableReportYears] = useState(YEARS);
     const [reportPeriod, setReportPeriod] = useState('all');
