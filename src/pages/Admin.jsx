@@ -1703,6 +1703,27 @@ const Admin = () => {
         </table>
     `;
 
+    // reportTable과 달리, 같은 그룹(예: 월)에 속한 연속된 행들의 첫 칸을 rowspan으로
+    // 병합해서 보여줍니다. groups: [{ label: string, rows: string[][] }]
+    const reportGroupedTable = (headers, groups) => {
+        const nonEmptyGroups = groups.filter(group => group.rows.length > 0);
+        const bodyRows = nonEmptyGroups.flatMap(({ label, rows }) => rows.map((cells, index) => {
+            const groupCell = index === 0
+                ? `<td rowspan="${rows.length}" class="report-group-cell">${escapeReportHtml(label)}</td>`
+                : '';
+            return `<tr>${groupCell}${cells.map(cell => `<td>${escapeReportHtml(cell)}</td>`).join('')}</tr>`;
+        }));
+
+        return `
+            <table>
+                <thead><tr>${headers.map(header => `<th>${escapeReportHtml(header)}</th>`).join('')}</tr></thead>
+                <tbody>
+                    ${bodyRows.length > 0 ? bodyRows.join('') : `<tr><td colspan="${headers.length}">데이터가 없습니다.</td></tr>`}
+                </tbody>
+            </table>
+        `;
+    };
+
     const reportCards = (items) => `
         <div class="cards">
             ${items.map(item => `
@@ -2155,15 +2176,17 @@ const Admin = () => {
                         reportWon(row.diagnosisAmount), reportWon(row.consultationAmount), reportWon(row.agreedAmount), reportPercent(row.consultationAgreementRate),
                     ]))}
                     <h2>의사별 진단수 / 동의금액</h2>
-                    ${reportTable(['월', '의사', '진단수', '동의금액'], consultationRows.flatMap(row => (row.doctorDiagnoses || []).map(doctor => [
-                        row.month, doctor.name, `${reportNumber(doctor.count)}건`, reportWon(doctor.agreedAmount),
-                    ])))}
+                    ${reportGroupedTable(['월', '의사', '진단수', '동의금액'], consultationRows.map(row => ({
+                        label: row.month,
+                        rows: (row.doctorDiagnoses || []).map(doctor => [doctor.name, `${reportNumber(doctor.count)}건`, reportWon(doctor.agreedAmount)]),
+                    })))}
                 ` : ''}
                 ${includeTab('consultant') ? `
                     <h2>상담자별 동의율</h2>
-                    ${reportTable(['월', '상담자', '환자수', '총 동의수', '상담금액', '동의금액', '금액대비 동의율'], consultantList.map(row => [
-                        row.month, row.name, `${reportNumber(row.patientCount)}명`, `${reportNumber(row.totalAgreed)}명`, reportWon(row.consultationAmount), reportWon(row.agreedAmount), reportPercent(row.amountAgreementRate),
-                    ]))}
+                    ${reportGroupedTable(['월', '상담자', '환자수', '총 동의수', '상담금액', '동의금액', '금액대비 동의율'], consultantRows.map(row => ({
+                        label: row.month,
+                        rows: (row.rows || []).map(item => [item.name, `${reportNumber(item.patientCount)}명`, `${reportNumber(item.totalAgreed)}명`, reportWon(item.consultationAmount), reportWon(item.agreedAmount), reportPercent(item.amountAgreementRate)]),
+                    })))}
                 ` : ''}
                 ${includeTab('rejected') ? `
                     <h2>미동의 환자 현황</h2>
@@ -2473,6 +2496,7 @@ const Admin = () => {
                     th, td { border: 1px solid #dbe4f0; padding: 8px 7px; text-align: center; font-size: 11px; word-break: keep-all; }
                     th { background: #f1f5f9; color: #475569; font-weight: 800; }
                     td { color: #172033; }
+                    .report-group-cell { vertical-align: middle; background: #f8fafc; color: #1e3a8a; font-weight: 800; }
                     .actions { display: flex; justify-content: flex-end; gap: 8px; margin: 16px 0; }
                     .actions button { border: 0; border-radius: 8px; padding: 10px 16px; background: #2563eb; color: white; font-weight: 800; cursor: pointer; }
                     .monthly-report-v2 { color: #191f28; }
