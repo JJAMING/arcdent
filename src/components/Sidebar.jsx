@@ -78,18 +78,18 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
                     <LogOut size={18} />
                 </button>
                 <button
-                    className={`admin-toggle ${activeTab === 'admin' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('admin')}
-                    title="관리자 설정"
-                >
-                    <Settings size={18} />
-                </button>
-                <button
                     className="admin-toggle"
                     onClick={() => setIsLoginHistoryOpen(true)}
                     title="로그인 기록"
                 >
                     <History size={18} />
+                </button>
+                <button
+                    className={`admin-toggle ${activeTab === 'admin' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('admin')}
+                    title="관리자 설정"
+                >
+                    <Settings size={18} />
                 </button>
             </div>
 
