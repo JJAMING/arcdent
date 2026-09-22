@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { History, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { loadLoginLogs } from '../utils/supabaseAnalyticsStore';
@@ -55,7 +56,10 @@ const LoginHistoryModal = ({ onClose }) => {
 
     const columnCount = isAdmin ? 4 : 3;
 
-    return (
+    // 사이드바(.sidebar, position: sticky) 안에서 렌더링되면 일부 브라우저/레이아웃
+    // 조합에서 position: fixed 오버레이가 뷰포트 전체가 아니라 사이드바 쪽 컨테이닝
+    // 블록 기준으로 어긋나 보일 수 있어, body에 직접 붙는 포털로 렌더링합니다.
+    return createPortal((
         <div
             onClick={onClose}
             style={{
@@ -129,7 +133,7 @@ const LoginHistoryModal = ({ onClose }) => {
                 </div>
             </div>
         </div>
-    );
+    ), document.body);
 };
 
 export default LoginHistoryModal;

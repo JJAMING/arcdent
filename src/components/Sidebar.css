@@ -85,6 +85,7 @@
     padding-top: 1rem;
     border-top: 1px solid var(--border-color);
     display: flex;
+    flex-wrap: wrap;
     justify-content: center;
     gap: 0.75rem;
 }
@@ -101,6 +102,8 @@
     color: var(--text-primary);
     box-shadow: var(--shadow);
     transition: var(--transition);
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .theme-toggle:hover {
