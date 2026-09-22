@@ -150,6 +150,40 @@ export const loadAnalyticsAuditLogs = async ({
     return data || [];
 };
 
+// 로그인 성공 시점에 한 번만 기록됩니다 (세션 복원/토큰 갱신 시에는 호출하지 않음).
+// 실패해도 로그인 자체를 막지 않도록 호출부에서 에러를 삼키는 것을 전제로 합니다.
+export const recordLoginEvent = async ({ userId, clinicId = null, email = '', role = '' }) => {
+    if (!userId) return;
+
+    const { error } = await supabase
+        .from('login_logs')
+        .insert({
+            user_id: userId,
+            clinic_id: clinicId || null,
+            email: email || '',
+            role: role || '',
+            user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+        });
+
+    if (error) throw error;
+};
+
+export const loadLoginLogs = async ({ clinicId = null, limit = 200 } = {}) => {
+    let query = supabase
+        .from('login_logs')
+        .select('id, user_id, clinic_id, email, role, user_agent, created_at')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+    if (clinicId) {
+        query = query.eq('clinic_id', clinicId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+};
+
 export const loadClinicImplantTypes = async (clinicId) => {
     if (!clinicId) return normalizeImplantTypes(DEFAULT_IMPLANT_TYPES);
 

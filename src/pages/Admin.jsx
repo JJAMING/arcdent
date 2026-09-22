@@ -11,6 +11,7 @@ import {
     loadClinicImplantTypes,
     loadAnalyticsAuditLogs,
     loadAnalyticsData,
+    loadLoginLogs,
     replaceClinicImplantTypes,
     saveAnalyticsAuditLog,
     saveAnalyticsData,
@@ -974,6 +975,10 @@ const Admin = () => {
         month: 'all',
     });
     const [selectedAuditLog, setSelectedAuditLog] = useState(null);
+    const [loginLogs, setLoginLogs] = useState([]);
+    const [loginLogsLoading, setLoginLogsLoading] = useState(false);
+    const [loginLogsError, setLoginLogsError] = useState('');
+    const [loginLogClinicFilter, setLoginLogClinicFilter] = useState('all');
     const hasAdminPanelAccess = isAdmin && isAdminAuthenticated;
 
     // OCR 모달
@@ -1102,6 +1107,34 @@ const Admin = () => {
             isMounted = false;
         };
     }, [hasAdminPanelAccess, selectedAdminClinicId, auditFilters]);
+
+    useEffect(() => {
+        if (!hasAdminPanelAccess) {
+            setLoginLogs([]);
+            return;
+        }
+
+        let isMounted = true;
+        const loadLogs = async () => {
+            setLoginLogsLoading(true);
+            setLoginLogsError('');
+            try {
+                const rows = await loadLoginLogs({
+                    clinicId: loginLogClinicFilter === 'all' ? null : loginLogClinicFilter,
+                });
+                if (isMounted) setLoginLogs(rows);
+            } catch (err) {
+                if (isMounted) setLoginLogsError(err.message || '로그인 기록을 불러오지 못했습니다.');
+            } finally {
+                if (isMounted) setLoginLogsLoading(false);
+            }
+        };
+
+        loadLogs();
+        return () => {
+            isMounted = false;
+        };
+    }, [hasAdminPanelAccess, loginLogClinicFilter]);
 
     useEffect(() => {
         if (!hasAdminPanelAccess || !selectedAdminClinicId) {
@@ -1470,6 +1503,21 @@ const Admin = () => {
             setAuditError(err.message || '이력 데이터를 불러오지 못했습니다.');
         } finally {
             setAuditLoading(false);
+        }
+    };
+
+    const loadLoginLogList = async (clinicFilter = loginLogClinicFilter) => {
+        setLoginLogsLoading(true);
+        setLoginLogsError('');
+        try {
+            const rows = await loadLoginLogs({
+                clinicId: clinicFilter === 'all' ? null : clinicFilter,
+            });
+            setLoginLogs(rows);
+        } catch (err) {
+            setLoginLogsError(err.message || '로그인 기록을 불러오지 못했습니다.');
+        } finally {
+            setLoginLogsLoading(false);
         }
     };
 
@@ -5773,6 +5821,13 @@ const Admin = () => {
                 >
                     업로드 / 수정 이력
                 </button>
+                <button
+                    type="button"
+                    className={`admin-panel-tab ${adminPanelTab === 'loginHistory' ? 'active' : ''}`}
+                    onClick={() => setAdminPanelTab('loginHistory')}
+                >
+                    로그인 기록
+                </button>
             </div>
 
             {ocrProcessingFile && (
@@ -6732,6 +6787,61 @@ const Admin = () => {
                                                 보기
                                             </button>
                                         </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {adminPanelTab === 'loginHistory' && (
+                <div className="admin-card admin-history-card">
+                    <div className="admin-card-header">
+                        <FileSpreadsheet size={24} className="admin-card-icon" />
+                        <h2>로그인 기록</h2>
+                    </div>
+                    <div className="admin-history-filters">
+                        <label>
+                            <span>치과</span>
+                            <select
+                                value={loginLogClinicFilter}
+                                onChange={e => setLoginLogClinicFilter(e.target.value)}
+                            >
+                                <option value="all">전체</option>
+                                {adminClinics.map(clinic => (
+                                    <option key={clinic.id} value={clinic.id}>{clinic.name}</option>
+                                ))}
+                            </select>
+                        </label>
+                        <button type="button" onClick={() => loadLoginLogList()} disabled={loginLogsLoading}>
+                            새로고침
+                        </button>
+                    </div>
+                    {loginLogsError && <div className="admin-history-error">{loginLogsError}</div>}
+                    <div className="table-responsive">
+                        <table className="admin-table admin-history-table">
+                            <thead>
+                                <tr>
+                                    <th>일시</th>
+                                    <th>치과</th>
+                                    <th>이메일</th>
+                                    <th>권한</th>
+                                    <th>기기</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {loginLogsLoading ? (
+                                    <tr><td colSpan={5} className="empty-state">로그인 기록을 불러오는 중입니다.</td></tr>
+                                ) : loginLogs.length === 0 ? (
+                                    <tr><td colSpan={5} className="empty-state">등록된 로그인 기록이 없습니다.</td></tr>
+                                ) : loginLogs.map(log => (
+                                    <tr key={log.id}>
+                                        <td>{formatAuditDate(log.created_at)}</td>
+                                        <td>{getAuditClinicLabel(log.clinic_id)}</td>
+                                        <td>{log.email || '-'}</td>
+                                        <td>{log.role === 'admin' ? '관리자' : log.role === 'clinic_user' ? '치과 계정' : (log.role || '-')}</td>
+                                        <td className="admin-history-summary" title={log.user_agent || ''}>{log.user_agent || '-'}</td>
                                     </tr>
                                 ))}
                             </tbody>

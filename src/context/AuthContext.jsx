@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
 import { clearSessionAnalysisPeriods } from '../utils/analysisPeriodSession';
+import { recordLoginEvent } from '../utils/supabaseAnalyticsStore';
 
 const AuthContext = createContext();
 const ADMIN_AUTH_SESSION_KEY = 'arcdent_admin_authenticated';
@@ -55,7 +56,7 @@ export const AuthProvider = ({ children }) => {
         setProfileError('');
     }, []);
 
-    const loadProfile = useCallback(async (targetUser) => {
+    const loadProfile = useCallback(async (targetUser, { recordLogin = false } = {}) => {
         if (!isSupabaseConfigured || !targetUser?.id) {
             clearProfileState();
             return;
@@ -89,6 +90,19 @@ export const AuthProvider = ({ children }) => {
             clearAdminRuntimeState();
         }
 
+        // 실제 로그인 액션에서만 기록합니다 (새로고침·토큰 자동 갱신에 의한 세션
+        // 복원은 제외) — 실패해도 로그인 자체는 막지 않습니다.
+        if (recordLogin) {
+            recordLoginEvent({
+                userId: targetUser.id,
+                clinicId: nextProfile?.clinic_id ?? null,
+                email: targetUser.email || '',
+                role: nextProfile?.role || '',
+            }).catch((err) => {
+                console.warn('[Auth] login_logs insert failed:', err.message);
+            });
+        }
+
         if (!profileData?.clinic_id) {
             setClinic(null);
             return;
@@ -114,12 +128,12 @@ export const AuthProvider = ({ children }) => {
         setClinic(clinicData ?? null);
     }, [clearProfileState]);
 
-    const applySession = useCallback(async (nextSession) => {
+    const applySession = useCallback(async (nextSession, { recordLogin = false } = {}) => {
         setSession(nextSession);
         setUser(nextSession?.user ?? null);
 
         if (nextSession?.user) {
-            await loadProfile(nextSession.user);
+            await loadProfile(nextSession.user, { recordLogin });
         } else {
             clearUserWorkspaceState();
             clearAdminRuntimeState();
@@ -173,7 +187,7 @@ export const AuthProvider = ({ children }) => {
         }
 
         setLoading(true);
-        await applySession(data.session ?? null);
+        await applySession(data.session ?? null, { recordLogin: true });
         setLoading(false);
         return { success: true };
     };
