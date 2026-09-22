@@ -63,9 +63,12 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
             </ul>
 
             <div className="sidebar-footer">
-                <button className="theme-toggle" onClick={toggleTheme}>
+                <button
+                    className="theme-toggle"
+                    onClick={toggleTheme}
+                    title={isDarkMode ? '라이트 모드' : '다크 모드'}
+                >
                     {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
-                    <span>{isDarkMode ? '라이트 모드' : '다크 모드'}</span>
                 </button>
                 <button
                     className="logout-toggle"
