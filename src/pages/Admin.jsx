@@ -19,6 +19,7 @@ import {
 import { DEFAULT_IMPLANT_TYPES, IMPLANT_TYPE_COLORS, getImplantTypeCounts, getReconciledImplantTotal, normalizeImplantTypes } from '../utils/implantTypes';
 import { DEFAULT_CLINIC_FEATURE_SETTINGS, loadClinicFeatureSettings, saveClinicFeatureSettings } from '../utils/clinicFeatureSettings';
 import { getCurrentYearString, getRollingYearOptions } from '../utils/dateUtils';
+import { describeUserAgent } from '../utils/userAgent';
 import { useAuth } from '../context/AuthContext';
 import './Admin.css';
 
@@ -6841,7 +6842,7 @@ const Admin = () => {
                                         <td>{getAuditClinicLabel(log.clinic_id)}</td>
                                         <td>{log.email || '-'}</td>
                                         <td>{log.role === 'admin' ? '관리자' : log.role === 'clinic_user' ? '치과 계정' : (log.role || '-')}</td>
-                                        <td className="admin-history-summary" title={log.user_agent || ''}>{log.user_agent || '-'}</td>
+                                        <td className="admin-history-summary" title={log.user_agent || ''}>{describeUserAgent(log.user_agent)}</td>
                                     </tr>
                                 ))}
                             </tbody>

@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     Activity,
     BarChart3,
+    History,
     LogOut,
     MessageSquare,
     Moon,
@@ -14,11 +15,13 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import LoginHistoryModal from './LoginHistoryModal';
 import './Sidebar.css';
 
 const Sidebar = ({ activeTab, setActiveTab }) => {
     const { isDarkMode, toggleTheme } = useTheme();
     const { logout, clinic, profile } = useAuth();
+    const [isLoginHistoryOpen, setIsLoginHistoryOpen] = useState(false);
     const accountName = profile?.role === 'admin'
         ? '관리자 계정'
         : clinic?.name || '치과 미연결';
@@ -78,7 +81,18 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
                 >
                     <Settings size={18} />
                 </button>
+                <button
+                    className="admin-toggle"
+                    onClick={() => setIsLoginHistoryOpen(true)}
+                    title="로그인 기록"
+                >
+                    <History size={18} />
+                </button>
             </div>
+
+            {isLoginHistoryOpen && (
+                <LoginHistoryModal onClose={() => setIsLoginHistoryOpen(false)} />
+            )}
         </aside>
     );
 };
