@@ -1418,49 +1418,14 @@ const SalesAnalysis = () => {
 
                     <div>
                       <div style={{ margin: '0 0 0.25rem 0.35rem', color: 'var(--text-secondary)', fontSize: '0.83rem', fontWeight: 800 }}>의사별 매출</div>
-          <ResponsiveContainer width="100%" height={360}>
-            <ComposedChart syncId="doctor-sales-month" data={doctorChartData} margin={{ top: 60, right: 30, left: 20, bottom: 58 }}>
+          <ResponsiveContainer width="100%" height={330}>
+            <ComposedChart syncId="doctor-sales-month" data={doctorChartData} margin={{ top: 30, right: 30, left: 20, bottom: 58 }}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                           <XAxis dataKey="month" stroke="var(--text-secondary)" tick={{ dy: 10 }} />
                           <YAxis stroke="var(--text-secondary)" width={80} tickFormatter={(v) => `${Math.floor(v / 10000).toLocaleString()}만`} />
               <Legend verticalAlign="bottom" height={34} wrapperStyle={{ paddingTop: '0.35rem' }} />
                           {(doctorNames || []).map((name, idx) => (
-                            <Bar key={name} dataKey={name} name={name} fill={doctorColors[idx % doctorColors.length]} barSize={15} isAnimationActive={false}>
-                              <LabelList
-                                dataKey={name}
-                                position="top"
-                                content={(props) => {
-                                  const { x, y, width, height, value, index } = props;
-                                  const monthData = doctorChartData[index];
-                                  if (!monthData?.top2Names?.includes(name)) return null;
-
-                                  const labelText = `${Number(value || 0).toLocaleString()}원`;
-                                  const textWidth = labelText.length * 6.5;
-                                  let labelTop = y - 25;
-
-                                  // 상위 2명의 막대는 서로 붙어 있어 라벨이 가로로 겹치므로,
-                                  // 막대가 더 낮은 쪽 라벨을 위로 한 칸 올려 위아래로 쌓아줍니다.
-                                  // (막대 높이/값 비율로 다른 의사 막대의 꼭대기 위치를 계산)
-                                  const ownValue = Number(value || 0);
-                                  if (ownValue > 0 && height > 0) {
-                                    const pxPerWon = height / ownValue;
-                                    const baseline = y + height;
-                                    const otherName = monthData.top2Names.find((n) => n !== name);
-                                    const otherValue = Number(monthData[otherName] || 0);
-                                    if (otherName && otherValue > ownValue) {
-                                      const otherLabelTop = baseline - otherValue * pxPerWon - 25;
-                                      labelTop = Math.min(labelTop, otherLabelTop - 22);
-                                    }
-                                  }
-                                  return (
-                                    <g>
-                                      <rect x={x + width / 2 - textWidth / 2 - 5} y={labelTop} width={textWidth + 10} height={20} rx={4} fill={doctorColors[idx % doctorColors.length]} />
-                                      <text x={x + width / 2} y={labelTop + 14} fill="#fff" fontSize={10} textAnchor="middle" fontWeight="bold">{labelText}</text>
-                                    </g>
-                                  );
-                                }}
-                              />
-                            </Bar>
+                            <Bar key={name} dataKey={name} name={name} fill={doctorColors[idx % doctorColors.length]} barSize={15} isAnimationActive={false} />
                           ))}
                           <Tooltip content={renderDoctorSalesTooltip} />
                         </ComposedChart>
