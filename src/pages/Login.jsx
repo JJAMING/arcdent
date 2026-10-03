@@ -3,9 +3,23 @@ import { useAuth } from '../context/AuthContext';
 import { ShieldCheck } from 'lucide-react';
 import './Login.css';
 
+const SAVED_LOGIN_ID_KEY = 'arcdent_saved_login_id';
+
+// 아이디 저장은 이 브라우저(localStorage)에만 남고, 비밀번호는 절대 저장하지 않습니다.
+// 시크릿 모드 등에서 저장소 접근이 막혀도 로그인 자체는 되도록 try/catch로 감쌉니다.
+const readSavedLoginId = () => {
+    try {
+        return window.localStorage.getItem(SAVED_LOGIN_ID_KEY) || '';
+    } catch {
+        return '';
+    }
+};
+
 const Login = () => {
     const { login } = useAuth();
-    const [credentials, setCredentials] = useState({ loginId: '', password: '' });
+    const [savedLoginId] = useState(readSavedLoginId);
+    const [credentials, setCredentials] = useState({ loginId: savedLoginId, password: '' });
+    const [rememberId, setRememberId] = useState(Boolean(savedLoginId));
     const [error, setError] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -30,6 +44,16 @@ const Login = () => {
         if (!result.success) {
             setError(result.message);
             return;
+        }
+
+        try {
+            if (rememberId) {
+                window.localStorage.setItem(SAVED_LOGIN_ID_KEY, credentials.loginId.trim());
+            } else {
+                window.localStorage.removeItem(SAVED_LOGIN_ID_KEY);
+            }
+        } catch {
+            // 저장소를 쓸 수 없는 환경이면 아이디 저장만 건너뜁니다.
         }
 
         if (typeof window !== 'undefined') {
@@ -75,6 +99,16 @@ const Login = () => {
                             autoComplete="current-password"
                         />
                     </div>
+
+                    <label className="auth-remember" htmlFor="rememberId">
+                        <input
+                            type="checkbox"
+                            id="rememberId"
+                            checked={rememberId}
+                            onChange={(event) => setRememberId(event.target.checked)}
+                        />
+                        <span>아이디 저장</span>
+                    </label>
 
                     <button type="submit" className="auth-submit-btn" disabled={isSubmitting}>
                         {isSubmitting ? '로그인 중...' : '로그인'}
