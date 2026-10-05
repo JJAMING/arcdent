@@ -238,7 +238,7 @@ const TreatmentAnalysis = () => {
                                         <ResponsiveContainer>
                                             <BarChart data={currentHalfData} margin={{ top: 24, right: 16, left: 0, bottom: 0 }}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-                                                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                                                <XAxis dataKey="month" tick={{ fontSize: 12 }} interval={0} />
                                                 <YAxis tick={{ fontSize: 12 }} width={36} />
                                                 <Tooltip
                                                     contentStyle={{ borderRadius: '12px' }}
@@ -279,7 +279,7 @@ const TreatmentAnalysis = () => {
                                                 barGap={1}
                                             >
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-                                                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                                                <XAxis dataKey="month" tick={{ fontSize: 12 }} interval={0} />
                                                 <YAxis tick={{ fontSize: 12 }} width={36} />
                                                 <Tooltip
                                                     contentStyle={{ borderRadius: '12px', fontSize: '12px' }}
@@ -409,7 +409,7 @@ const TreatmentAnalysis = () => {
                                         <ResponsiveContainer>
                                             <BarChart data={currentHalfData} margin={{ top: 24, right: 16, left: 0, bottom: 0 }}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-                                                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                                                <XAxis dataKey="month" tick={{ fontSize: 12 }} interval={0} />
                                                 <YAxis tick={{ fontSize: 12 }} width={36} />
                                                 <Tooltip contentStyle={{ borderRadius: '12px' }} formatter={(v, name) => [`${v}건`, name]} />
                                                 <Legend verticalAlign="top" height={36} iconType="square" wrapperStyle={{ fontSize: '11px' }} />
@@ -451,7 +451,7 @@ const TreatmentAnalysis = () => {
                                                 barGap={2}
                                             >
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-                                                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                                                <XAxis dataKey="month" tick={{ fontSize: 12 }} interval={0} />
                                                 <YAxis tick={{ fontSize: 12 }} width={36} />
                                                 <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '12px' }} formatter={(v, name) => [`${v}건`, name]} />
                                                 <Legend verticalAlign="top" height={36} iconType="square" wrapperStyle={{ fontSize: '11px' }} />
