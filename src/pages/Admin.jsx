@@ -2080,14 +2080,14 @@ const Admin = () => {
                 ` : ''}
                 ${includeTab('insuranceImplant') ? `
                     <h2>보험 임플란트</h2>
-                    ${reportTable(['월', '보험 임플란트', '1단계', '2단계', '3단계'], treatmentRows.map(row => [
-                        row.month, reportNumber(row.insImp), reportNumber(row.insImpStep1), reportNumber(row.insImpStep2), reportNumber(row.insImpStep3),
+                    ${reportTable(['월', '1단계', '2단계', '3단계'], treatmentRows.map(row => [
+                        row.month, reportNumber(row.insImpStep1), reportNumber(row.insImpStep2), reportNumber(row.insImpStep3),
                     ]))}
                 ` : ''}
                 ${includeTab('insuranceDenture') ? `
                     <h2>보험 틀니</h2>
-                    ${reportTable(['월', '보험 틀니', '1단계', '5단계', '6단계'], treatmentRows.map(row => [
-                        row.month, reportNumber(row.insDent), reportNumber(row.insDentStep1), reportNumber(row.insDentStep5), reportNumber(row.insDentStep6),
+                    ${reportTable(['월', '1단계', '5단계', '6단계'], treatmentRows.map(row => [
+                        row.month, reportNumber(row.insDentStep1), reportNumber(row.insDentStep5), reportNumber(row.insDentStep6),
                     ]))}
                 ` : ''}
             `;
