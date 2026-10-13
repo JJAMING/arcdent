@@ -7,13 +7,18 @@ if (-not (Test-Path (Join-Path $dir 'config.json'))) {
     Write-Host 'config.json 이 없습니다. 먼저 설정 파일을 만들고 check.bat 으로 점검해 주세요.' -ForegroundColor Red
     exit 1
 }
-$nodeCmd = Get-Command node -ErrorAction SilentlyContinue
-if (-not $nodeCmd) {
+# 시스템 PATH가 망가진 PC도 있어서 기본 설치 위치를 먼저 확인합니다.
+$nodeExe = Join-Path $env:ProgramFiles 'nodejs\node.exe'
+if (-not (Test-Path $nodeExe)) {
+    $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+    $nodeExe = if ($nodeCmd) { $nodeCmd.Source } else { $null }
+}
+if (-not $nodeExe) {
     Write-Host 'Node.js 가 설치되어 있지 않습니다. https://nodejs.org 에서 LTS 버전을 설치해 주세요.' -ForegroundColor Red
     exit 1
 }
 
-$action = New-ScheduledTaskAction -Execute $nodeCmd.Source -Argument 'src\index.js run' -WorkingDirectory $dir
+$action = New-ScheduledTaskAction -Execute $nodeExe -Argument 'src\index.js run' -WorkingDirectory $dir
 $trigger = New-ScheduledTaskTrigger -AtStartup
 $settings = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit ([TimeSpan]::Zero) `
