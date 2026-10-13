@@ -6,6 +6,7 @@ import {
 import { Calendar, ChevronDown, WalletCards, Users, UserPlus, ShieldCheck, TrendingDown, TrendingUp, Percent } from 'lucide-react';
 import DashboardCard from '../components/DashboardCard';
 import ManagementInsight from '../components/ManagementInsight';
+import HomeLiveSection from '../components/home/HomeLiveSection';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
@@ -457,6 +458,19 @@ const HomeDashboard = () => {
         return messages.slice(0, 4);
     }, [selectedYear, stores.sales, stores.ledger, half, monthFilter]);
 
+    // 목표 달성률(덴트웹 미연동 시)에 쓰는 '이번 달' 엑셀 업로드 실적 — 화면의 연도/월 필터와 무관하게 실제 이번 달
+    const excelMonthActual = useMemo(() => {
+        const now = new Date();
+        const yearKey = String(now.getFullYear());
+        const monthLabel = `${now.getMonth() + 1}월`;
+        const salesRow = (stores.sales?.[yearKey] || []).find(row => row.month === monthLabel) || {};
+        const ledgerRow = stores.ledger?.[yearKey]?.[monthLabel] || {};
+        return {
+            paid: Number(salesRow.netSales || 0),
+            newPatients: Number(ledgerRow.newPt || salesRow.newPatient || 0),
+        };
+    }, [stores.sales, stores.ledger]);
+
     const periodLabel = monthFilter !== 'all' ? monthFilter : half === 'first' ? '상반기' : half === 'second' ? '하반기' : '전체';
     const insightPeriod = monthFilter !== 'all' ? 'month' : half;
     const insightMonth = monthFilter !== 'all' ? Number(String(monthFilter).replace(/\D/g, '')) : null;
@@ -548,6 +562,9 @@ const HomeDashboard = () => {
                 </div>
             </header>
 
+            <HomeLiveSection clinicId={activeClinicId} excelMonthActual={excelMonthActual} />
+
+            <h2 className="home-section-title">월별 분석 <span>엑셀 업로드 기준</span></h2>
             <div className="patient-kpi-row" style={{ marginBottom: '1.5rem' }}>
                 {[
                     { label: '총매출', value: formatWon(totalSales), sub: `${periodLabel} 합계`, color: '#3b82f6', icon: WalletCards },

@@ -186,6 +186,17 @@ export const AuthProvider = ({ children }) => {
             return { success: false, message: getAuthErrorMessage(error.message) };
         }
 
+        // 덴트웹 중계 프로그램 전용 계정(agent)은 웹 화면 로그인에 쓰지 못하게 막습니다.
+        const { data: roleRow } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('user_id', data.user?.id)
+            .maybeSingle();
+        if (roleRow?.role === 'agent') {
+            await supabase.auth.signOut();
+            return { success: false, message: '중계 프로그램 전용 계정은 화면에 로그인할 수 없습니다.' };
+        }
+
         setLoading(true);
         await applySession(data.session ?? null, { recordLogin: true });
         setLoading(false);

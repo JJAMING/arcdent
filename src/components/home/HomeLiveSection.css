@@ -1,0 +1,308 @@
+.home-live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.74rem;
+    font-weight: 800;
+    white-space: nowrap;
+    background: var(--bg-color);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+}
+
+.home-live-badge i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #94a3b8;
+}
+
+.home-live-badge.tone-on { color: #059669; border-color: rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.08); }
+.home-live-badge.tone-on i { background: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2); animation: home-live-pulse 2s infinite; }
+.home-live-badge.tone-warn { color: #d97706; border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.08); }
+.home-live-badge.tone-warn i { background: #f59e0b; }
+
+@keyframes home-live-pulse {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2); }
+    50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.05); }
+}
+
+.home-live-empty {
+    display: grid;
+    gap: 0.4rem;
+    padding: 1.5rem 1rem;
+    border: 1px dashed var(--border-color);
+    border-radius: 0.75rem;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.home-live-empty strong {
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.home-live-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.65rem;
+}
+
+.home-live-kpi {
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.8rem 0.85rem;
+    border: 1px solid var(--border-color);
+    border-top: 3px solid;
+    border-radius: 0.7rem;
+    background: var(--bg-color);
+    min-width: 0;
+}
+
+.home-live-kpi-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.home-live-kpi-value {
+    font-size: 1.35rem;
+    font-weight: 900;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.home-live-kpi-sub {
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.home-live-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    margin-top: 0.8rem;
+}
+
+.home-live-status-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 5.5rem;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.home-live-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background: var(--bg-color);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.home-live-chip i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.home-live-chip strong {
+    color: var(--text-primary);
+    font-weight: 900;
+}
+
+.home-goal-source {
+    padding: 0.3rem 0.6rem;
+    border-radius: 999px;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.home-goal-list {
+    display: grid;
+    gap: 1rem;
+}
+
+.home-goal-row {
+    display: grid;
+    gap: 0.45rem;
+}
+
+.home-goal-head,
+.home-goal-numbers {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.home-goal-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--text-primary);
+    font-weight: 900;
+}
+
+.home-goal-rate {
+    font-size: 1.35rem;
+    font-weight: 900;
+}
+
+.home-goal-bar {
+    position: relative;
+    height: 12px;
+    border-radius: 999px;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    overflow: visible;
+}
+
+.home-goal-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.6s ease;
+}
+
+.home-goal-bar-marker {
+    position: absolute;
+    top: -4px;
+    bottom: -4px;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--text-primary);
+    opacity: 0.55;
+    border-radius: 2px;
+}
+
+.home-goal-numbers {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+}
+
+.home-goal-numbers strong {
+    color: var(--text-primary);
+}
+
+.home-goal-pace {
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.home-goal-detail {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.75rem;
+    padding: 0.5rem 0.65rem;
+    border-radius: 0.55rem;
+    background: var(--bg-color);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.home-goal-detail strong {
+    color: var(--text-primary);
+}
+
+.home-goal-projected {
+    margin-left: auto;
+    color: var(--text-secondary);
+}
+
+.home-goal-row.is-missing {
+    padding: 0.75rem;
+    border: 1px dashed var(--border-color);
+    border-radius: 0.7rem;
+}
+
+.home-goal-missing {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
+.home-goal-hint {
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+}
+
+.home-goal-legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 0.9rem;
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+}
+
+.home-goal-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.home-goal-legend .marker {
+    display: inline-block;
+    width: 2px;
+    height: 12px;
+    background: var(--text-primary);
+    opacity: 0.55;
+}
+
+.tone-good { color: #059669; }
+.tone-warn { color: #d97706; }
+.tone-bad { color: #dc2626; }
+.tone-done { color: #2563eb; }
+
+.home-goal-bar-fill.tone-good { background: #10b981; }
+.home-goal-bar-fill.tone-warn { background: #f59e0b; }
+.home-goal-bar-fill.tone-bad { background: #ef4444; }
+.home-goal-bar-fill.tone-done { background: #3b82f6; }
+
+@media (max-width: 1280px) {
+    .home-live-kpis {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.home-section-title {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin: 0 0 0.9rem;
+    color: var(--text-primary);
+    font-size: 1.05rem;
+    font-weight: 900;
+}
+
+.home-section-title span {
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 700;
+}

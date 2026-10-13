@@ -1,0 +1,248 @@
+.clinic-ops-card .clinic-settings-section + .clinic-settings-section {
+    margin-top: 1rem;
+}
+
+.clinic-ops-hours {
+    display: grid;
+    gap: 0.4rem;
+}
+
+.clinic-ops-hours-row {
+    display: grid;
+    grid-template-columns: 3rem 5.5rem minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.6rem;
+    background: var(--card-bg);
+}
+
+.clinic-ops-hours-head {
+    border: 0;
+    background: transparent;
+    padding-top: 0;
+    padding-bottom: 0;
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+    font-weight: 800;
+}
+
+.clinic-ops-hours-row.is-closed {
+    opacity: 0.6;
+}
+
+.clinic-ops-day {
+    font-weight: 900;
+    color: var(--text-primary);
+}
+
+.clinic-ops-day.is-sunday { color: #ef4444; }
+.clinic-ops-day.is-saturday { color: #3b82f6; }
+
+.clinic-ops-open-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.clinic-ops-open-toggle input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent-primary);
+}
+
+.clinic-ops-time-range {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
+.clinic-ops-time-range em {
+    font-style: normal;
+    color: var(--text-secondary);
+}
+
+.clinic-ops-time-range input,
+.clinic-ops-holiday-form input,
+.clinic-ops-goal-table input {
+    min-width: 0;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: var(--bg-color);
+    color: var(--text-primary);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.clinic-ops-time-range input {
+    flex: 1;
+}
+
+.clinic-ops-year-select {
+    display: grid;
+    gap: 0.35rem;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.clinic-ops-year-select select {
+    min-height: 38px;
+    padding: 0 0.65rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.55rem;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    font-weight: 800;
+}
+
+.clinic-ops-holiday-form {
+    display: grid;
+    grid-template-columns: 11rem minmax(0, 1fr) auto;
+    gap: 0.6rem;
+}
+
+.clinic-ops-holiday-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.5rem;
+}
+
+.clinic-ops-holiday-list li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.6rem;
+    background: var(--card-bg);
+}
+
+.clinic-ops-holiday-list li.is-past {
+    opacity: 0.5;
+}
+
+.clinic-ops-holiday-date {
+    font-weight: 900;
+    color: var(--text-primary);
+    font-size: 0.84rem;
+}
+
+.clinic-ops-holiday-label {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.clinic-ops-holiday-list button {
+    display: grid;
+    place-items: center;
+    padding: 0.25rem;
+    border: 0;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.clinic-ops-holiday-list button:hover {
+    color: #ef4444;
+}
+
+.clinic-ops-empty {
+    padding: 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+    text-align: center;
+}
+
+.clinic-ops-preview {
+    padding: 0.65rem 0.8rem;
+    border-radius: 0.6rem;
+    background: rgba(59, 130, 246, 0.08);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+}
+
+.clinic-ops-preview strong {
+    color: var(--accent-primary);
+}
+
+.clinic-ops-preview small {
+    color: var(--text-secondary);
+}
+
+.clinic-ops-goal-table-wrap {
+    overflow-x: auto;
+}
+
+.clinic-ops-goal-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.clinic-ops-goal-table th {
+    padding: 0.5rem;
+    color: var(--text-secondary);
+    font-weight: 800;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.clinic-ops-goal-table td {
+    padding: 0.35rem 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.clinic-ops-goal-table td em {
+    margin-left: 0.4rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    background: var(--accent-primary);
+    color: #fff;
+    font-size: 0.68rem;
+    font-style: normal;
+}
+
+.clinic-ops-goal-table tr.is-current td {
+    background: rgba(59, 130, 246, 0.06);
+}
+
+.clinic-ops-goal-table input {
+    width: 100%;
+    text-align: right;
+}
+
+@media (max-width: 760px) {
+    .clinic-ops-hours-row {
+        grid-template-columns: 2.5rem 4.5rem minmax(0, 1fr);
+    }
+
+    .clinic-ops-hours-row > :nth-child(4) {
+        grid-column: 3;
+    }
+
+    .clinic-ops-hours-head > :nth-child(4) {
+        display: none;
+    }
+
+    .clinic-ops-holiday-form {
+        grid-template-columns: 1fr;
+    }
+}

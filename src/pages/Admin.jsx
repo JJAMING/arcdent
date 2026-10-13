@@ -18,6 +18,7 @@ import {
 } from '../utils/supabaseAnalyticsStore';
 import { DEFAULT_IMPLANT_TYPES, IMPLANT_TYPE_COLORS, getImplantTypeCounts, getReconciledImplantTotal, normalizeImplantTypes } from '../utils/implantTypes';
 import { DEFAULT_CLINIC_FEATURE_SETTINGS, loadClinicFeatureSettings, saveClinicFeatureSettings } from '../utils/clinicFeatureSettings';
+import ClinicOperationsPanel from '../components/admin/ClinicOperationsPanel';
 import { getCurrentYearString, getRollingYearOptions } from '../utils/dateUtils';
 import { describeUserAgent } from '../utils/userAgent';
 import { useAuth } from '../context/AuthContext';
@@ -5817,6 +5818,13 @@ const Admin = () => {
                 </button>
                 <button
                     type="button"
+                    className={`admin-panel-tab ${adminPanelTab === 'operations' ? 'active' : ''}`}
+                    onClick={() => setAdminPanelTab('operations')}
+                >
+                    운영 설정 / 목표
+                </button>
+                <button
+                    type="button"
                     className={`admin-panel-tab ${adminPanelTab === 'history' ? 'active' : ''}`}
                     onClick={() => setAdminPanelTab('history')}
                 >
@@ -6704,6 +6712,10 @@ const Admin = () => {
                     </div>
                     </section>
                 </div>
+            )}
+
+            {adminPanelTab === 'operations' && (
+                <ClinicOperationsPanel clinicId={selectedAdminClinicId} clinicName={selectedAdminClinic?.name} />
             )}
 
             {adminPanelTab === 'history' && (
