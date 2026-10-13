@@ -207,6 +207,7 @@ const getWorkingMinutes = (dayHours, nowMinutes = null) => {
  * - elapsedDays: 오늘 진료시간 진행분까지 반영한 '지난 영업일' (소수)
  * - remainingDays: 오늘 남은 진료시간 비율까지 반영한 남은 영업일 (소수)
  * - remainingDayCount: 오늘(아직 진료 종료 전이면 포함)부터 월말까지 남은 영업일 수 (정수)
+ * - daysFromToday: 오늘(진료일이면 시각과 무관하게 포함)부터 월말까지 영업일 수 — '오늘 목표' 계산용
  * - isOpenToday / isWorkingNow: 오늘 진료일인지, 지금 진료시간인지
  */
 export const getMonthBusinessDays = ({ now = new Date(), weekly, holidays = [] }) => {
@@ -222,6 +223,7 @@ export const getMonthBusinessDays = ({ now = new Date(), weekly, holidays = [] }
     let elapsedDays = 0;
     let remainingDays = 0;
     let remainingDayCount = 0;
+    let daysFromToday = 0;
     let isOpenToday = false;
     let isWorkingNow = false;
 
@@ -235,6 +237,7 @@ export const getMonthBusinessDays = ({ now = new Date(), weekly, holidays = [] }
             elapsedDays += 1;
         } else if (day === today) {
             isOpenToday = true;
+            daysFromToday += 1;
             const { total, elapsed } = getWorkingMinutes(dayHours, nowMinutes);
             // 진료시간이 입력되지 않은 요일은 하루를 절반 진행한 것으로 봅니다.
             const fraction = total > 0 ? elapsed / total : 0.5;
@@ -249,8 +252,9 @@ export const getMonthBusinessDays = ({ now = new Date(), weekly, holidays = [] }
         } else {
             remainingDays += 1;
             remainingDayCount += 1;
+            daysFromToday += 1;
         }
     }
 
-    return { totalDays, elapsedDays, remainingDays, remainingDayCount, isOpenToday, isWorkingNow };
+    return { totalDays, elapsedDays, remainingDays, remainingDayCount, daysFromToday, isOpenToday, isWorkingNow };
 };

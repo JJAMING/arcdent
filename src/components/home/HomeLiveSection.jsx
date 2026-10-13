@@ -23,6 +23,7 @@ const shortWon = (value) => {
     return `${number.toLocaleString()}`;
 };
 const people = (value) => `${Math.round(Number(value || 0)).toLocaleString()}명`;
+const decimalPeople = (value) => `${Number(value || 0).toFixed(Number.isInteger(Number(value)) ? 0 : 1)}명`;
 const timeLabel = (iso) => {
     if (!iso) return '-';
     return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
@@ -36,7 +37,7 @@ const getPace = (achievedRate, expectedRate) => {
     return { tone: 'bad', text: `${Math.abs(gap).toFixed(1)}%p 뒤처짐` };
 };
 
-// 홈 화면 상단: ① 오늘 실시간 현황(덴트웹) ② 이번 달 목표 달성
+// 홈 화면 상단: ① 이번 달 목표 달성 ② 오늘 실시간 현황(덴트웹)
 // excelMonthActual: 덴트웹 미연동일 때 목표 달성률 계산에 쓰는 이번 달 엑셀 업로드 값 { paid, newPatients }
 const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
     const [now, setNow] = useState(() => new Date());
@@ -138,14 +139,14 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
 
     const expectedRate = business.totalDays > 0 ? (business.elapsedDays / business.totalDays) * 100 : 0;
 
-    const buildGoalRow = ({ key, label, icon, actual, target, format, formatShort }) => {
+    const buildGoalRow = ({ key, label, icon, actual, target, formatShort }) => {
         if (!target) return { key, label, icon, missing: true };
         const achievedRate = (actual / target) * 100;
         const remaining = Math.max(0, target - actual);
         const perDay = business.remainingDayCount > 0 ? remaining / business.remainingDayCount : null;
         const projected = business.elapsedDays > 0 ? (actual / business.elapsedDays) * business.totalDays : null;
         return {
-            key, label, icon, actual, target, format, formatShort,
+            key, label, icon, actual, target, formatShort,
             achievedRate,
             remaining,
             perDay,
@@ -155,147 +156,259 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
     };
 
     const goalRows = [
-        buildGoalRow({ key: 'sales', label: '매출', icon: WalletCards, actual: monthActual.paid, target: goal?.salesGoal, format: won, formatShort: shortWon }),
-        buildGoalRow({ key: 'newPatients', label: '신환', icon: UserPlus, actual: monthActual.newPatients, target: goal?.newPatientGoal, format: people, formatShort: people }),
+        buildGoalRow({ key: 'sales', label: '매출', icon: WalletCards, actual: monthActual.paid, target: goal?.salesGoal, formatShort: shortWon }),
+        buildGoalRow({ key: 'newPatients', label: '신환', icon: UserPlus, actual: monthActual.newPatients, target: goal?.newPatientGoal, formatShort: people }),
     ];
+
+    // 오늘 목표 = (월 목표 − 어제까지 실적) ÷ 오늘 포함 남은 영업일 — 덴트웹 실시간일 때만
+    const todayGoals = (() => {
+        if (monthActual.source !== 'live' || !today || !business.isOpenToday || business.daysFromToday <= 0) return null;
+        const build = (key, label, monthTarget, monthValue, todayValue, format) => {
+            if (!monthTarget) return null;
+            const beforeToday = Math.max(0, monthValue - todayValue);
+            const target = Math.max(0, monthTarget - beforeToday) / business.daysFromToday;
+            const rate = target > 0 ? (todayValue / target) * 100 : 100;
+            return { key, label, target, value: todayValue, rate, format, monthDone: target <= 0 };
+        };
+        return [
+            build('sales', '오늘 매출 목표', goal?.salesGoal, monthActual.paid, Number(today.paid || 0), shortWon),
+            build('newPatients', '오늘 신환 목표', goal?.newPatientGoal, monthActual.newPatients, Number(today.newPatients || 0), decimalPeople),
+        ].filter(Boolean);
+    })();
+
+    const todayEmptyMessage = monthActual.source !== 'live'
+        ? '덴트웹이 연동되면 오늘 채워야 할 목표가 실시간으로 표시됩니다.'
+        : !business.isOpenToday
+            ? '오늘은 휴진일입니다.'
+            : !today
+                ? '오늘 데이터를 기다리는 중입니다.'
+                : '월 목표를 설정하면 오늘 목표가 표시됩니다.';
 
     const status = today?.status || {};
     const reservations = today?.reservations || null;
     const waitingCount = Number(status.waiting || 0) + Number(status.ready || 0);
 
-    return (
-        <div className="dashboard-grid home-live-grid" style={{ gridTemplateColumns: '1.15fr 1fr', marginBottom: '1.5rem' }}>
-            <DashboardCard
-                title="오늘 실시간 현황"
-                subtitle={`${month}월 ${now.getDate()}일 · 덴트웹 기준`}
-                headerRight={<span className={`home-live-badge tone-${connection.tone}`}><i />{connection.text}</span>}
-            >
-                {!live ? (
-                    <div className="home-live-empty">
-                        {liveReady ? (
-                            <>
-                                <strong>덴트웹 실시간 연동 전입니다.</strong>
-                                <span>치과 PC에 중계 프로그램을 설치하면 오늘 수납액, 내원 환자, 신환/구환이 실시간으로 표시됩니다.</span>
-                            </>
-                        ) : '불러오는 중입니다.'}
-                    </div>
-                ) : !today ? (
-                    <div className="home-live-empty">
-                        <strong>{business.isOpenToday ? '아직 오늘 데이터가 없습니다.' : '오늘은 휴진일입니다.'}</strong>
-                        <span>마지막 데이터: {live.stat_date}</span>
-                    </div>
-                ) : (
-                    <>
-                        <div className="home-live-kpis">
-                            {[
-                                { label: '오늘 수납액', value: won(today.paid), sub: `카드 ${shortWon(today.card)} · 현금 ${shortWon(today.cash)} · 통장 ${shortWon(today.bank)}`, color: '#3b82f6', icon: WalletCards },
-                                { label: '내원 환자', value: people(today.visits), sub: '오늘 접수 기준', color: '#8b5cf6', icon: Users },
-                                { label: '신환', value: people(today.newPatients), sub: '처음 오신 환자', color: '#ec4899', icon: UserPlus },
-                                { label: '구환', value: people(today.returningPatients), sub: '재내원 환자', color: '#10b981', icon: Repeat },
-                            ].map(item => {
-                                const Icon = item.icon;
-                                return (
-                                    <div key={item.label} className="home-live-kpi" style={{ borderTopColor: item.color }}>
-                                        <span className="home-live-kpi-label"><Icon size={14} /> {item.label}</span>
-                                        <span className="home-live-kpi-value" style={{ color: item.color }}>{item.value}</span>
-                                        <span className="home-live-kpi-sub">{item.sub}</span>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                        <div className="home-live-status">
-                            <span className="home-live-status-title">진행 현황</span>
-                            {[
-                                { label: '대기', value: waitingCount, color: '#f59e0b' },
-                                { label: '진료중', value: status.inTreatment, color: '#3b82f6' },
-                                { label: '진료완료', value: status.treated, color: '#8b5cf6' },
-                                { label: '수납완료', value: status.paid, color: '#10b981' },
-                            ].map(item => (
-                                <span key={item.label} className="home-live-chip">
-                                    <i style={{ background: item.color }} />{item.label} <strong>{Number(item.value || 0)}</strong>
-                                </span>
-                            ))}
-                        </div>
-                        {reservations && (
-                            <div className="home-live-status">
-                                <span className="home-live-status-title"><CalendarCheck size={14} /> 오늘 예약</span>
-                                <span className="home-live-chip">전체 <strong>{Number(reservations.total || 0)}</strong></span>
-                                <span className="home-live-chip">이행 <strong>{Number(reservations.done || 0)}</strong></span>
-                                <span className="home-live-chip">미이행 <strong>{Number(reservations.pending || 0)}</strong></span>
-                                <span className="home-live-chip">취소 <strong>{Number(reservations.canceled || 0)}</strong></span>
-                                {Number(reservations.newPatient || 0) > 0 && (
-                                    <span className="home-live-chip">신환 예약 <strong>{Number(reservations.newPatient || 0)}</strong></span>
-                                )}
-                            </div>
-                        )}
-                    </>
-                )}
-            </DashboardCard>
-
-            <DashboardCard
-                title={`${month}월 목표 달성`}
-                subtitle={`영업일 ${business.totalDays}일 중 ${business.elapsedDays.toFixed(1)}일 경과 · 남은 영업일 ${business.remainingDayCount}일`}
-                headerRight={(
-                    <span className="home-goal-source">
-                        {monthActual.source === 'live' ? '덴트웹 실시간' : '엑셀 업로드 기준'}
-                    </span>
-                )}
-            >
-                <div className="home-goal-list">
-                    {goalRows.map(row => {
-                        const Icon = row.icon;
-                        if (row.missing) {
-                            return (
-                                <div key={row.key} className="home-goal-row is-missing">
-                                    <div className="home-goal-head">
-                                        <span className="home-goal-label"><Icon size={15} /> {row.label}</span>
-                                        <span className="home-goal-missing">목표 미설정</span>
-                                    </div>
-                                    <span className="home-goal-hint">관리자모드 → 운영 설정 / 목표에서 입력할 수 있습니다.</span>
-                                </div>
-                            );
-                        }
-                        const barWidth = Math.min(100, row.achievedRate);
-                        const markerLeft = Math.min(100, expectedRate);
+    const goalCard = (
+        <DashboardCard
+            title={`${month}월 목표 달성`}
+            subtitle={`영업일 ${business.totalDays}일 중 ${business.elapsedDays.toFixed(1)}일 경과 · 남은 영업일 ${business.remainingDayCount}일`}
+            headerRight={(
+                <span className="home-goal-source">
+                    {monthActual.source === 'live' ? '덴트웹 실시간' : '엑셀 업로드 기준'}
+                </span>
+            )}
+        >
+            <div className="home-goal-layout">
+                {goalRows.map(row => {
+                    if (row.missing) {
                         return (
-                            <div key={row.key} className="home-goal-row">
-                                <div className="home-goal-head">
-                                    <span className="home-goal-label"><Icon size={15} /> {row.label}</span>
-                                    <span className={`home-goal-rate tone-${row.pace.tone}`}>{row.achievedRate.toFixed(1)}%</span>
+                            <div key={row.key} className="home-goal-gauge is-missing">
+                                <GoalRing rate={0} expectedRate={expectedRate} tone="idle" label={row.label} icon={row.icon} empty />
+                                <span className="home-goal-missing">목표 미설정</span>
+                                <span className="home-goal-hint">관리자모드 → 운영 설정 / 목표</span>
+                            </div>
+                        );
+                    }
+                    return (
+                        <div key={row.key} className="home-goal-gauge">
+                            <GoalRing rate={row.achievedRate} expectedRate={expectedRate} tone={row.pace.tone} label={row.label} icon={row.icon} />
+                            <div className="home-goal-amount">
+                                <strong>{row.formatShort(row.actual)}</strong>
+                                <span> / {row.formatShort(row.target)}</span>
+                            </div>
+                            <span className={`home-goal-pace-badge tone-${row.pace.tone}`}>{row.pace.text}</span>
+                            <dl className="home-goal-facts">
+                                {row.remaining > 0 ? (
+                                    <>
+                                        <div><dt>목표까지</dt><dd>{row.formatShort(row.remaining)}</dd></div>
+                                        {row.perDay !== null && (
+                                            <div><dt>하루 필요</dt><dd>{row.key === 'newPatients' ? decimalPeople(Number(row.perDay.toFixed(1))) : row.formatShort(row.perDay)}</dd></div>
+                                        )}
+                                    </>
+                                ) : (
+                                    <div><dt>이번 달</dt><dd>목표 달성</dd></div>
+                                )}
+                                {row.projected !== null && (
+                                    <div>
+                                        <dt>월말 예상</dt>
+                                        <dd>
+                                            {row.key === 'newPatients' ? `${Math.round(row.projected)}명` : row.formatShort(row.projected)}
+                                            <small> ({((row.projected / row.target) * 100).toFixed(0)}%)</small>
+                                        </dd>
+                                    </div>
+                                )}
+                            </dl>
+                        </div>
+                    );
+                })}
+
+                <div className="home-goal-today">
+                    <span className="home-goal-today-title"><Target size={15} /> 오늘 목표</span>
+                    {todayGoals && todayGoals.length > 0 ? todayGoals.map(item => {
+                        const done = item.monthDone || item.rate >= 100;
+                        return (
+                            <div key={item.key} className={`home-goal-today-item ${done ? 'is-done' : ''}`}>
+                                <div className="home-goal-today-head">
+                                    <span>{item.label}</span>
+                                    <strong>{item.monthDone ? '월 목표 달성' : `${Math.min(999, item.rate).toFixed(0)}%`}</strong>
                                 </div>
-                                <div className="home-goal-bar" title={`오늘까지 예상 진도 ${expectedRate.toFixed(1)}%`}>
-                                    <div className={`home-goal-bar-fill tone-${row.pace.tone}`} style={{ width: `${barWidth}%` }} />
-                                    <div className="home-goal-bar-marker" style={{ left: `${markerLeft}%` }} />
+                                <div className="home-goal-today-bar">
+                                    <div style={{ width: `${Math.min(100, item.rate)}%` }} />
                                 </div>
-                                <div className="home-goal-numbers">
-                                    <span><strong>{row.format(row.actual)}</strong> / {row.format(row.target)}</span>
-                                    <span className={`home-goal-pace tone-${row.pace.tone}`}>{row.pace.text}</span>
-                                </div>
-                                <div className="home-goal-detail">
-                                    {row.remaining > 0 ? (
-                                        <>
-                                            목표까지 <strong>{row.formatShort(row.remaining)}</strong>
-                                            {row.perDay !== null && (
-                                                <> · 하루 <strong>{row.key === 'newPatients' ? `${row.perDay.toFixed(1)}명` : row.formatShort(row.perDay)}</strong> 필요</>
-                                            )}
-                                        </>
-                                    ) : '이번 달 목표를 달성했습니다.'}
-                                    {row.projected !== null && (
-                                        <span className="home-goal-projected">
-                                            이 속도면 월말 {row.key === 'newPatients' ? `${Math.round(row.projected)}명` : row.formatShort(row.projected)}
-                                            ({((row.projected / row.target) * 100).toFixed(0)}%)
-                                        </span>
-                                    )}
+                                <div className="home-goal-today-numbers">
+                                    {item.monthDone
+                                        ? '이번 달 목표를 이미 채웠습니다.'
+                                        : (
+                                            <>
+                                                <strong>{item.format(item.value)}</strong> / {item.format(Number(item.target.toFixed(1)))}
+                                                {done ? ' · 오늘 목표 달성!' : ` · ${item.format(Number(Math.max(0, item.target - item.value).toFixed(1)))} 남음`}
+                                            </>
+                                        )}
                                 </div>
                             </div>
                         );
-                    })}
+                    }) : (
+                        <div className="home-goal-today-empty">{todayEmptyMessage}</div>
+                    )}
                 </div>
-                <div className="home-goal-legend">
-                    <span><i className="marker" /> 오늘까지 예상 진도 {expectedRate.toFixed(1)}%</span>
-                    <span><Target size={12} /> 진료시간·휴무일 기준</span>
+            </div>
+            <div className="home-goal-legend">
+                <span><i className="marker" /> 원 위의 눈금 = 오늘까지 예상 진도 {expectedRate.toFixed(1)}%</span>
+                <span>진료시간·휴무일 기준</span>
+            </div>
+        </DashboardCard>
+    );
+
+    const liveCard = (
+        <DashboardCard
+            title="오늘 실시간 현황"
+            subtitle={`${month}월 ${now.getDate()}일 · 덴트웹 기준`}
+            headerRight={<span className={`home-live-badge tone-${connection.tone}`}><i />{connection.text}</span>}
+        >
+            {!live ? (
+                <div className="home-live-empty">
+                    {liveReady ? (
+                        <>
+                            <strong>덴트웹 실시간 연동 전입니다.</strong>
+                            <span>치과 PC에 중계 프로그램을 설치하면 오늘 수납액, 내원 환자, 신환/구환이 실시간으로 표시됩니다.</span>
+                        </>
+                    ) : '불러오는 중입니다.'}
                 </div>
-            </DashboardCard>
+            ) : !today ? (
+                <div className="home-live-empty">
+                    <strong>{business.isOpenToday ? '아직 오늘 데이터가 없습니다.' : '오늘은 휴진일입니다.'}</strong>
+                    <span>마지막 데이터: {live.stat_date}</span>
+                </div>
+            ) : (
+                <>
+                    <div className="home-live-kpis">
+                        {[
+                            { label: '오늘 수납액', value: won(today.paid), sub: `카드 ${shortWon(today.card)} · 현금 ${shortWon(today.cash)} · 통장 ${shortWon(today.bank)}`, color: '#3b82f6', icon: WalletCards },
+                            { label: '내원 환자', value: people(today.visits), sub: '오늘 접수 기준', color: '#8b5cf6', icon: Users },
+                            { label: '신환', value: people(today.newPatients), sub: '처음 오신 환자', color: '#ec4899', icon: UserPlus },
+                            { label: '구환', value: people(today.returningPatients), sub: '재내원 환자', color: '#10b981', icon: Repeat },
+                        ].map(item => {
+                            const Icon = item.icon;
+                            return (
+                                <div key={item.label} className="home-live-kpi" style={{ borderTopColor: item.color }}>
+                                    <span className="home-live-kpi-label"><Icon size={14} /> {item.label}</span>
+                                    <span className="home-live-kpi-value" style={{ color: item.color }}>{item.value}</span>
+                                    <span className="home-live-kpi-sub">{item.sub}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <div className="home-live-status">
+                        <span className="home-live-status-title">진행 현황</span>
+                        {[
+                            { label: '대기', value: waitingCount, color: '#f59e0b' },
+                            { label: '진료중', value: status.inTreatment, color: '#3b82f6' },
+                            { label: '진료완료', value: status.treated, color: '#8b5cf6' },
+                            { label: '수납완료', value: status.paid, color: '#10b981' },
+                        ].map(item => (
+                            <span key={item.label} className="home-live-chip">
+                                <i style={{ background: item.color }} />{item.label} <strong>{Number(item.value || 0)}</strong>
+                            </span>
+                        ))}
+                    </div>
+                    {reservations && (
+                        <div className="home-live-status">
+                            <span className="home-live-status-title"><CalendarCheck size={14} /> 오늘 예약</span>
+                            <span className="home-live-chip">전체 <strong>{Number(reservations.total || 0)}</strong></span>
+                            <span className="home-live-chip">이행 <strong>{Number(reservations.done || 0)}</strong></span>
+                            <span className="home-live-chip">미이행 <strong>{Number(reservations.pending || 0)}</strong></span>
+                            <span className="home-live-chip">취소 <strong>{Number(reservations.canceled || 0)}</strong></span>
+                            {Number(reservations.newPatient || 0) > 0 && (
+                                <span className="home-live-chip">신환 예약 <strong>{Number(reservations.newPatient || 0)}</strong></span>
+                            )}
+                        </div>
+                    )}
+                </>
+            )}
+        </DashboardCard>
+    );
+
+    // 목표 달성을 먼저(왼쪽, 모바일에선 맨 위) 보여줍니다.
+    return (
+        <div className="dashboard-grid home-live-grid" style={{ gridTemplateColumns: '1.3fr 1fr', marginBottom: '1.5rem' }}>
+            {goalCard}
+            {liveCard}
+        </div>
+    );
+};
+
+// 원형 게이지: 채워진 호 = 달성률, 원을 가로지르는 눈금 = 오늘까지 예상 진도
+const RING_SIZE = 168;
+const RING_RADIUS = 66;
+const RING_STROKE = 16;
+const TONE_COLORS = { good: '#10b981', warn: '#f59e0b', bad: '#ef4444', done: '#3b82f6', idle: '#94a3b8' };
+
+const GoalRing = ({ rate, expectedRate, tone, label, icon: Icon, empty = false }) => {
+    const center = RING_SIZE / 2;
+    const circumference = 2 * Math.PI * RING_RADIUS;
+    const filled = Math.max(0, Math.min(100, rate)) / 100;
+    const angle = (Math.max(0, Math.min(100, expectedRate)) / 100) * 2 * Math.PI - Math.PI / 2;
+    const inner = RING_RADIUS - RING_STROKE / 2 - 4;
+    const outer = RING_RADIUS + RING_STROKE / 2 + 6;
+    const color = TONE_COLORS[tone] || TONE_COLORS.idle;
+
+    return (
+        <div className="home-goal-ring" style={{ width: RING_SIZE, height: RING_SIZE }}>
+            <svg width={RING_SIZE} height={RING_SIZE} viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`} aria-hidden="true">
+                <circle cx={center} cy={center} r={RING_RADIUS} fill="none" stroke="var(--border-color)" strokeWidth={RING_STROKE} />
+                {!empty && filled > 0 && (
+                    <circle
+                        className="home-goal-ring-progress"
+                        cx={center}
+                        cy={center}
+                        r={RING_RADIUS}
+                        fill="none"
+                        stroke={color}
+                        strokeWidth={RING_STROKE}
+                        strokeLinecap="round"
+                        strokeDasharray={`${circumference * filled} ${circumference}`}
+                        transform={`rotate(-90 ${center} ${center})`}
+                    />
+                )}
+                {!empty && (
+                    <line
+                        x1={center + inner * Math.cos(angle)}
+                        y1={center + inner * Math.sin(angle)}
+                        x2={center + outer * Math.cos(angle)}
+                        y2={center + outer * Math.sin(angle)}
+                        stroke="var(--text-primary)"
+                        strokeWidth={3}
+                        strokeLinecap="round"
+                        opacity={0.7}
+                    />
+                )}
+            </svg>
+            <div className="home-goal-ring-center">
+                <span className="home-goal-ring-label">{Icon ? <Icon size={14} /> : null}{label}</span>
+                <span className="home-goal-ring-rate" style={{ color: empty ? 'var(--text-secondary)' : color }}>
+                    {empty ? '-' : `${rate.toFixed(1)}%`}
+                </span>
+            </div>
         </div>
     );
 };
