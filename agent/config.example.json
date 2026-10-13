@@ -1,0 +1,17 @@
+{
+  "dentweb": {
+    "server": "127.0.0.1",
+    "instance": "DENTWEB",
+    "port": 1436,
+    "database": "DentWeb",
+    "user": "덴트웹에서_만든_외부연동_아이디",
+    "password": "덴트웹에서_설정한_비밀번호"
+  },
+  "supabase": {
+    "url": "https://프로젝트ID.supabase.co",
+    "anonKey": "Supabase_anon_public_key",
+    "agentEmail": "agent-치과코드@arcdent.local",
+    "agentPassword": "중계계정_비밀번호"
+  },
+  "intervalSeconds": 180
+}

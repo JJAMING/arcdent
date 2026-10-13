@@ -1,0 +1,21 @@
+{
+  "name": "arcdent-dentweb-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "덴트웹 실시간 현황을 아크덴트(Supabase)로 보내는 중계 프로그램",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "check": "node src/index.js check",
+    "once": "node src/index.js once",
+    "start": "node src/index.js run",
+    "test": "node src/selftest.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.108.2",
+    "mssql": "^11.0.1"
+  }
+}
