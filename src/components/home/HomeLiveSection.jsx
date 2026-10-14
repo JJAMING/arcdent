@@ -23,6 +23,12 @@ const shortWon = (value) => {
     return `${number.toLocaleString()}`;
 };
 const people = (value) => `${Math.round(Number(value || 0)).toLocaleString()}명`;
+// '오늘 목표' 칸용: 만원 단위까지 붙여서 (1,819만원), 1만원 미만은 원 단위
+const manWon = (value) => {
+    const number = Math.round(Number(value || 0));
+    if (Math.abs(number) >= 10000) return `${Math.round(number / 10000).toLocaleString()}만원`;
+    return `${number.toLocaleString()}원`;
+};
 const decimalPeople = (value) => `${Number(value || 0).toFixed(Number.isInteger(Number(value)) ? 0 : 1)}명`;
 const timeLabel = (iso) => {
     if (!iso) return '-';
@@ -163,17 +169,34 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
     // 오늘 목표 = (월 목표 − 어제까지 실적) ÷ 오늘 포함 남은 영업일 — 덴트웹 실시간일 때만
     const todayGoals = (() => {
         if (monthActual.source !== 'live' || !today || !business.isOpenToday || business.daysFromToday <= 0) return null;
-        const build = (key, label, monthTarget, monthValue, todayValue, format) => {
+        // 지금 시각까지 오늘 진료시간이 지난 비율 → '지금 예상' 눈금과 순항/부족 판단
+        const expectedNow = business.todayFraction === null ? null : business.todayFraction * 100;
+        const build = ({ key, label, valueLabel, monthTarget, monthValue, todayValue, format, wholeNumber }) => {
             if (!monthTarget) return null;
             const beforeToday = Math.max(0, monthValue - todayValue);
-            const target = Math.max(0, monthTarget - beforeToday) / business.daysFromToday;
+            const rawTarget = Math.max(0, monthTarget - beforeToday) / business.daysFromToday;
+            // 신환처럼 사람 수는 소수점 없이 올림 (4.6명 → 5명)
+            const target = wholeNumber ? Math.ceil(rawTarget - 1e-9) : rawTarget;
             const rate = target > 0 ? (todayValue / target) * 100 : 100;
-            return { key, label, target, value: todayValue, rate, format, monthDone: target <= 0 };
+            const remaining = Math.max(0, target - todayValue);
+            const monthDone = target <= 0;
+            let pace = null;
+            if (monthDone || rate >= 100) pace = { tone: 'done', text: '달성' };
+            else if (expectedNow !== null) {
+                const gap = rate - expectedNow;
+                pace = gap >= 0
+                    ? { tone: 'good', text: '순항' }
+                    : gap >= -15 ? { tone: 'warn', text: '조금 부족' } : { tone: 'bad', text: '부족' };
+            }
+            return { key, label, valueLabel, target, value: todayValue, remaining, rate, format, monthDone, pace };
         };
-        return [
-            build('sales', '오늘 매출 목표', goal?.salesGoal, monthActual.paid, Number(today.paid || 0), shortWon),
-            build('newPatients', '오늘 신환 목표', goal?.newPatientGoal, monthActual.newPatients, Number(today.newPatients || 0), decimalPeople),
-        ].filter(Boolean);
+        return {
+            expectedNow,
+            items: [
+                build({ key: 'sales', label: '매출', valueLabel: '수납', monthTarget: goal?.salesGoal, monthValue: monthActual.paid, todayValue: Number(today.paid || 0), format: manWon }),
+                build({ key: 'newPatients', label: '신환', valueLabel: '현재', monthTarget: goal?.newPatientGoal, monthValue: monthActual.newPatients, todayValue: Number(today.newPatients || 0), format: people, wholeNumber: true }),
+            ].filter(Boolean),
+        };
     })();
 
     const todayEmptyMessage = monthActual.source !== 'live'
@@ -191,7 +214,7 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
     const goalCard = (
         <DashboardCard
             title={`${month}월 목표 달성`}
-            subtitle={`영업일 ${business.totalDays}일 중 ${business.elapsedDays.toFixed(1)}일 경과 · 남은 영업일 ${business.remainingDayCount}일`}
+            subtitle={`영업일 ${business.totalDays}일 중 ${business.completedDays}일 경과 · 오늘 포함 남은 영업일 ${business.remainingDayCount}일`}
             headerRight={(
                 <span className="home-goal-source">
                     {monthActual.source === 'live' ? 'EMR 실시간' : '엑셀 업로드 기준'}
@@ -244,27 +267,42 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
 
                 <div className="home-goal-today">
                     <span className="home-goal-today-title"><Target size={15} /> 오늘 목표</span>
-                    {todayGoals && todayGoals.length > 0 ? todayGoals.map(item => {
-                        const done = item.monthDone || item.rate >= 100;
+                    {todayGoals && todayGoals.items.length > 0 ? todayGoals.items.map(item => {
+                        const tone = item.pace?.tone || 'idle';
                         return (
-                            <div key={item.key} className={`home-goal-today-item ${done ? 'is-done' : ''}`}>
+                            <div key={item.key} className={`home-goal-today-item tone-box-${tone}`}>
                                 <div className="home-goal-today-head">
-                                    <span>{item.label}</span>
-                                    <strong>{item.monthDone ? '월 목표 달성' : `${Math.min(999, item.rate).toFixed(0)}%`}</strong>
+                                    <span className="home-goal-today-label">{item.label}</span>
+                                    <span className="home-goal-today-rate">
+                                        <strong>{item.monthDone ? '월 목표 달성' : `${Math.min(999, item.rate).toFixed(0)}%`}</strong>
+                                        {item.pace && <em className={`home-goal-today-pace tone-${tone}`}>{item.pace.tone === 'done' ? '🎉 ' : ''}{item.pace.text}</em>}
+                                    </span>
                                 </div>
-                                <div className="home-goal-today-bar">
-                                    <div style={{ width: `${Math.min(100, item.rate)}%` }} />
-                                </div>
-                                <div className="home-goal-today-numbers">
-                                    {item.monthDone
-                                        ? '이번 달 목표를 이미 채웠습니다.'
-                                        : (
-                                            <>
-                                                <strong>{item.format(item.value)}</strong> / {item.format(Number(item.target.toFixed(1)))}
-                                                {done ? ' · 오늘 목표 달성!' : ` · ${item.format(Number(Math.max(0, item.target - item.value).toFixed(1)))} 남음`}
-                                            </>
+                                {item.monthDone ? (
+                                    <div className="home-goal-today-empty">이번 달 목표를 이미 채웠습니다.</div>
+                                ) : (
+                                    <>
+                                        <div className="home-goal-today-tiles">
+                                            <div><span>목표</span><strong>{item.format(item.target)}</strong></div>
+                                            <div><span>{item.valueLabel}</span><strong>{item.format(item.value)}</strong></div>
+                                            <div className="is-remaining">
+                                                <span>{item.remaining > 0 ? (item.key === 'sales' ? '남은 금액' : '남은 인원') : '초과 달성'}</span>
+                                                <strong>{item.remaining > 0 ? item.format(item.remaining) : item.format(item.value - item.target)}</strong>
+                                            </div>
+                                        </div>
+                                        <div className="home-goal-today-bar">
+                                            <div className="home-goal-today-fill" style={{ width: `${Math.min(100, item.rate)}%` }} />
+                                            {todayGoals.expectedNow !== null && item.rate < 100 && (
+                                                <div className="home-goal-today-marker" style={{ left: `${Math.min(100, todayGoals.expectedNow)}%` }} />
+                                            )}
+                                        </div>
+                                        {todayGoals.expectedNow !== null && item.rate < 100 && (
+                                            <div className="home-goal-today-caption" style={{ paddingLeft: `clamp(0%, calc(${Math.min(100, todayGoals.expectedNow)}% - 3.5rem), calc(100% - 7rem))` }}>
+                                                ▲ 지금 예상 {todayGoals.expectedNow.toFixed(0)}%
+                                            </div>
                                         )}
-                                </div>
+                                    </>
+                                )}
                             </div>
                         );
                     }) : (
