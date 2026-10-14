@@ -121,9 +121,9 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
 
     const connection = (() => {
         if (!liveReady) return { tone: 'idle', text: '불러오는 중' };
-        if (!live) return { tone: 'off', text: '덴트웹 미연동' };
+        if (!live) return { tone: 'off', text: 'EMR 미연동' };
         if (isTodayRow && minutesSinceUpdate !== null && minutesSinceUpdate <= STALE_MINUTES) {
-            return { tone: 'on', text: `덴트웹 연동 · ${timeLabel(live.updated_at)} 업데이트` };
+            return { tone: 'on', text: `EMR 연동 · ${timeLabel(live.updated_at)} 업데이트` };
         }
         if (business.isWorkingNow) {
             return { tone: 'warn', text: `연결 확인 필요 · 마지막 ${live.updated_at ? new Date(live.updated_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}` };
@@ -177,7 +177,7 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
     })();
 
     const todayEmptyMessage = monthActual.source !== 'live'
-        ? '덴트웹이 연동되면 오늘 채워야 할 목표가 실시간으로 표시됩니다.'
+        ? 'EMR이 연동되면 오늘 채워야 할 목표가 실시간으로 표시됩니다.'
         : !business.isOpenToday
             ? '오늘은 휴진일입니다.'
             : !today
@@ -194,7 +194,7 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
             subtitle={`영업일 ${business.totalDays}일 중 ${business.elapsedDays.toFixed(1)}일 경과 · 남은 영업일 ${business.remainingDayCount}일`}
             headerRight={(
                 <span className="home-goal-source">
-                    {monthActual.source === 'live' ? '덴트웹 실시간' : '엑셀 업로드 기준'}
+                    {monthActual.source === 'live' ? 'EMR 실시간' : '엑셀 업로드 기준'}
                 </span>
             )}
         >
@@ -282,14 +282,14 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
     const liveCard = (
         <DashboardCard
             title="오늘 실시간 현황"
-            subtitle={`${month}월 ${now.getDate()}일 · 덴트웹 기준`}
+            subtitle={`${month}월 ${now.getDate()}일 · EMR 기준`}
             headerRight={<span className={`home-live-badge tone-${connection.tone}`}><i />{connection.text}</span>}
         >
             {!live ? (
                 <div className="home-live-empty">
                     {liveReady ? (
                         <>
-                            <strong>덴트웹 실시간 연동 전입니다.</strong>
+                            <strong>EMR 실시간 연동 전입니다.</strong>
                             <span>치과 PC에 중계 프로그램을 설치하면 오늘 수납액, 내원 환자, 신환/구환이 실시간으로 표시됩니다.</span>
                         </>
                     ) : '불러오는 중입니다.'}
