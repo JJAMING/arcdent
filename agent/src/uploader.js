@@ -1,13 +1,29 @@
+import os from 'node:os';
 import { createClient } from '@supabase/supabase-js';
 
-// 중계 프로그램 전용(agent) 계정으로 Supabase에 로그인해서 live_clinic_stats 에 저장합니다.
-// agent 계정은 RLS로 "자기 치과 실시간 현황 쓰기"만 허용되어 있습니다.
+// 중계 프로그램 전용(agent) 계정으로 Supabase에 로그인합니다.
+// agent 계정은 RLS로 다음만 허용됩니다:
+//   - 자기 치과 실시간 현황(live_clinic_stats) 쓰기
+//   - 자기 치과 EMR 접속 설정(clinic_emr_settings) 읽기
+//   - 자기 치과 중계 프로그램 상태(clinic_agent_status) 쓰기
+
+export const AGENT_VERSION = '1.1.0';
 
 let client = null;
 let clinicId = null;
+let clinicName = '';
+
+const resetConnection = () => {
+    client = null;
+    clinicId = null;
+    clinicName = '';
+};
 
 export const connectSupabase = async (config) => {
-    if (client && clinicId) return { clinicId };
+    if (client && clinicId) return { clinicId, clinicName };
+    if (!config?.url || !config?.anonKey) {
+        throw new Error('Supabase 주소/키가 없습니다. setup.bat 을 다시 실행해 주세요.');
+    }
 
     client = createClient(config.url, config.anonKey, {
         auth: { persistSession: false, autoRefreshToken: true },
@@ -18,7 +34,7 @@ export const connectSupabase = async (config) => {
         password: config.agentPassword,
     });
     if (error) {
-        client = null;
+        resetConnection();
         throw new Error(`Supabase 로그인 실패: ${error.message}`);
     }
 
@@ -27,14 +43,53 @@ export const connectSupabase = async (config) => {
         .select('clinic_id, role, clinics(name)')
         .eq('user_id', data.user.id)
         .maybeSingle();
-    if (profileError) throw new Error(`계정 정보 조회 실패: ${profileError.message}`);
+    if (profileError) {
+        resetConnection();
+        throw new Error(`계정 정보 조회 실패: ${profileError.message}`);
+    }
     if (!profile || profile.role !== 'agent' || !profile.clinic_id) {
-        client = null;
+        resetConnection();
         throw new Error('이 계정은 중계 프로그램용(agent)으로 등록되어 있지 않습니다. profiles 에 role=agent, clinic_id 를 연결해 주세요.');
     }
 
     clinicId = profile.clinic_id;
-    return { clinicId, clinicName: profile.clinics?.name || '' };
+    clinicName = profile.clinics?.name || '';
+    return { clinicId, clinicName };
+};
+
+/**
+ * 관리자모드에서 입력한 EMR 접속 설정. 없으면 null (→ config.json 값 사용)
+ * 테이블이 아직 없을 때(SQL 미실행)도 null 을 돌려 기존 방식으로 동작합니다.
+ */
+export const fetchEmrSettings = async () => {
+    if (!client || !clinicId) throw new Error('Supabase에 연결되어 있지 않습니다.');
+    const { data, error } = await client
+        .from('clinic_emr_settings')
+        .select('server, port, instance, database_name, interval_seconds, enabled')
+        .eq('clinic_id', clinicId)
+        .maybeSingle();
+    if (error) {
+        if (/does not exist|schema cache|PGRST205|42P01/i.test(`${error.code} ${error.message}`)) return null;
+        throw new Error(`EMR 설정 조회 실패: ${error.message}`);
+    }
+    return data || null;
+};
+
+/** 관리자모드 "EMR 연동" 화면에 보이는 상태 보고. 실패해도 본 작업은 계속합니다. */
+export const reportStatus = async ({ status, message = '', success = false }) => {
+    if (!client || !clinicId) return;
+    const now = new Date().toISOString();
+    const row = {
+        clinic_id: clinicId,
+        status,
+        message: String(message || '').slice(0, 500),
+        last_seen_at: now,
+        agent_version: AGENT_VERSION,
+        hostname: os.hostname(),
+        updated_at: now,
+        ...(success ? { last_success_at: now } : {}),
+    };
+    await client.from('clinic_agent_status').upsert(row, { onConflict: 'clinic_id' }).then(() => {}, () => {});
 };
 
 export const uploadLiveStats = async ({ statDate, payload }) => {
@@ -50,8 +105,7 @@ export const uploadLiveStats = async ({ statDate, payload }) => {
         }, { onConflict: 'clinic_id,stat_date' });
     if (error) {
         // 토큰 만료 등으로 실패하면 다음 주기에 다시 로그인하도록 초기화
-        client = null;
-        clinicId = null;
+        resetConnection();
         throw new Error(`업로드 실패: ${error.message}`);
     }
 };

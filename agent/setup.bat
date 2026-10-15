@@ -4,8 +4,9 @@ cd /d "%~dp0"
 set "PATH=%ProgramFiles%\nodejs;%SystemRoot%\System32;%PATH%"
 set "NPM_CMD=npm"
 if exist "%ProgramFiles%\nodejs\npm.cmd" set "NPM_CMD=%ProgramFiles%\nodejs\npm.cmd"
+set "NODE_EXE=node"
+if exist "%ProgramFiles%\nodejs\node.exe" set "NODE_EXE=%ProgramFiles%\nodejs\node.exe"
+echo 필요한 부품을 설치하는 중입니다...
 call "%NPM_CMD%" install --omit=dev --no-audit --no-fund
-if not exist config.json copy config.example.json config.json >nul
-echo.
-echo [OK] 설치 완료. 메모장으로 config.json 을 열어 값을 입력한 뒤 check.bat 을 실행하세요.
+"%NODE_EXE%" src\setup.js
 pause

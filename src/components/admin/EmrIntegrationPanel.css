@@ -1,0 +1,145 @@
+.emr-card .clinic-settings-section + .clinic-settings-section {
+    margin-top: 1rem;
+}
+
+.emr-refresh-note {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
+.emr-refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    white-space: nowrap;
+}
+
+.emr-refresh-btn .is-spinning {
+    animation: emr-spin 1s linear infinite;
+}
+
+@keyframes emr-spin {
+    to { transform: rotate(360deg); }
+}
+
+.emr-status-table-wrap {
+    overflow-x: auto;
+}
+
+.emr-status-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.84rem;
+}
+
+.emr-status-table th {
+    padding: 0.55rem 0.6rem;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-weight: 800;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.emr-status-table td {
+    padding: 0.6rem;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.emr-status-table tbody tr {
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.emr-status-table tbody tr:hover {
+    background: rgba(59, 130, 246, 0.05);
+}
+
+.emr-status-table tbody tr.is-selected {
+    background: rgba(59, 130, 246, 0.1);
+}
+
+.emr-status-table small {
+    color: var(--text-secondary);
+}
+
+.emr-clinic-name {
+    font-weight: 800;
+}
+
+.emr-message {
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-secondary) !important;
+}
+
+.emr-empty {
+    text-align: center;
+    color: var(--text-secondary) !important;
+}
+
+.emr-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.6rem;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    font-size: 0.76rem;
+    font-weight: 800;
+}
+
+.emr-state i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.emr-state.tone-good { color: #059669; }
+.emr-state.tone-warn { color: #d97706; }
+.emr-state.tone-bad { color: #dc2626; }
+.emr-state.tone-idle { color: #94a3b8; }
+
+.emr-form-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1.3fr 1.3fr 1.2fr;
+    gap: 0.75rem;
+}
+
+.emr-form-grid label {
+    display: grid;
+    gap: 0.35rem;
+    align-content: start;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.emr-form-grid input,
+.emr-form-grid select {
+    min-width: 0;
+    min-height: 38px;
+    padding: 0 0.65rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.55rem;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
+.emr-form-grid small {
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+@media (max-width: 960px) {
+    .emr-form-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

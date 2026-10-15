@@ -4,9 +4,14 @@ import sql from 'mssql';
 // 조회한 원본 행은 합계 계산에 필요한 칸만 남기고 바로 버립니다. (이름·연락처 등은 메모리에도 보관하지 않음)
 
 let pool = null;
+let poolKey = '';
 
 export const connectDentweb = async (config) => {
-    if (pool?.connected) return pool;
+    // 관리자모드에서 서버 주소/포트가 바뀌면 기존 연결을 닫고 새로 접속합니다.
+    const key = [config.server, config.port, config.instance, config.database, config.user].join('|');
+    if (pool?.connected && poolKey === key) return pool;
+    if (pool) await closeDentweb();
+    poolKey = key;
     const usePort = Number(config.port) > 0;
     pool = await new sql.ConnectionPool({
         server: config.server,
@@ -30,8 +35,9 @@ export const connectDentweb = async (config) => {
 
 export const closeDentweb = async () => {
     if (pool) {
-        await pool.close().catch(() => {});
+        const current = pool;
         pool = null;
+        await current.close().catch(() => {});
     }
 };
 

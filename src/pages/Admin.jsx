@@ -19,6 +19,7 @@ import {
 import { DEFAULT_IMPLANT_TYPES, IMPLANT_TYPE_COLORS, getImplantTypeCounts, getReconciledImplantTotal, normalizeImplantTypes } from '../utils/implantTypes';
 import { DEFAULT_CLINIC_FEATURE_SETTINGS, loadClinicFeatureSettings, saveClinicFeatureSettings } from '../utils/clinicFeatureSettings';
 import ClinicOperationsPanel from '../components/admin/ClinicOperationsPanel';
+import EmrIntegrationPanel from '../components/admin/EmrIntegrationPanel';
 import { getCurrentYearString, getRollingYearOptions } from '../utils/dateUtils';
 import { describeUserAgent } from '../utils/userAgent';
 import { useAuth } from '../context/AuthContext';
@@ -5825,6 +5826,13 @@ const Admin = () => {
                 </button>
                 <button
                     type="button"
+                    className={`admin-panel-tab ${adminPanelTab === 'emr' ? 'active' : ''}`}
+                    onClick={() => setAdminPanelTab('emr')}
+                >
+                    EMR 연동
+                </button>
+                <button
+                    type="button"
                     className={`admin-panel-tab ${adminPanelTab === 'history' ? 'active' : ''}`}
                     onClick={() => setAdminPanelTab('history')}
                 >
@@ -6716,6 +6724,15 @@ const Admin = () => {
 
             {adminPanelTab === 'operations' && (
                 <ClinicOperationsPanel clinicId={selectedAdminClinicId} clinicName={selectedAdminClinic?.name} />
+            )}
+
+            {adminPanelTab === 'emr' && (
+                <EmrIntegrationPanel
+                    clinics={adminClinics}
+                    clinicId={selectedAdminClinicId}
+                    clinicName={selectedAdminClinic?.name}
+                    onSelectClinic={(id) => handleAdminClinicChange({ target: { value: id } })}
+                />
             )}
 
             {adminPanelTab === 'history' && (

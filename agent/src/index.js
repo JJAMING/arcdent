@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { ROOT, loadConfig, resolveDentwebConfig } from './config.js';
 import {
     closeDentweb,
     connectDentweb,
@@ -18,14 +18,13 @@ import {
     summarizeReservations,
     summarizeTreatmentFees,
 } from './aggregate.js';
-import { connectSupabase, uploadLiveStats } from './uploader.js';
+import { connectSupabase, fetchEmrSettings, reportStatus, uploadLiveStats } from './uploader.js';
 
 // 사용법
 //   node src/index.js check  → 덴트웹 접속 테스트 + 계산 결과를 화면에만 출력 (전송 안 함)
 //   node src/index.js once   → 1회 계산 후 아크덴트로 전송
 //   node src/index.js run    → intervalSeconds 마다 계속 전송 (기본 180초)
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LOG_DIR = path.join(ROOT, 'logs');
 const LOG_KEEP_DAYS = 14;
 const PAST_DAY_REFRESH_MS = 60 * 60 * 1000; // 지난 날짜 접수목록은 1시간마다만 다시 조회
@@ -51,16 +50,6 @@ const cleanupOldLogs = () => {
             if (fs.statSync(full).mtimeMs < limit) fs.unlinkSync(full);
         });
     } catch { /* 폴더 없음 등 무시 */ }
-};
-
-const loadConfig = () => {
-    const file = path.join(ROOT, 'config.json');
-    if (!fs.existsSync(file)) {
-        throw new Error('config.json 이 없습니다. config.example.json 을 복사해서 config.json 으로 만들고 값을 채워 주세요.');
-    }
-    const config = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (!config.dentweb?.user || !config.dentweb?.password) throw new Error('config.json 의 dentweb.user / password 를 입력해 주세요.');
-    return config;
 };
 
 // ---------------------------------------------------------------------------
@@ -156,42 +145,71 @@ const printSummary = ({ statDate, payload, refundCount }) => {
 // ---------------------------------------------------------------------------
 // 실행 모드
 // ---------------------------------------------------------------------------
+const describeTarget = (dentweb) => `${dentweb.server}${Number(dentweb.port) > 0 ? `,${dentweb.port}` : `\\${dentweb.instance || 'DENTWEB'}`}`;
+
+/** Supabase 로그인 → 관리자모드 EMR 설정 읽기 → 실제 접속할 덴트웹 설정 결정 */
+const prepare = async (config) => {
+    const info = await connectSupabase(config.supabase);
+    const remote = await fetchEmrSettings();
+    const dentweb = resolveDentwebConfig(config.dentweb, remote);
+    const intervalSeconds = Number(remote?.interval_seconds) || config.intervalSeconds || 180;
+    const enabled = remote ? remote.enabled !== false : true;
+    return { info, dentweb, intervalSeconds, enabled };
+};
+
 const runCheck = async (config) => {
-    log('INFO', `덴트웹 접속 시도: ${config.dentweb.server}${Number(config.dentweb.port) > 0 ? `,${config.dentweb.port}` : `\\${config.dentweb.instance || 'DENTWEB'}`}`);
-    await connectDentweb(config.dentweb);
+    const { info, dentweb, enabled } = await prepare(config);
+    log('INFO', `아크덴트 로그인 성공 — 대상 치과: ${info.clinicName || info.clinicId}`);
+    log('INFO', `덴트웹 접속 정보: ${describeTarget(dentweb)} (${dentweb.source} 기준)`);
+    if (!enabled) log('WARN', '관리자모드에서 연동이 "중지"로 되어 있습니다. 실행 모드에서는 전송하지 않습니다.');
+
+    await connectDentweb(dentweb);
     log('INFO', '덴트웹 접속 성공');
     const result = await collect();
     printSummary(result);
+    log('INFO', '점검 모드라 전송은 하지 않았습니다.');
+};
 
-    if (config.supabase?.agentEmail && config.supabase?.agentPassword) {
-        try {
-            const info = await connectSupabase(config.supabase);
-            log('INFO', `아크덴트(Supabase) 로그인 성공 — 대상 치과: ${info.clinicName || info.clinicId} (점검 모드라 전송은 하지 않았습니다)`);
-        } catch (error) {
-            log('WARN', error.message);
+/** 1회 전송. 결과를 관리자모드 상태 화면에도 보고합니다. 다음 주기 간격(초)을 돌려줍니다. */
+const runOnce = async (config) => {
+    let prepared = null;
+    try {
+        prepared = await prepare(config);
+        const { info, dentweb, enabled } = prepared;
+        if (!enabled) {
+            await closeDentweb();
+            await reportStatus({ status: 'disabled', message: '관리자모드에서 연동 중지됨' });
+            log('INFO', '관리자모드에서 연동이 중지되어 전송하지 않았습니다.');
+            return prepared.intervalSeconds;
         }
+        await connectDentweb(dentweb);
+        const result = await collect();
+        await uploadLiveStats(result);
+        const summary = `수납 ${won(result.payload.today.paid)} · 내원 ${result.payload.today.visits}명 · 신환 ${result.payload.today.newPatients}명`;
+        await reportStatus({ status: 'ok', message: summary, success: true });
+        log('INFO', `전송 완료 (${info.clinicName || info.clinicId}) ${summary}`);
+        return prepared.intervalSeconds;
+    } catch (error) {
+        // Supabase에는 로그인된 상태라면 오류 내용을 관리자모드에 알립니다.
+        await reportStatus({ status: 'error', message: explain(error).split('\n')[0] });
+        error.intervalSeconds = prepared?.intervalSeconds;
+        throw error;
     }
 };
 
-const runOnce = async (config) => {
-    await connectDentweb(config.dentweb);
-    const info = await connectSupabase(config.supabase);
-    const result = await collect();
-    await uploadLiveStats(result);
-    log('INFO', `전송 완료 (${info.clinicName || info.clinicId}) 수납 ${won(result.payload.today.paid)} · 내원 ${result.payload.today.visits}명 · 신환 ${result.payload.today.newPatients}명`);
-};
-
 const runLoop = async (config) => {
-    const intervalMs = Math.max(60, Number(config.intervalSeconds) || 180) * 1000;
-    log('INFO', `실행 모드 시작 — ${intervalMs / 1000}초마다 전송`);
+    log('INFO', '실행 모드 시작 (전송 간격은 관리자모드 설정을 따릅니다)');
     cleanupOldLogs();
 
     let lastCleanupDay = ymd(new Date());
+    let lastInterval = 0;
     const tick = async () => {
+        let intervalSeconds = config.intervalSeconds || 180;
         try {
-            await runOnce(config);
+            intervalSeconds = await runOnce(config);
         } catch (error) {
             log('ERROR', explain(error));
+            intervalSeconds = error.intervalSeconds || intervalSeconds;
             // 덴트웹 연결 문제면 다음 주기에 새로 접속
             await closeDentweb();
         }
@@ -199,6 +217,11 @@ const runLoop = async (config) => {
         if (day !== lastCleanupDay) {
             lastCleanupDay = day;
             cleanupOldLogs();
+        }
+        const intervalMs = Math.min(3600, Math.max(60, Number(intervalSeconds) || 180)) * 1000;
+        if (intervalMs !== lastInterval) {
+            log('INFO', `전송 간격: ${intervalMs / 1000}초`);
+            lastInterval = intervalMs;
         }
         setTimeout(tick, intervalMs);
     };
