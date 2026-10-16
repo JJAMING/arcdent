@@ -58,6 +58,7 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
     const [weekly, setWeekly] = useState(null);
     const [holidays, setHolidays] = useState([]);
     const [goal, setGoal] = useState(null);
+    const [yearGoals, setYearGoals] = useState({});
     const [goalSalesBasis, setGoalSalesBasis] = useState('total');
     const [daily, setDaily] = useState({});
     const [intraday, setIntraday] = useState({});
@@ -82,7 +83,7 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
         const monthEnd = toDateKey(new Date(year, month, 0));
         Promise.allSettled([
             loadOperatingHours(clinicId),
-            loadHolidays(clinicId, { from: monthStart, to: monthEnd }),
+            loadHolidays(clinicId, { from: toDateKey(new Date(year, month - 13, 1)), to: monthEnd }),
             loadGoalsForYear(clinicId, year),
             loadGoalSalesBasis(clinicId),
         ]).then(([hoursResult, holidayResult, goalResult, basisResult]) => {
@@ -91,6 +92,7 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
             setWeekly(hoursResult.status === 'fulfilled' ? hoursResult.value.weekly : null);
             setHolidays(holidayResult.status === 'fulfilled' ? holidayResult.value : []);
             setGoal(goalResult.status === 'fulfilled' ? (goalResult.value[month] || null) : null);
+            setYearGoals(goalResult.status === 'fulfilled' ? goalResult.value : {});
         });
         return () => { cancelled = true; };
     }, [clinicId, year, month, opsKey]);
@@ -611,6 +613,19 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
     );
 
     const openDays = getMonthOpenDays({ year, month: month - 1, weekly, holidays });
+    // 달력 ✓ 표시용 하루 목표 = 그 달 매출 목표 ÷ 그 달 영업일 (올해 목표가 있는 달만)
+    const openDayCountCache = {};
+    const dailyTargetFor = (iso) => {
+        const y = Number(iso.slice(0, 4));
+        const m = Number(iso.slice(5, 7));
+        const monthGoal = y === year ? Number(yearGoals[m]?.salesGoal || 0) : 0;
+        if (!monthGoal) return null;
+        const cacheKey = `${y}-${m}`;
+        if (openDayCountCache[cacheKey] === undefined) {
+            openDayCountCache[cacheKey] = getMonthOpenDays({ year: y, month: m - 1, weekly, holidays }).filter(Boolean).length;
+        }
+        return openDayCountCache[cacheKey] ? monthGoal / openDayCountCache[cacheKey] : null;
+    };
     const oldestKey = Object.keys(daily).sort()[0];
     const oldestMonth = oldestKey ? { y: Number(oldestKey.slice(0, 4)), m: Number(oldestKey.slice(5, 7)) - 1 } : null;
     const selectDate = (iso) => {
@@ -644,6 +659,7 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
                         selectedDate={viewDate}
                         onSelectDate={selectDate}
                         oldestMonth={oldestMonth}
+                        dailyTargetFor={dailyTargetFor}
                     />
                 </div>
             )}
@@ -675,9 +691,9 @@ const MiniBars = ({ values, activeIso, color, format }) => {
 };
 
 // 원형 게이지: 채워진 호 = 달성률, 원을 가로지르는 눈금 = 오늘까지 예상 진도
-const RING_SIZE = 168;
-const RING_RADIUS = 66;
-const RING_STROKE = 16;
+const RING_SIZE = 210;
+const RING_RADIUS = 84;
+const RING_STROKE = 18;
 const TONE_COLORS = { good: '#10b981', warn: '#f59e0b', bad: '#ef4444', done: '#3b82f6', idle: '#94a3b8' };
 
 const GoalRing = ({ rate, expectedRate, tone, label, icon: Icon, empty = false }) => {
@@ -690,8 +706,8 @@ const GoalRing = ({ rate, expectedRate, tone, label, icon: Icon, empty = false }
     const color = TONE_COLORS[tone] || TONE_COLORS.idle;
 
     return (
-        <div className="home-goal-ring" style={{ width: RING_SIZE, height: RING_SIZE }}>
-            <svg width={RING_SIZE} height={RING_SIZE} viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`} aria-hidden="true">
+        <div className="home-goal-ring" style={{ width: "100%", maxWidth: RING_SIZE, aspectRatio: "1 / 1" }}>
+            <svg width="100%" height="100%" viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`} aria-hidden="true">
                 <circle cx={center} cy={center} r={RING_RADIUS} fill="none" stroke="var(--border-color)" strokeWidth={RING_STROKE} />
                 {!empty && filled > 0 && (
                     <circle

@@ -30,6 +30,7 @@ const METRICS = [
     { key: 'sales', label: '매출', unit: 'won' },
     { key: 'newPatients', label: '신환', unit: 'people' },
     { key: 'visits', label: '내원', unit: 'people' },
+    { key: 'perVisit', label: '객단가', unit: 'won' },
 ];
 
 const valueOf = (metrics, key, useTotal) => (key === 'sales' ? salesOf(metrics, useTotal) : Number(metrics?.[key] || 0));
@@ -63,15 +64,21 @@ export const MonthCompareCard = ({ daily, now, todayMetrics, useTotal, salesGoal
     const thisMonthDays = new Date(year, month + 1, 0).getDate();
 
     const { chartData, summary } = useMemo(() => {
-        const dayValue = (y, m, d) => {
-            const key = isoDate(y, m, d);
-            if (y === year && m === month && d === today && todayMetrics) return valueOf(todayMetrics, metricKey, useTotal);
-            return valueOf(daily[key], metricKey, useTotal);
+        const metricsOf = (y, m, d) => {
+            if (y === year && m === month && d === today && todayMetrics) return todayMetrics;
+            return daily[isoDate(y, m, d)];
         };
+        // 객단가(1인당 매출) = 누적 매출 ÷ 누적 내원 → 매출·내원을 따로 누적해서 나눔
+        const isPerVisit = metricKey === 'perVisit';
+        const dayValue = (y, m, d) => valueOf(metricsOf(y, m, d), isPerVisit ? 'sales' : metricKey, useTotal);
+        const dayVisits = (y, m, d) => Number(metricsOf(y, m, d)?.visits || 0);
+        const ratio = (sales, visits) => (visits > 0 ? sales / visits : 0);
         const goal = metricKey === 'sales' ? salesGoal : metricKey === 'newPatients' ? newPatientGoal : 0;
         const totalOpen = (openDays || []).filter(Boolean).length;
         let thisCum = 0;
         let lastCum = 0;
+        let thisVisits = 0;
+        let lastVisits = 0;
         let openCum = 0;
         let lastSamePeriod = 0;
         const rows = [];
@@ -79,22 +86,29 @@ export const MonthCompareCard = ({ daily, now, todayMetrics, useTotal, salesGoal
             const row = { day: `${d}일` };
             if (d <= lastMonthDays) {
                 lastCum += dayValue(lastMonthYear, lastMonthIndex, d);
-                row.lastMonth = lastCum;
-                if (d <= today) lastSamePeriod = lastCum;
+                lastVisits += dayVisits(lastMonthYear, lastMonthIndex, d);
+                row.lastMonth = isPerVisit ? ratio(lastCum, lastVisits) : lastCum;
+                if (d <= today) lastSamePeriod = row.lastMonth;
             }
             if (d <= thisMonthDays) {
                 if (openDays?.[d - 1]) openCum += 1;
-                if (goal && totalOpen) row.goal = Math.round((goal * openCum) / totalOpen);
+                if (goal && totalOpen && !isPerVisit) row.goal = Math.round((goal * openCum) / totalOpen);
                 if (d <= today) {
                     thisCum += dayValue(year, month, d);
-                    row.thisMonth = thisCum;
+                    thisVisits += dayVisits(year, month, d);
+                    row.thisMonth = isPerVisit ? ratio(thisCum, thisVisits) : thisCum;
                 }
             }
             rows.push(row);
         }
         return {
             chartData: rows,
-            summary: { thisPeriod: thisCum, lastPeriod: lastSamePeriod, lastTotal: lastCum, hasGoal: Boolean(goal && totalOpen) },
+            summary: {
+                thisPeriod: isPerVisit ? ratio(thisCum, thisVisits) : thisCum,
+                lastPeriod: lastSamePeriod,
+                lastTotal: isPerVisit ? ratio(lastCum, lastVisits) : lastCum,
+                hasGoal: Boolean(goal && totalOpen && !isPerVisit),
+            },
         };
     }, [daily, todayMetrics, metricKey, useTotal, salesGoal, newPatientGoal, openDays, year, month, today, thisMonthDays, lastMonthDays, lastMonthYear, lastMonthIndex]);
 
@@ -103,7 +117,7 @@ export const MonthCompareCard = ({ daily, now, todayMetrics, useTotal, salesGoal
     return (
         <DashboardCard
             title="이번 달 vs 지난달"
-            subtitle={`누적 ${metric.label} · 동기간(1~${today}일) 비교`}
+            subtitle={metricKey === 'perVisit' ? `1인당 매출 (누적 매출 ÷ 누적 내원) · 1~${today}일` : `누적 ${metric.label} · 동기간(1~${today}일) 비교`}
             headerRight={(
                 <div className="home-metric-tabs">
                     {METRICS.map(item => (
@@ -161,7 +175,7 @@ export const MonthCompareCard = ({ daily, now, todayMetrics, useTotal, salesGoal
 // ---------------------------------------------------------------------------
 // ② 일별 현황 달력
 // ---------------------------------------------------------------------------
-export const DailyCalendarCard = ({ daily, now, todayMetrics, useTotal, selectedDate, onSelectDate, oldestMonth }) => {
+export const DailyCalendarCard = ({ daily, now, todayMetrics, useTotal, selectedDate, onSelectDate, oldestMonth, dailyTargetFor }) => {
     const [view, setView] = useState({ y: now.getFullYear(), m: now.getMonth() });
     const todayIso = isoDate(now.getFullYear(), now.getMonth(), now.getDate());
     const lastDay = new Date(view.y, view.m + 1, 0).getDate();
@@ -173,14 +187,18 @@ export const DailyCalendarCard = ({ daily, now, todayMetrics, useTotal, selected
         for (let d = 1; d <= lastDay; d += 1) {
             const iso = isoDate(view.y, view.m, d);
             const metrics = iso === todayIso && todayMetrics ? todayMetrics : daily[iso];
-            list.push({ d, iso, metrics, sales: salesOf(metrics, useTotal), future: iso > todayIso });
+            const sales = salesOf(metrics, useTotal);
+            const target = dailyTargetFor ? dailyTargetFor(iso) : null;
+            list.push({ d, iso, metrics, sales, future: iso > todayIso, target, met: Boolean(target) && sales >= target });
         }
         return list;
-    }, [daily, todayMetrics, useTotal, view, firstWeekday, lastDay, todayIso]);
+    }, [daily, todayMetrics, useTotal, view, firstWeekday, lastDay, todayIso, dailyTargetFor]);
 
     const maxSales = Math.max(1, ...cells.filter(Boolean).map(cell => cell.sales));
     const monthTotal = cells.filter(Boolean).reduce((acc, cell) => acc + cell.sales, 0);
     const workedDays = cells.filter(cell => cell && cell.sales > 0).length;
+    const hasTargets = cells.some(cell => cell && cell.target);
+    const metDays = cells.filter(cell => cell && cell.met).length;
 
     const canPrev = !oldestMonth || view.y > oldestMonth.y || (view.y === oldestMonth.y && view.m > oldestMonth.m);
     const canNext = view.y < now.getFullYear() || (view.y === now.getFullYear() && view.m < now.getMonth());
@@ -192,7 +210,7 @@ export const DailyCalendarCard = ({ daily, now, todayMetrics, useTotal, selected
     return (
         <DashboardCard
             title="일별 현황"
-            subtitle={`${view.y}년 ${view.m + 1}월 · 합계 ${shortWon(monthTotal)} · 진료 ${workedDays}일 · 단위 만원`}
+            subtitle={`${view.y}년 ${view.m + 1}월 · 합계 ${shortWon(monthTotal)} · 진료 ${workedDays}일${hasTargets ? ` · ✓ 하루 목표 달성 ${metDays}일` : ''} · 단위 만원`}
             headerRight={(
                 <div className="home-calendar-nav">
                     <button type="button" onClick={() => move(-1)} disabled={!canPrev} title="이전 달"><ChevronLeft size={16} /></button>
@@ -222,9 +240,9 @@ export const DailyCalendarCard = ({ daily, now, todayMetrics, useTotal, selected
                             disabled={cell.future}
                             onClick={() => onSelectDate?.(cell.iso)}
                             style={intensity ? { background: `rgba(59, 130, 246, ${intensity.toFixed(2)})`, color: intensity > 0.5 ? '#fff' : undefined } : undefined}
-                            title={cell.metrics ? `${cell.iso} (누르면 위에서 이 날짜 보기) · 매출 ${shortWon(cell.sales)} · 내원 ${Number(cell.metrics.visits || 0)}명 · 신환 ${Number(cell.metrics.newPatients || 0)}명` : cell.iso}
+                            title={cell.metrics ? `${cell.iso} (누르면 위에서 이 날짜 보기) · 매출 ${shortWon(cell.sales)}${cell.target ? ` / 하루 목표 ${shortWon(cell.target)}` : ''} · 내원 ${Number(cell.metrics.visits || 0)}명 · 신환 ${Number(cell.metrics.newPatients || 0)}명` : cell.iso}
                         >
-                            <span className="home-calendar-num">{cell.d}</span>
+                            <span className="home-calendar-num">{cell.d}{cell.met && <i className="home-calendar-met" title="하루 목표 달성">✓</i>}</span>
                             {cell.sales > 0 && <span className="home-calendar-value">{Math.round(cell.sales / 10000).toLocaleString()}</span>}
                         </button>
                     );
