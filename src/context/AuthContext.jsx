@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
 import { clearSessionAnalysisPeriods } from '../utils/analysisPeriodSession';
 import { recordLoginEvent } from '../utils/supabaseAnalyticsStore';
@@ -49,6 +49,8 @@ export const AuthProvider = ({ children }) => {
     const [clinic, setClinic] = useState(null);
     const [loading, setLoading] = useState(true);
     const [profileError, setProfileError] = useState('');
+    // 지금 화면에 로그인된 사용자 — 토큰 자동 갱신처럼 같은 사용자 신호는 화면을 다시 그리지 않기 위해 사용
+    const currentUserIdRef = useRef(null);
 
     const clearProfileState = useCallback(() => {
         setProfile(null);
@@ -129,6 +131,7 @@ export const AuthProvider = ({ children }) => {
     }, [clearProfileState]);
 
     const applySession = useCallback(async (nextSession, { recordLogin = false } = {}) => {
+        currentUserIdRef.current = nextSession?.user?.id ?? null;
         setSession(nextSession);
         setUser(nextSession?.user ?? null);
 
@@ -161,9 +164,23 @@ export const AuthProvider = ({ children }) => {
 
         if (!isSupabaseConfigured) return undefined;
 
-        const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-            setLoading(true);
-            applySession(nextSession ?? null).finally(() => setLoading(false));
+        // ⚠️ 이 콜백 안에서 다른 Supabase 요청을 기다리면, Supabase 내부 잠금 때문에 서로 기다리다
+        //    멈춰서(앱 재진입 시 흰 화면) 버립니다. 공식 권장대로 다음 틱으로 미뤄서 처리합니다.
+        const { data: authListener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+            window.setTimeout(() => {
+                if (!mounted || event === 'INITIAL_SESSION') return; // 첫 세션은 initializeAuth 가 처리
+                const sameUser = Boolean(currentUserIdRef.current) && nextSession?.user?.id === currentUserIdRef.current;
+                if (sameUser && event !== 'SIGNED_OUT') {
+                    // 토큰 자동 갱신 등 같은 사용자: 화면은 그대로 두고 로그인 정보만 교체
+                    setSession(nextSession);
+                    setUser(nextSession.user);
+                    return;
+                }
+                setLoading(true);
+                applySession(nextSession ?? null).finally(() => {
+                    if (mounted) setLoading(false);
+                });
+            }, 0);
         });
 
         return () => {
@@ -253,8 +270,53 @@ export const AuthProvider = ({ children }) => {
 
     return (
         <AuthContext.Provider value={value}>
-            {!loading && children}
+            {loading ? <AuthLoadingScreen /> : children}
         </AuthContext.Provider>
+    );
+};
+
+// 로그인 상태 확인 중 화면 (예전에는 아무것도 그리지 않아 흰 화면으로 보였음)
+// 12초가 넘으면 네트워크 문제 등으로 보고 '다시 시도' 버튼을 보여줍니다.
+const AuthLoadingScreen = () => {
+    const [slow, setSlow] = useState(false);
+    useEffect(() => {
+        const timer = window.setTimeout(() => setSlow(true), 12000);
+        return () => window.clearTimeout(timer);
+    }, []);
+    return (
+        <div style={{
+            minHeight: '100vh',
+            display: 'grid',
+            placeItems: 'center',
+            background: 'var(--bg-color)',
+            color: 'var(--text-secondary)',
+            fontFamily: 'inherit',
+        }}>
+            <div style={{ display: 'grid', justifyItems: 'center', gap: '0.9rem', textAlign: 'center', padding: '1rem' }}>
+                <div className="auth-loading-spinner" />
+                <span style={{ fontWeight: 700 }}>불러오는 중입니다…</span>
+                {slow && (
+                    <>
+                        <span style={{ fontSize: '0.85rem' }}>시간이 오래 걸리고 있습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.</span>
+                        <button
+                            type="button"
+                            onClick={() => window.location.reload()}
+                            style={{
+                                padding: '0.55rem 1.2rem',
+                                border: 0,
+                                borderRadius: '0.6rem',
+                                background: 'var(--accent-primary)',
+                                color: '#fff',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                            }}
+                        >
+                            다시 시도
+                        </button>
+                    </>
+                )}
+            </div>
+        </div>
     );
 };
 
