@@ -13,6 +13,7 @@ import {
     saveGoalsForYear,
     saveOperatingHours,
 } from '../../utils/clinicOperations';
+import { GOAL_SALES_BASIS_OPTIONS, loadGoalSalesBasis, saveGoalSalesBasis } from '../../utils/clinicFeatureSettings';
 import './ClinicOperationsPanel.css';
 
 const MONTH_NUMBERS = Array.from({ length: 12 }, (_, index) => index + 1);
@@ -47,6 +48,8 @@ const ClinicOperationsPanel = ({ clinicId, clinicName }) => {
     const [goalYear, setGoalYear] = useState(() => new Date().getFullYear());
     const [goals, setGoals] = useState({});
     const [goalSaving, setGoalSaving] = useState(false);
+    const [goalSalesBasis, setGoalSalesBasis] = useState('total');
+    const [basisSaving, setBasisSaving] = useState(false);
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -142,6 +145,31 @@ const ClinicOperationsPanel = ({ clinicId, clinicName }) => {
             showSuccess('휴무일을 삭제했습니다.');
         } catch (err) {
             setError(err.message || '휴무일 삭제에 실패했습니다.');
+        }
+    };
+
+    useEffect(() => {
+        let cancelled = false;
+        if (!clinicId) return undefined;
+        loadGoalSalesBasis(clinicId)
+            .then(basis => { if (!cancelled) setGoalSalesBasis(basis); })
+            .catch(() => { if (!cancelled) setGoalSalesBasis('total'); });
+        return () => { cancelled = true; };
+    }, [clinicId]);
+
+    // 기준은 고르는 즉시 저장합니다. (월별 목표 금액과 따로 저장)
+    const handleChangeBasis = async (basis) => {
+        const previous = goalSalesBasis;
+        setGoalSalesBasis(basis);
+        setBasisSaving(true);
+        try {
+            await saveGoalSalesBasis({ clinicId, basis });
+            showSuccess(`매출 목표 기준을 "${GOAL_SALES_BASIS_OPTIONS.find(option => option.value === basis)?.label}"(으)로 저장했습니다.`);
+        } catch (err) {
+            setGoalSalesBasis(previous);
+            setError(err.message || '매출 목표 기준 저장에 실패했습니다.');
+        } finally {
+            setBasisSaving(false);
         }
     };
 
@@ -303,8 +331,17 @@ const ClinicOperationsPanel = ({ clinicId, clinicName }) => {
                 <div className="clinic-settings-section-header">
                     <div>
                         <h3>월별 목표</h3>
-                        <p>매출 목표는 수납액(카드+현금+통장) 기준입니다. 비워둔 달은 홈 화면에 "목표 미설정"으로 표시됩니다.</p>
+                        <p>
+                            매출 목표 기준을 고른 뒤 월별 목표를 입력하세요. 총매출은 덴트웹 월간 장부의 "합계(청구포함)"와 같은 기준입니다.
+                            비워둔 달은 홈 화면에 "목표 미설정"으로 표시됩니다.
+                        </p>
                     </div>
+                    <label className="clinic-ops-year-select">
+                        <span>매출 목표 기준</span>
+                        <select value={goalSalesBasis} disabled={disabled || basisSaving} onChange={event => handleChangeBasis(event.target.value)}>
+                            {GOAL_SALES_BASIS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </select>
+                    </label>
                     <label className="clinic-ops-year-select">
                         <span>연도</span>
                         <select value={goalYear} onChange={event => setGoalYear(Number(event.target.value))}>

@@ -10,6 +10,7 @@ import {
     subscribeLiveStats,
     toDateKey,
 } from '../../utils/clinicOperations';
+import { loadGoalSalesBasis } from '../../utils/clinicFeatureSettings';
 import './HomeLiveSection.css';
 
 const STALE_MINUTES = 10;
@@ -52,6 +53,7 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
     const [weekly, setWeekly] = useState(null);
     const [holidays, setHolidays] = useState([]);
     const [goal, setGoal] = useState(null);
+    const [goalSalesBasis, setGoalSalesBasis] = useState('total');
     const [opsKey, setOpsKey] = useState(0);
 
     const year = now.getFullYear();
@@ -74,7 +76,9 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
             loadOperatingHours(clinicId),
             loadHolidays(clinicId, { from: monthStart, to: monthEnd }),
             loadGoalsForYear(clinicId, year),
-        ]).then(([hoursResult, holidayResult, goalResult]) => {
+            loadGoalSalesBasis(clinicId),
+        ]).then(([hoursResult, holidayResult, goalResult, basisResult]) => {
+            if (!cancelled) setGoalSalesBasis(basisResult.status === 'fulfilled' ? basisResult.value : 'total');
             if (cancelled) return;
             setWeekly(hoursResult.status === 'fulfilled' ? hoursResult.value.weekly : null);
             setHolidays(holidayResult.status === 'fulfilled' ? holidayResult.value : []);
@@ -139,9 +143,29 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
 
     // 목표 달성 계산에 쓸 이번 달 실적: 덴트웹(이번 달 데이터) 우선, 없으면 엑셀
     const liveMonth = live && String(live.stat_date).slice(0, 7) === todayKey.slice(0, 7) ? live.payload?.month : null;
+    // claim(보험청구액)이 없으면 null — 예전 버전 중계 프로그램 데이터 등
+    const toNumberOrNull = (value) => (value === undefined || value === null || value === '' ? null : Number(value));
     const monthActual = liveMonth
-        ? { paid: Number(liveMonth.paid || 0), newPatients: Number(liveMonth.newPatients || 0), source: 'live' }
-        : { paid: Number(excelMonthActual?.paid || 0), newPatients: Number(excelMonthActual?.newPatients || 0), source: 'excel' };
+        ? {
+            paid: Number(liveMonth.paid || 0),
+            claim: toNumberOrNull(liveMonth.insuranceClaim),
+            newPatients: Number(liveMonth.newPatients || 0),
+            source: 'live',
+        }
+        : {
+            paid: Number(excelMonthActual?.paid || 0),
+            claim: toNumberOrNull(excelMonthActual?.claim),
+            newPatients: Number(excelMonthActual?.newPatients || 0),
+            source: 'excel',
+        };
+    // 매출 목표 기준: 총매출(수납 + 청구) 또는 수납액만 — 관리자모드에서 치과별 설정
+    const useTotalSales = goalSalesBasis === 'total' && monthActual.claim !== null;
+    const monthSales = useTotalSales ? monthActual.paid + monthActual.claim : monthActual.paid;
+    const todayClaim = today ? toNumberOrNull(today.insuranceClaim) : null;
+    const todaySales = today
+        ? (goalSalesBasis === 'total' && todayClaim !== null ? Number(today.paid || 0) + todayClaim : Number(today.paid || 0))
+        : 0;
+    const salesBasisLabel = useTotalSales ? '청구 포함' : '수납 기준';
 
     const expectedRate = business.totalDays > 0 ? (business.elapsedDays / business.totalDays) * 100 : 0;
 
@@ -162,7 +186,10 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
     };
 
     const goalRows = [
-        buildGoalRow({ key: 'sales', label: '매출', icon: WalletCards, actual: monthActual.paid, target: goal?.salesGoal, formatShort: shortWon }),
+        {
+            ...buildGoalRow({ key: 'sales', label: '매출', icon: WalletCards, actual: monthSales, target: goal?.salesGoal, formatShort: shortWon }),
+            breakdown: useTotalSales ? `수납 ${shortWon(monthActual.paid)} + 청구 ${shortWon(monthActual.claim)}` : '',
+        },
         buildGoalRow({ key: 'newPatients', label: '신환', icon: UserPlus, actual: monthActual.newPatients, target: goal?.newPatientGoal, formatShort: people }),
     ];
 
@@ -193,7 +220,10 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
         return {
             expectedNow,
             items: [
-                build({ key: 'sales', label: '매출', valueLabel: '수납', monthTarget: goal?.salesGoal, monthValue: monthActual.paid, todayValue: Number(today.paid || 0), format: manWon }),
+                {
+                    ...build({ key: 'sales', label: '매출', valueLabel: useTotalSales ? '매출' : '수납', monthTarget: goal?.salesGoal, monthValue: monthSales, todayValue: todaySales, format: manWon }),
+                    breakdown: useTotalSales && todayClaim !== null ? `수납 ${manWon(today.paid)} + 청구 ${manWon(todayClaim)}` : '',
+                },
                 build({ key: 'newPatients', label: '신환', valueLabel: '현재', monthTarget: goal?.newPatientGoal, monthValue: monthActual.newPatients, todayValue: Number(today.newPatients || 0), format: people, wholeNumber: true }),
             ].filter(Boolean),
         };
@@ -217,7 +247,7 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
             subtitle={`영업일 ${business.totalDays}일 중 ${business.completedDays}일 경과 · 오늘 포함 남은 영업일 ${business.remainingDayCount}일`}
             headerRight={(
                 <span className="home-goal-source">
-                    {monthActual.source === 'live' ? 'EMR 실시간' : '엑셀 업로드 기준'}
+                    {monthActual.source === 'live' ? 'EMR 실시간' : '엑셀 업로드 기준'} · {salesBasisLabel}
                 </span>
             )}
         >
@@ -239,6 +269,7 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
                                 <strong>{row.formatShort(row.actual)}</strong>
                                 <span> / {row.formatShort(row.target)}</span>
                             </div>
+                            {row.breakdown && <div className="home-goal-breakdown">{row.breakdown}</div>}
                             <span className={`home-goal-pace-badge tone-${row.pace.tone}`}>{row.pace.text}</span>
                             <dl className="home-goal-facts">
                                 {row.remaining > 0 ? (
@@ -290,6 +321,7 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
                                                 <strong>{item.remaining > 0 ? item.format(item.remaining) : item.format(item.value - item.target)}</strong>
                                             </div>
                                         </div>
+                                        {item.breakdown && <div className="home-goal-today-breakdown">오늘 {item.breakdown}</div>}
                                         <div className="home-goal-today-bar">
                                             <div className="home-goal-today-fill" style={{ width: `${Math.min(100, item.rate)}%` }} />
                                             {todayGoals.expectedNow !== null && item.rate < 100 && (
@@ -341,14 +373,16 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
                 <>
                     <div className="home-live-kpis">
                         {[
-                            { label: '오늘 수납액', value: won(today.paid), sub: `카드 ${shortWon(today.card)} · 현금 ${shortWon(today.cash)} · 통장 ${shortWon(today.bank)}`, color: '#3b82f6', icon: WalletCards },
+                            todayClaim !== null
+                                ? { label: '오늘 매출', value: won(Number(today.paid || 0) + todayClaim), sub: `수납 ${shortWon(today.paid)} · 청구 ${shortWon(todayClaim)}`, title: `수납: 카드 ${won(today.card)} · 현금 ${won(today.cash)} · 통장 ${won(today.bank)}`, color: '#3b82f6', icon: WalletCards }
+                                : { label: '오늘 수납액', value: won(today.paid), sub: `카드 ${shortWon(today.card)} · 현금 ${shortWon(today.cash)} · 통장 ${shortWon(today.bank)}`, color: '#3b82f6', icon: WalletCards },
                             { label: '내원 환자', value: people(today.visits), sub: '오늘 접수 기준', color: '#8b5cf6', icon: Users },
                             { label: '신환', value: people(today.newPatients), sub: '처음 오신 환자', color: '#ec4899', icon: UserPlus },
                             { label: '구환', value: people(today.returningPatients), sub: '재내원 환자', color: '#10b981', icon: Repeat },
                         ].map(item => {
                             const Icon = item.icon;
                             return (
-                                <div key={item.label} className="home-live-kpi" style={{ borderTopColor: item.color }}>
+                                <div key={item.label} className="home-live-kpi" style={{ borderTopColor: item.color }} title={item.title || undefined}>
                                     <span className="home-live-kpi-label"><Icon size={14} /> {item.label}</span>
                                     <span className="home-live-kpi-value" style={{ color: item.color }}>{item.value}</span>
                                     <span className="home-live-kpi-sub">{item.sub}</span>

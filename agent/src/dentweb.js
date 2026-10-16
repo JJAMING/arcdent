@@ -78,14 +78,18 @@ export const fetchPaymentsByPaidTime = async (fromDate, toDate) => {
     return result.recordset;
 };
 
-/** 오늘 진료분 진료비 구성 (총진료비/공단부담금/본인부담금/비급여) */
-export const fetchTreatmentFeesByDate = async (date) => {
+/**
+ * 진료일 기준 진료비 구성 (총진료비/공단부담금/본인부담금/비급여), fromDate~toDate 포함
+ * 공단부담금(청구액)은 덴트웹 월간 장부처럼 진료일 기준으로 집계합니다.
+ */
+export const fetchTreatmentFeesByDateRange = async (fromDate, toDate) => {
     const result = await pool.request()
-        .input('date', sql.Char(8), ymd(date))
+        .input('from', sql.Char(8), ymd(fromDate))
+        .input('to', sql.Char(8), ymd(toDate))
         .query(`
-            SELECT n구분, n총진료비, n공단부담금, n본인부담금, n비급여진료비
+            SELECT sz진료일, n구분, n총진료비, n공단부담금, n본인부담금, n비급여진료비
             FROM dbo.PUB_V진료비내역
-            WHERE sz진료일 = @date
+            WHERE sz진료일 >= @from AND sz진료일 <= @to
         `);
     return result.recordset;
 };

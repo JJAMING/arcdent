@@ -8,7 +8,7 @@ import {
     fetchReceptions,
     fetchReservations,
     fetchStaffNames,
-    fetchTreatmentFeesByDate,
+    fetchTreatmentFeesByDateRange,
     ymd,
 } from './dentweb.js';
 import {
@@ -96,11 +96,13 @@ const collect = async () => {
 
     const todayPayments = summarizePayments(todayPaymentRows, staffNames);
     const monthPayments = summarizePayments(monthPaymentRows, staffNames);
-    const todayFees = summarizeTreatmentFees(await fetchTreatmentFeesByDate(today));
+    const monthFeeRows = await fetchTreatmentFeesByDateRange(monthStart, today);
+    const monthFees = summarizeTreatmentFees(monthFeeRows);
+    const todayFees = summarizeTreatmentFees(monthFeeRows.filter(row => String(row.sz진료일 || '').trim() === todayPrefix));
     const reservations = summarizeReservations(await fetchReservations(today));
 
     const statDate = `${todayPrefix.slice(0, 4)}-${todayPrefix.slice(4, 6)}-${todayPrefix.slice(6, 8)}`;
-    const payload = buildPayload({ todayReception, todayPayments, todayFees, reservations, monthPayments, monthReceptionDays });
+    const payload = buildPayload({ todayReception, todayPayments, todayFees, reservations, monthPayments, monthFees, monthReceptionDays });
     return { statDate, payload, refundCount: todayPayments.refundCount };
 };
 
@@ -136,7 +138,9 @@ const printSummary = ({ statDate, payload, refundCount }) => {
     console.log(`[오늘] 진행     접수 ${t.status.waiting} / 준비완료 ${t.status.ready} / 진료중 ${t.status.inTreatment} / 진료완료 ${t.status.treated} / 수납완료 ${t.status.paid}`);
     console.log(`[오늘] 예약     전체 ${t.reservations.total} / 이행 ${t.reservations.done} / 미이행 ${t.reservations.pending} / 취소 ${t.reservations.canceled} / 보류 ${t.reservations.hold} / 신환예약 ${t.reservations.newPatient}`);
     console.log(`[오늘] 의사별   ${t.doctors.map(d => `${d.name} ${won(d.paid)}`).join(', ') || '-'}`);
-    console.log(`[이번달] 수납액 ${won(m.paid)} / 내원 ${m.visits}명 / 신환 ${m.newPatients}명 (${m.daysCounted}일치)`);
+    console.log(`[오늘] 매출     ${won(t.revenue)}  (수납 ${won(t.paid)} + 청구 ${won(t.insuranceClaim)})`);
+    console.log(`[이번달] 매출   ${won(m.revenue)}  (수납 ${won(m.paid)} + 청구 ${won(m.insuranceClaim)})  ← 덴트웹 장부 '합계(청구포함)'와 비교`);
+    console.log(`[이번달] 내원 ${m.visits}명 / 신환 ${m.newPatients}명 (${m.daysCounted}일치)`);
     console.log('====================================================');
     console.log('덴트웹의 일일/월 마감 화면 숫자와 비교해 주세요.');
     console.log('');

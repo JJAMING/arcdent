@@ -111,12 +111,14 @@ export const summarizeReservations = (rows = []) => rows.reduce((acc, row) => {
 }, { total: 0, done: 0, pending: 0, canceled: 0, hold: 0, newPatient: 0 });
 
 /** 아크덴트 홈 화면(HomeLiveSection)이 읽는 payload 형태로 조립 */
-export const buildPayload = ({ todayReception, todayPayments, todayFees, reservations, monthPayments, monthReceptionDays }) => {
+// 매출(revenue) = 수납액 + 공단부담금(청구액) — 덴트웹 월간 장부의 "합계(청구포함)"와 같은 기준
+export const buildPayload = ({ todayReception, todayPayments, todayFees, reservations, monthPayments, monthFees, monthReceptionDays }) => {
     const monthVisits = monthReceptionDays.reduce((acc, day) => acc + day.visits, 0);
     const monthNewPatients = monthReceptionDays.reduce((acc, day) => acc + day.newPatients, 0);
     return {
         generatedAt: new Date().toISOString(),
         today: {
+            revenue: todayPayments.paid + todayFees.insuranceClaim,
             paid: todayPayments.paid,
             card: todayPayments.card,
             cash: todayPayments.cash,
@@ -131,7 +133,10 @@ export const buildPayload = ({ todayReception, todayPayments, todayFees, reserva
             doctors: todayPayments.doctors,
         },
         month: {
+            revenue: monthPayments.paid + monthFees.insuranceClaim,
             paid: monthPayments.paid,
+            insuranceClaim: monthFees.insuranceClaim,
+            totalFee: monthFees.totalFee,
             visits: monthVisits,
             newPatients: monthNewPatients,
             daysCounted: monthReceptionDays.length,

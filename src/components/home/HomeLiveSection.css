@@ -211,6 +211,13 @@
     font-weight: 900;
 }
 
+.home-goal-breakdown {
+    margin-top: -0.3rem;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
 .home-goal-pace-badge {
     padding: 0.25rem 0.65rem;
     border-radius: 999px;
@@ -379,6 +386,13 @@
 .home-goal-today-tiles .is-remaining span,
 .home-goal-today-tiles .is-remaining strong {
     color: var(--today-color);
+}
+
+.home-goal-today-breakdown {
+    margin-top: -0.2rem;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 700;
 }
 
 .home-goal-today-bar {

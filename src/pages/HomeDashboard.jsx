@@ -467,6 +467,7 @@ const HomeDashboard = () => {
         const ledgerRow = stores.ledger?.[yearKey]?.[monthLabel] || {};
         return {
             paid: Number(salesRow.netSales || 0),
+            claim: Number(salesRow.insurance || 0),
             newPatients: Number(ledgerRow.newPt || salesRow.newPatient || 0),
         };
     }, [stores.sales, stores.ledger]);

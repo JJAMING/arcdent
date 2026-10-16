@@ -61,10 +61,13 @@ const payload = buildPayload({
     todayFees: fees,
     reservations,
     monthPayments: { paid: 1000000 },
+    monthFees: { insuranceClaim: 400000, totalFee: 1500000 },
     monthReceptionDays: [{ visits: 10, newPatients: 2 }, receptions],
 });
 assert.equal(payload.today.paid, 90000);
 assert.equal(payload.month.visits, 13);
+assert.equal(payload.month.revenue, 1400000); // 수납 + 청구
+assert.equal(payload.today.revenue, 90000 + 60000);
 assert.equal(payload.month.newPatients, 3);
 
 // payload에 개인정보 키가 섞이지 않았는지 확인
