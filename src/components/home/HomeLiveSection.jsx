@@ -139,11 +139,12 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
             const base = new Date();
             const from = toDateKey(new Date(base.getFullYear(), base.getMonth() - 12, 1));
             const to = toDateKey(base);
-            const yesterday = toDateKey(new Date(base.getFullYear(), base.getMonth(), base.getDate() - 1));
-            const lastWeek = toDateKey(new Date(base.getFullYear(), base.getMonth(), base.getDate() - 7));
+            // 시간별 기록: 직전 진료일 후보(최근 7일) + 같은 요일 2~4주 전
+            const intradayDates = [1, 2, 3, 4, 5, 6, 7, 14, 21, 28]
+                .map(back => toDateKey(new Date(base.getFullYear(), base.getMonth(), base.getDate() - back)));
             Promise.allSettled([
                 loadDailyStats(clinicId, from, to),
-                loadIntradayStats(clinicId, [yesterday, lastWeek]),
+                loadIntradayStats(clinicId, intradayDates),
             ]).then(([dailyResult, intradayResult]) => {
                 if (cancelled) return;
                 if (dailyResult.status === 'fulfilled') setDaily(dailyResult.value);
@@ -416,26 +417,46 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
         return `${m}월 ${d}일(${weekdayOf(iso)})`;
     };
 
-    // 비교 기준 2개: 오늘이면 "어제 이 시간까지 / 지난주 같은 요일 이 시간까지", 지난 날짜면 "전날 / 지난주 같은 요일"
-    const comparisons = (() => {
-        if (!viewMetrics) return [];
-        const prevIso = shiftIso(viewDate, -1);
-        const weekIso = shiftIso(viewDate, -7);
-        if (!isViewingToday) {
-            return [
-                { label: '전날', base: daily[prevIso] || null },
-                { label: `지난주 ${weekdayOf(weekIso)}`, base: daily[weekIso] || null },
-            ];
+    // 진료가 없었던 날(휴진·공휴일)은 비교 대상에서 제외
+    const isOpenDay = (metrics) => Boolean(metrics) && (
+        Number(metrics.visits || 0) > 0 || Number(metrics.paid || 0) !== 0 || Number(metrics.revenue || 0) !== 0
+    );
+    const shortDate = (iso) => `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))}`;
+    // 매시간 누적 기록은 그 시간의 마지막 값이라, 정각~29분에는 직전 시간 기록과 비교
+    const hourRef = now.getMinutes() < 30 ? now.getHours() - 1 : now.getHours();
+
+    /**
+     * 비교 기준 1개 만들기
+     * candidates: 거슬러 올라가며 볼 날짜들(가까운 순) — 처음 만나는 진료일을 씀
+     * mode: 'same-time'(오늘 vs 그날 이 시간까지) | 'progress'(오늘 vs 그날 하루 전체 → 도달률) | 'final'(지난 날짜끼리)
+     */
+    const buildComparison = (kind, candidates) => {
+        const found = candidates.find(iso => isOpenDay(daily[iso]));
+        if (!found) return { key: kind, label: kind === 'prev' ? '직전 진료일' : `지난 ${weekdayOf(viewDate)}요일`, base: null };
+        const first = candidates[0];
+        let label;
+        if (kind === 'prev') label = found === first ? (isViewingToday ? '어제' : '전날') : '직전 진료일';
+        else {
+            const weeksBack = Math.round((Date.parse(viewDate) - Date.parse(found)) / (7 * 86400000));
+            label = weeksBack === 1 ? `지난주 ${weekdayOf(found)}` : `${weeksBack}주 전 ${weekdayOf(found)}`;
         }
-        // 매시간 누적 기록은 그 시간의 마지막 값이라, 정각~29분에는 직전 시간 기록과 비교
-        const hourRef = now.getMinutes() < 30 ? now.getHours() - 1 : now.getHours();
-        const yAt = hourRef >= 0 ? pickIntradayAt(intraday[prevIso], hourRef) : null;
-        const wAt = hourRef >= 0 ? pickIntradayAt(intraday[weekIso], hourRef) : null;
-        return [
-            yAt ? { label: '어제 이 시간', base: yAt } : { label: '어제 하루', base: daily[prevIso] || null },
-            wAt ? { label: `지난주 ${weekdayOf(weekIso)} 이 시간`, base: wAt } : { label: `지난주 ${weekdayOf(weekIso)} 하루`, base: daily[weekIso] || null },
-        ];
-    })();
+        if (!isViewingToday) return { key: kind, label, iso: found, base: daily[found], mode: 'final' };
+        const atTime = hourRef >= 0 ? pickIntradayAt(intraday[found], hourRef) : null;
+        return atTime
+            ? { key: kind, label: `${label} 이 시간`, iso: found, base: atTime, mode: 'same-time' }
+            : { key: kind, label: `${label} 하루`, iso: found, base: daily[found], mode: 'progress' };
+    };
+
+    const comparisons = viewMetrics ? [
+        buildComparison('prev', Array.from({ length: 7 }, (_, i) => shiftIso(viewDate, -(i + 1)))),
+        buildComparison('week', [1, 2, 3, 4].map(weeks => shiftIso(viewDate, -7 * weeks))),
+    ] : [];
+
+    // 최근 7일 미니 그래프용 (보고 있는 날짜 포함, 오늘은 실시간 값)
+    const last7 = Array.from({ length: 7 }, (_, i) => {
+        const iso = shiftIso(viewDate, i - 6);
+        return { iso, metrics: iso === todayKey ? todayMetrics : daily[iso] };
+    });
 
     const kpis = viewMetrics ? [
         {
@@ -443,7 +464,8 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
             label: isViewingToday ? (useTotal && todayClaim !== null ? '오늘 매출' : '오늘 수납액') : (useTotal ? '매출' : '수납액'),
             value: won(salesOf(viewMetrics, useTotal)),
             raw: (metrics) => salesOf(metrics, useTotal),
-            unit: 'won',
+            format: shortWon,
+            diffMode: 'pct',
             sub: useTotal && viewMetrics.claim !== undefined
                 ? `수납 ${shortWon(viewMetrics.paid)} · 청구 ${shortWon(viewMetrics.claim)}`
                 : `카드 ${shortWon(viewMetrics.card)} · 현금 ${shortWon(viewMetrics.cash)} · 통장 ${shortWon(viewMetrics.bank)}`,
@@ -451,10 +473,41 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
             color: '#3b82f6',
             icon: WalletCards,
         },
-        { key: 'visits', label: '내원 환자', value: people(viewMetrics.visits), raw: (m) => Number(m?.visits || 0), unit: 'pct', sub: '접수 기준', color: '#8b5cf6', icon: Users },
-        { key: 'newPatients', label: '신환', value: people(viewMetrics.newPatients), raw: (m) => Number(m?.newPatients || 0), unit: 'people', sub: '처음 오신 환자', color: '#ec4899', icon: UserPlus },
-        { key: 'returningPatients', label: '구환', value: people(viewMetrics.returningPatients), raw: (m) => Number(m?.returningPatients || 0), unit: 'pct', sub: '재내원 환자', color: '#10b981', icon: Repeat },
+        { key: 'visits', label: '내원 환자', value: people(viewMetrics.visits), raw: (m) => Number(m?.visits || 0), format: people, diffMode: 'pct', sub: '접수 기준', color: '#8b5cf6', icon: Users },
+        { key: 'newPatients', label: '신환', value: people(viewMetrics.newPatients), raw: (m) => Number(m?.newPatients || 0), format: people, diffMode: 'count', sub: '처음 오신 환자', color: '#ec4899', icon: UserPlus },
+        { key: 'returningPatients', label: '구환', value: people(viewMetrics.returningPatients), raw: (m) => Number(m?.returningPatients || 0), format: people, diffMode: 'pct', sub: '재내원 환자', color: '#10b981', icon: Repeat },
     ] : [];
+
+    const renderComparison = (item, comparison, current) => {
+        if (!comparison.base) {
+            return (
+                <div key={comparison.key} className="home-live-compare-row">
+                    <span className="home-live-compare-label">{comparison.label}</span>
+                    <span className="home-live-compare-base" />
+                    <span className="home-compare-chip">비교할 진료일 없음</span>
+                </div>
+            );
+        }
+        const base = item.raw(comparison.base);
+        let chip;
+        if (comparison.mode === 'progress') {
+            // 진행 중인 오늘 vs 끝난 하루 → 증감이 아니라 '도달률'
+            const reached = base > 0 ? Math.round((current / base) * 100) : null;
+            chip = <span className="home-compare-chip is-progress">{reached === null ? '-' : `${reached}% 도달`}</span>;
+        } else if (item.diffMode === 'count') {
+            const diff = Math.round(current - base);
+            chip = <span className={`home-compare-chip is-${diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat'}`}>{diff > 0 ? '▲' : diff < 0 ? '▼' : ''} {diff === 0 ? '같음' : `${Math.abs(diff)}명`}</span>;
+        } else {
+            chip = <ChangeChip current={current} previous={base} unit="won" />;
+        }
+        return (
+            <div key={comparison.key} className="home-live-compare-row" title={`${shortDate(comparison.iso)}(${weekdayOf(comparison.iso)}) 기준`}>
+                <span className="home-live-compare-label">{comparison.label}</span>
+                <span className="home-live-compare-base">{item.format(base)}</span>
+                {chip}
+            </div>
+        );
+    };
 
     const viewReservations = viewMetrics?.reservations || null;
     const hasHistory = Object.keys(daily).length > 0;
@@ -503,19 +556,22 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
                             const current = item.raw(viewMetrics);
                             return (
                                 <div key={item.key} className="home-live-kpi" style={{ borderTopColor: item.color }} title={item.title || undefined}>
-                                    <span className="home-live-kpi-label"><Icon size={14} /> {item.label}</span>
-                                    <span className="home-live-kpi-value" style={{ color: item.color }}>{item.value}</span>
-                                    <span className="home-live-kpi-sub">{item.sub}</span>
+                                    <div className="home-live-kpi-top">
+                                        <div className="home-live-kpi-main">
+                                            <span className="home-live-kpi-label"><Icon size={15} /> {item.label}</span>
+                                            <span className="home-live-kpi-value" style={{ color: item.color }}>{item.value}</span>
+                                            <span className="home-live-kpi-sub">{item.sub}</span>
+                                        </div>
+                                        <MiniBars
+                                            values={last7.map(day => ({ iso: day.iso, value: day.metrics && isOpenDay(day.metrics) ? item.raw(day.metrics) : null }))}
+                                            activeIso={viewDate}
+                                            color={item.color}
+                                            format={item.format}
+                                        />
+                                    </div>
                                     {comparisons.length > 0 && (
                                         <div className="home-live-compare">
-                                            {comparisons.map(comparison => (
-                                                <div key={comparison.label}>
-                                                    <span>{comparison.label}</span>
-                                                    {comparison.base
-                                                        ? <ChangeChip current={current} previous={item.raw(comparison.base)} unit={item.unit === 'people' ? 'people' : 'won'} />
-                                                        : <span className="home-compare-chip">-</span>}
-                                                </div>
-                                            ))}
+                                            {comparisons.map(comparison => renderComparison(item, comparison, current))}
                                         </div>
                                     )}
                                 </div>
@@ -592,6 +648,29 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
                 </div>
             )}
         </>
+    );
+};
+
+// 최근 7일 미니 막대그래프 (휴진일은 빈칸, 보고 있는 날짜는 진하게)
+const MiniBars = ({ values, activeIso, color, format }) => {
+    const max = Math.max(1, ...values.map(item => Number(item.value || 0)));
+    return (
+        <div className="home-mini-bars" aria-hidden="true">
+            <div className="home-mini-bars-plot">
+                {values.map(item => (
+                    <span
+                        key={item.iso}
+                        className={item.iso === activeIso ? 'is-active' : ''}
+                        title={`${item.iso.slice(5).replace('-', '/')} ${item.value === null ? '휴진/기록 없음' : format(item.value)}`}
+                        style={{
+                            height: item.value === null ? '3px' : `${Math.max(6, (Number(item.value) / max) * 100)}%`,
+                            background: item.value === null ? 'var(--border-color)' : color,
+                        }}
+                    />
+                ))}
+            </div>
+            <span className="home-mini-bars-caption">최근 7일</span>
+        </div>
     );
 };
 

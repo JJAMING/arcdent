@@ -48,14 +48,15 @@
 
 .home-live-kpis {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.65rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.8rem;
 }
 
 .home-live-kpi {
     display: grid;
+    align-content: start;
     gap: 0.25rem;
-    padding: 0.8rem 0.85rem;
+    padding: 0.95rem 1rem;
     border: 1px solid var(--border-color);
     border-top: 3px solid;
     border-radius: 0.7rem;
@@ -73,7 +74,7 @@
 }
 
 .home-live-kpi-value {
-    font-size: 1.35rem;
+    font-size: 1.75rem;
     font-weight: 900;
     line-height: 1.2;
     white-space: nowrap;
@@ -561,21 +562,6 @@
     border-top: 1px dashed var(--border-color);
 }
 
-.home-live-compare > div {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.3rem;
-    color: var(--text-secondary);
-    font-size: 0.7rem;
-    white-space: nowrap;
-}
-
-.home-live-compare > div > span:first-child {
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
 .home-compare-chip {
     color: var(--text-secondary);
     font-size: 0.74rem;
@@ -747,5 +733,103 @@
 
     .home-calendar-value {
         font-size: 0.6rem;
+    }
+}
+
+/* ---- 2×2 실시간 칸: 미니 그래프 + 비교 줄 ---- */
+.home-live-kpi-top {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.home-live-kpi-main {
+    display: grid;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.home-mini-bars {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 0.5rem;
+}
+
+.home-mini-bars-plot {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 30px;
+}
+
+.home-mini-bars-plot span {
+    flex: 1;
+    border-radius: 2px 2px 0 0;
+    opacity: 0.35;
+    transition: height 0.5s ease;
+}
+
+.home-mini-bars-plot span.is-active {
+    opacity: 1;
+}
+
+.home-mini-bars-caption {
+    color: var(--text-secondary);
+    font-size: 0.66rem;
+    font-weight: 700;
+}
+
+.home-live-compare-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.78rem;
+}
+
+.home-live-compare-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+    font-weight: 700;
+}
+
+.home-live-compare-label small {
+    font-weight: 600;
+    opacity: 0.8;
+}
+
+.home-live-compare-base {
+    color: var(--text-primary);
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.home-live-compare-row .home-compare-chip {
+    text-align: right;
+    font-size: 0.8rem;
+}
+
+.home-compare-chip.is-progress {
+    color: var(--text-secondary);
+}
+
+@media (max-width: 640px) {
+    .home-mini-bars {
+        display: none;
+    }
+
+    .home-live-kpi-value {
+        font-size: 1.3rem;
+    }
+
+    .home-live-compare-row {
+        font-size: 0.7rem;
+        gap: 0.35rem;
+    }
+
+    .home-live-compare-row .home-compare-chip {
+        min-width: 0;
     }
 }
