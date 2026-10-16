@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT } from './config.js';
 import {
+    fetchNewRegistrationsByRange,
     fetchPaymentsByPaidTime,
     fetchReceptions,
     fetchReservationsByRange,
@@ -25,6 +26,9 @@ import { currentClinicId, historyAvailable, upsertDailyStats } from './uploader.
 const STATE_FILE = path.join(ROOT, 'state.json');
 const BACKFILL_MONTHS = 13;
 const NIGHTLY_DAYS = 7;
+// 계산 방식이 바뀌면 숫자를 올립니다 → 13개월 기록을 처음부터 다시 채움
+//   2: 접수목록이 없는 오래된 날짜(약 30일 이전)의 내원·신환을 대체 계산
+const METRICS_VERSION = 2;
 
 const readState = () => {
     try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); } catch { return {}; }
@@ -43,10 +47,11 @@ const fromIsoDate = (text) => {
 
 /** fromDate ~ toDate(포함) 하루하루의 기록을 덴트웹에서 계산 */
 export const computeDays = async (fromDate, toDate, staffNames) => {
-    const [paymentRows, feeRows, reservationRows] = await Promise.all([
+    const [paymentRows, feeRows, reservationRows, registrations] = await Promise.all([
         fetchPaymentsByPaidTime(fromDate, addDays(toDate, 1)),
         fetchTreatmentFeesByDateRange(fromDate, toDate),
         fetchReservationsByRange(fromDate, toDate),
+        fetchNewRegistrationsByRange(fromDate, toDate),
     ]);
     const group = (rows, keyOf) => rows.reduce((map, row) => {
         const key = keyOf(row);
@@ -61,7 +66,26 @@ export const computeDays = async (fromDate, toDate, staffNames) => {
     const rows = [];
     for (let day = startOfDay(fromDate); day <= toDate; day = addDays(day, 1)) {
         const key = ymd(day);
-        const reception = summarizeReceptions(await fetchReceptions(day));
+        let reception = summarizeReceptions(await fetchReceptions(day));
+        let visitSource = 'reception';
+        // 덴트웹 접수목록은 최근 약 30일만 제공 → 그보다 오래된 날은
+        //   내원 = 그날 진료비 기록이 있는 환자 수, 신환 = 그날 등록한 환자 수 로 대체 계산
+        //   (최근 날짜로 비교 시 신환 일치, 내원 1~4% 차이)
+        if (reception.visits === 0) {
+            const patientIds = new Set((feesByDay.get(key) || [])
+                .filter(row => Number(row.n구분) !== 2 && Number(row.n환자ID) > 0)
+                .map(row => Number(row.n환자ID)));
+            if (patientIds.size > 0) {
+                const newPatients = Math.min(registrations.get(key) || 0, patientIds.size);
+                reception = {
+                    visits: patientIds.size,
+                    newPatients,
+                    returningPatients: patientIds.size - newPatients,
+                    status: reception.status,
+                };
+                visitSource = 'estimated';
+            }
+        }
         rows.push({
             statDate: toIsoDate(day),
             metrics: buildDailyMetrics({
@@ -71,6 +95,7 @@ export const computeDays = async (fromDate, toDate, staffNames) => {
                 reservations: summarizeReservations(reservationsByDay.get(key) || []),
             }),
         });
+        rows[rows.length - 1].metrics.visitSource = visitSource;
     }
     return rows;
 };
@@ -87,6 +112,12 @@ export const maintainHistory = async ({ staffNames, log }) => {
     const yesterday = addDays(today, -1);
     let state = readState();
     if (state.clinicId !== clinicId) state = { clinicId }; // 다른 치과 계정으로 바뀌면 처음부터
+    if (state.metricsVersion !== METRICS_VERSION) {
+        // 계산 방식이 바뀜 → 지난 기록 전체 다시 채우기
+        state = { clinicId, metricsVersion: METRICS_VERSION };
+        writeState(state);
+        log('INFO', '계산 방식이 바뀌어 지난 기록을 처음부터 다시 채웁니다.');
+    }
 
     // 1) 매일 밤: 최근 7일 재계산 (어제 최종 숫자 확정 포함)
     if (state.lastNightly !== toIsoDate(today)) {

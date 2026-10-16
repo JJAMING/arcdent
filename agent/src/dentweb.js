@@ -87,7 +87,7 @@ export const fetchTreatmentFeesByDateRange = async (fromDate, toDate) => {
         .input('from', sql.Char(8), ymd(fromDate))
         .input('to', sql.Char(8), ymd(toDate))
         .query(`
-            SELECT sz진료일, n구분, n총진료비, n공단부담금, n본인부담금, n비급여진료비
+            SELECT sz진료일, n환자ID, n구분, n총진료비, n공단부담금, n본인부담금, n비급여진료비
             FROM dbo.PUB_V진료비내역
             WHERE sz진료일 >= @from AND sz진료일 <= @to
         `);
@@ -120,4 +120,22 @@ export const fetchReservationsByRange = async (fromDate, toDate) => {
             WHERE sz예약시각 >= @from AND sz예약시각 < @to
         `);
     return result.recordset;
+};
+
+/**
+ * 날짜별 신규 등록 환자 수 { 'yyyymmdd': 명 } — 접수목록이 없는 오래된 날짜의 '신환' 대체 계산용
+ * (덴트웹 접수목록은 최근 약 30일만 제공됨)
+ */
+export const fetchNewRegistrationsByRange = async (fromDate, toDate) => {
+    const next = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate() + 1);
+    const result = await pool.request()
+        .input('from', sql.VarChar(14), `${ymd(fromDate)}000000`)
+        .input('to', sql.VarChar(14), `${ymd(next)}000000`)
+        .query(`
+            SELECT LEFT(sz등록시각, 8) AS d, COUNT(*) AS cnt
+            FROM dbo.PUB_V환자정보
+            WHERE sz등록시각 >= @from AND sz등록시각 < @to
+            GROUP BY LEFT(sz등록시각, 8)
+        `);
+    return new Map(result.recordset.map(row => [String(row.d), Number(row.cnt) || 0]));
 };

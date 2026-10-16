@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 //   - 자기 치과 EMR 접속 설정(clinic_emr_settings) 읽기
 //   - 자기 치과 중계 프로그램 상태(clinic_agent_status) 쓰기
 
-export const AGENT_VERSION = '1.3.0';
+export const AGENT_VERSION = '1.3.1';
 
 let client = null;
 let clinicId = null;
