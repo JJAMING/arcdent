@@ -143,3 +143,26 @@ export const buildPayload = ({ todayReception, todayPayments, todayFees, reserva
         },
     };
 };
+
+/**
+ * 하루치 기록(일별 기록 테이블용). 실시간 payload 의 today 와 같은 숫자를 담습니다.
+ * reception: summarizeReceptions 결과, payments: summarizePayments 결과,
+ * fees: summarizeTreatmentFees 결과, reservations: summarizeReservations 결과
+ */
+export const buildDailyMetrics = ({ reception, payments, fees, reservations }) => ({
+    revenue: payments.paid + fees.insuranceClaim,
+    paid: payments.paid,
+    card: payments.card,
+    cash: payments.cash,
+    bank: payments.bank,
+    refund: payments.refund,
+    claim: fees.insuranceClaim,
+    totalFee: fees.totalFee,
+    patientShare: fees.patientShare,
+    nonCovered: fees.nonCovered,
+    visits: reception.visits,
+    newPatients: reception.newPatients,
+    returningPatients: reception.returningPatients,
+    reservations,
+    doctors: payments.doctors,
+});

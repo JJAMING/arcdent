@@ -107,3 +107,17 @@ export const fetchReservations = async (date) => {
         `);
     return result.recordset;
 };
+
+/** 기간 예약 (fromDate 00:00 ~ toDate 다음날 00:00 전) — 날짜별로 나누기 위해 예약시각도 조회 */
+export const fetchReservationsByRange = async (fromDate, toDate) => {
+    const next = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate() + 1);
+    const result = await pool.request()
+        .input('from', sql.Char(12), `${ymd(fromDate)}0000`)
+        .input('to', sql.Char(12), `${ymd(next)}0000`)
+        .query(`
+            SELECT n환자ID, n예약종류, n이행현황, sz예약시각
+            FROM dbo.PUB_V예약정보
+            WHERE sz예약시각 >= @from AND sz예약시각 < @to
+        `);
+    return result.recordset;
+};

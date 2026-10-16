@@ -265,3 +265,14 @@ export const getMonthBusinessDays = ({ now = new Date(), weekly, holidays = [] }
 
     return { totalDays, elapsedDays, remainingDays, remainingDayCount, daysFromToday, completedDays, todayFraction, isOpenToday, isWorkingNow };
 };
+
+/** 한 달의 날짜별 진료일 여부 [1일, 2일, …] (진료 요일이면서 휴무일이 아닌 날 = true) */
+export const getMonthOpenDays = ({ year, month, weekly, holidays = [] }) => {
+    const hours = normalizeWeeklyHours(weekly);
+    const holidaySet = new Set((holidays || []).map(item => String(item.holiday_date || item).slice(0, 10)));
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    return Array.from({ length: lastDay }, (_, index) => {
+        const date = new Date(year, month, index + 1);
+        return hours[date.getDay()].open && !holidaySet.has(toDateKey(date));
+    });
+};

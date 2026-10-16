@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarCheck, Target, UserPlus, Users, WalletCards, Repeat } from 'lucide-react';
+import { CalendarCheck, ChevronLeft, ChevronRight, Target, UserPlus, Users, WalletCards, Repeat } from 'lucide-react';
 import DashboardCard from '../DashboardCard';
 import {
     getMonthBusinessDays,
+    getMonthOpenDays,
     loadGoalsForYear,
     loadHolidays,
     loadLatestLiveStats,
@@ -11,9 +12,13 @@ import {
     toDateKey,
 } from '../../utils/clinicOperations';
 import { loadGoalSalesBasis } from '../../utils/clinicFeatureSettings';
+import { loadDailyStats, loadIntradayStats, pickIntradayAt } from '../../utils/clinicHistory';
+import { ChangeChip, DailyCalendarCard, MonthCompareCard, salesOf } from './HomeHistoryCards';
 import './HomeLiveSection.css';
 
 const STALE_MINUTES = 10;
+const HISTORY_REFRESH_MS = 5 * 60 * 1000;
+const WEEKDAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 const POLL_MS = 60 * 1000;
 
 const won = (value) => `${Math.round(Number(value || 0)).toLocaleString()}원`;
@@ -54,6 +59,9 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
     const [holidays, setHolidays] = useState([]);
     const [goal, setGoal] = useState(null);
     const [goalSalesBasis, setGoalSalesBasis] = useState('total');
+    const [daily, setDaily] = useState({});
+    const [intraday, setIntraday] = useState({});
+    const [pickedDate, setPickedDate] = useState(null); // null = 오늘(실시간)
     const [opsKey, setOpsKey] = useState(0);
 
     const year = now.getFullYear();
@@ -117,6 +125,36 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
             cancelled = true;
             unsubscribe();
             window.clearInterval(poll);
+        };
+    }, [clinicId]);
+
+    // 지난 데이터: 최근 13개월 일별 기록 + 어제/지난주 같은 요일 시간별 기록 (5분마다 새로고침)
+    useEffect(() => {
+        let cancelled = false;
+        setDaily({});
+        setIntraday({});
+        setPickedDate(null);
+        if (!clinicId) return undefined;
+        const load = () => {
+            const base = new Date();
+            const from = toDateKey(new Date(base.getFullYear(), base.getMonth() - 12, 1));
+            const to = toDateKey(base);
+            const yesterday = toDateKey(new Date(base.getFullYear(), base.getMonth(), base.getDate() - 1));
+            const lastWeek = toDateKey(new Date(base.getFullYear(), base.getMonth(), base.getDate() - 7));
+            Promise.allSettled([
+                loadDailyStats(clinicId, from, to),
+                loadIntradayStats(clinicId, [yesterday, lastWeek]),
+            ]).then(([dailyResult, intradayResult]) => {
+                if (cancelled) return;
+                if (dailyResult.status === 'fulfilled') setDaily(dailyResult.value);
+                if (intradayResult.status === 'fulfilled') setIntraday(intradayResult.value);
+            });
+        };
+        load();
+        const timer = window.setInterval(load, HISTORY_REFRESH_MS);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
         };
     }, [clinicId]);
 
@@ -349,13 +387,97 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
         </DashboardCard>
     );
 
+    // ---------------------------------------------------------------------------
+    // 실시간 현황 + 지난 날짜 보기 + 비교
+    // ---------------------------------------------------------------------------
+    const useTotal = goalSalesBasis === 'total';
+    const viewDate = pickedDate || todayKey;
+    const isViewingToday = viewDate === todayKey;
+    // 오늘 숫자(실시간)를 일별 기록과 같은 형태로 맞춤
+    const todayMetrics = today
+        ? {
+            ...today,
+            claim: todayClaim === null ? undefined : todayClaim,
+            revenue: todayClaim === null ? undefined : Number(today.paid || 0) + todayClaim,
+        }
+        : null;
+    const viewMetrics = isViewingToday ? todayMetrics : (daily[viewDate] || null);
+
+    const shiftIso = (iso, days) => {
+        const [y, m, d] = iso.split('-').map(Number);
+        return toDateKey(new Date(y, m - 1, d + days));
+    };
+    const weekdayOf = (iso) => {
+        const [y, m, d] = iso.split('-').map(Number);
+        return WEEKDAY_NAMES[new Date(y, m - 1, d).getDay()];
+    };
+    const dateLabel = (iso) => {
+        const [, m, d] = iso.split('-').map(Number);
+        return `${m}월 ${d}일(${weekdayOf(iso)})`;
+    };
+
+    // 비교 기준 2개: 오늘이면 "어제 이 시간까지 / 지난주 같은 요일 이 시간까지", 지난 날짜면 "전날 / 지난주 같은 요일"
+    const comparisons = (() => {
+        if (!viewMetrics) return [];
+        const prevIso = shiftIso(viewDate, -1);
+        const weekIso = shiftIso(viewDate, -7);
+        if (!isViewingToday) {
+            return [
+                { label: '전날', base: daily[prevIso] || null },
+                { label: `지난주 ${weekdayOf(weekIso)}`, base: daily[weekIso] || null },
+            ];
+        }
+        // 매시간 누적 기록은 그 시간의 마지막 값이라, 정각~29분에는 직전 시간 기록과 비교
+        const hourRef = now.getMinutes() < 30 ? now.getHours() - 1 : now.getHours();
+        const yAt = hourRef >= 0 ? pickIntradayAt(intraday[prevIso], hourRef) : null;
+        const wAt = hourRef >= 0 ? pickIntradayAt(intraday[weekIso], hourRef) : null;
+        return [
+            yAt ? { label: '어제 이 시간', base: yAt } : { label: '어제 하루', base: daily[prevIso] || null },
+            wAt ? { label: `지난주 ${weekdayOf(weekIso)} 이 시간`, base: wAt } : { label: `지난주 ${weekdayOf(weekIso)} 하루`, base: daily[weekIso] || null },
+        ];
+    })();
+
+    const kpis = viewMetrics ? [
+        {
+            key: 'sales',
+            label: isViewingToday ? (useTotal && todayClaim !== null ? '오늘 매출' : '오늘 수납액') : (useTotal ? '매출' : '수납액'),
+            value: won(salesOf(viewMetrics, useTotal)),
+            raw: (metrics) => salesOf(metrics, useTotal),
+            unit: 'won',
+            sub: useTotal && viewMetrics.claim !== undefined
+                ? `수납 ${shortWon(viewMetrics.paid)} · 청구 ${shortWon(viewMetrics.claim)}`
+                : `카드 ${shortWon(viewMetrics.card)} · 현금 ${shortWon(viewMetrics.cash)} · 통장 ${shortWon(viewMetrics.bank)}`,
+            title: `수납: 카드 ${won(viewMetrics.card)} · 현금 ${won(viewMetrics.cash)} · 통장 ${won(viewMetrics.bank)}`,
+            color: '#3b82f6',
+            icon: WalletCards,
+        },
+        { key: 'visits', label: '내원 환자', value: people(viewMetrics.visits), raw: (m) => Number(m?.visits || 0), unit: 'pct', sub: '접수 기준', color: '#8b5cf6', icon: Users },
+        { key: 'newPatients', label: '신환', value: people(viewMetrics.newPatients), raw: (m) => Number(m?.newPatients || 0), unit: 'people', sub: '처음 오신 환자', color: '#ec4899', icon: UserPlus },
+        { key: 'returningPatients', label: '구환', value: people(viewMetrics.returningPatients), raw: (m) => Number(m?.returningPatients || 0), unit: 'pct', sub: '재내원 환자', color: '#10b981', icon: Repeat },
+    ] : [];
+
+    const viewReservations = viewMetrics?.reservations || null;
+    const hasHistory = Object.keys(daily).length > 0;
+
+    const dateBar = (live || hasHistory) && (
+        <div className="home-live-datebar">
+            <button type="button" onClick={() => setPickedDate(shiftIso(viewDate, -1))} title="전날"><ChevronLeft size={16} /></button>
+            <strong>{dateLabel(viewDate)}</strong>
+            <button type="button" onClick={() => { const next = shiftIso(viewDate, 1); setPickedDate(next >= todayKey ? null : next); }} disabled={isViewingToday} title="다음날"><ChevronRight size={16} /></button>
+            {!isViewingToday && <button type="button" className="home-live-today-btn" onClick={() => setPickedDate(null)}>오늘로</button>}
+        </div>
+    );
+
     const liveCard = (
         <DashboardCard
-            title="오늘 실시간 현황"
-            subtitle={`${month}월 ${now.getDate()}일 · EMR 기준`}
-            headerRight={<span className={`home-live-badge tone-${connection.tone}`}><i />{connection.text}</span>}
+            title={isViewingToday ? '오늘 실시간 현황' : '지난 기록'}
+            subtitle={isViewingToday ? `${month}월 ${now.getDate()}일 · EMR 기준` : `${dateLabel(viewDate)} 최종 기록 · EMR 기준`}
+            headerRight={isViewingToday
+                ? <span className={`home-live-badge tone-${connection.tone}`}><i />{connection.text}</span>
+                : <span className="home-live-badge tone-idle"><i />지난 날짜 보는 중</span>}
         >
-            {!live ? (
+            {dateBar}
+            {!live && !hasHistory ? (
                 <div className="home-live-empty">
                     {liveReady ? (
                         <>
@@ -364,54 +486,66 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
                         </>
                     ) : '불러오는 중입니다.'}
                 </div>
-            ) : !today ? (
+            ) : !viewMetrics ? (
                 <div className="home-live-empty">
-                    <strong>{business.isOpenToday ? '아직 오늘 데이터가 없습니다.' : '오늘은 휴진일입니다.'}</strong>
-                    <span>마지막 데이터: {live.stat_date}</span>
+                    <strong>
+                        {isViewingToday
+                            ? (business.isOpenToday ? '아직 오늘 데이터가 없습니다.' : '오늘은 휴진일입니다.')
+                            : '이 날짜의 기록이 없습니다.'}
+                    </strong>
+                    <span>{isViewingToday ? `마지막 데이터: ${live?.stat_date || '-'}` : '휴진일이거나, 중계 프로그램이 지난 기록을 아직 채우는 중입니다.'}</span>
                 </div>
             ) : (
                 <>
                     <div className="home-live-kpis">
-                        {[
-                            todayClaim !== null
-                                ? { label: '오늘 매출', value: won(Number(today.paid || 0) + todayClaim), sub: `수납 ${shortWon(today.paid)} · 청구 ${shortWon(todayClaim)}`, title: `수납: 카드 ${won(today.card)} · 현금 ${won(today.cash)} · 통장 ${won(today.bank)}`, color: '#3b82f6', icon: WalletCards }
-                                : { label: '오늘 수납액', value: won(today.paid), sub: `카드 ${shortWon(today.card)} · 현금 ${shortWon(today.cash)} · 통장 ${shortWon(today.bank)}`, color: '#3b82f6', icon: WalletCards },
-                            { label: '내원 환자', value: people(today.visits), sub: '오늘 접수 기준', color: '#8b5cf6', icon: Users },
-                            { label: '신환', value: people(today.newPatients), sub: '처음 오신 환자', color: '#ec4899', icon: UserPlus },
-                            { label: '구환', value: people(today.returningPatients), sub: '재내원 환자', color: '#10b981', icon: Repeat },
-                        ].map(item => {
+                        {kpis.map(item => {
                             const Icon = item.icon;
+                            const current = item.raw(viewMetrics);
                             return (
-                                <div key={item.label} className="home-live-kpi" style={{ borderTopColor: item.color }} title={item.title || undefined}>
+                                <div key={item.key} className="home-live-kpi" style={{ borderTopColor: item.color }} title={item.title || undefined}>
                                     <span className="home-live-kpi-label"><Icon size={14} /> {item.label}</span>
                                     <span className="home-live-kpi-value" style={{ color: item.color }}>{item.value}</span>
                                     <span className="home-live-kpi-sub">{item.sub}</span>
+                                    {comparisons.length > 0 && (
+                                        <div className="home-live-compare">
+                                            {comparisons.map(comparison => (
+                                                <div key={comparison.label}>
+                                                    <span>{comparison.label}</span>
+                                                    {comparison.base
+                                                        ? <ChangeChip current={current} previous={item.raw(comparison.base)} unit={item.unit === 'people' ? 'people' : 'won'} />
+                                                        : <span className="home-compare-chip">-</span>}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
                     </div>
-                    <div className="home-live-status">
-                        <span className="home-live-status-title">진행 현황</span>
-                        {[
-                            { label: '대기', value: waitingCount, color: '#f59e0b' },
-                            { label: '진료중', value: status.inTreatment, color: '#3b82f6' },
-                            { label: '진료완료', value: status.treated, color: '#8b5cf6' },
-                            { label: '수납완료', value: status.paid, color: '#10b981' },
-                        ].map(item => (
-                            <span key={item.label} className="home-live-chip">
-                                <i style={{ background: item.color }} />{item.label} <strong>{Number(item.value || 0)}</strong>
-                            </span>
-                        ))}
-                    </div>
-                    {reservations && (
+                    {isViewingToday && (
                         <div className="home-live-status">
-                            <span className="home-live-status-title"><CalendarCheck size={14} /> 오늘 예약</span>
-                            <span className="home-live-chip">전체 <strong>{Number(reservations.total || 0)}</strong></span>
-                            <span className="home-live-chip">이행 <strong>{Number(reservations.done || 0)}</strong></span>
-                            <span className="home-live-chip">미이행 <strong>{Number(reservations.pending || 0)}</strong></span>
-                            <span className="home-live-chip">취소 <strong>{Number(reservations.canceled || 0)}</strong></span>
-                            {Number(reservations.newPatient || 0) > 0 && (
-                                <span className="home-live-chip">신환 예약 <strong>{Number(reservations.newPatient || 0)}</strong></span>
+                            <span className="home-live-status-title">진행 현황</span>
+                            {[
+                                { label: '대기', value: waitingCount, color: '#f59e0b' },
+                                { label: '진료중', value: status.inTreatment, color: '#3b82f6' },
+                                { label: '진료완료', value: status.treated, color: '#8b5cf6' },
+                                { label: '수납완료', value: status.paid, color: '#10b981' },
+                            ].map(item => (
+                                <span key={item.label} className="home-live-chip">
+                                    <i style={{ background: item.color }} />{item.label} <strong>{Number(item.value || 0)}</strong>
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                    {viewReservations && (
+                        <div className="home-live-status">
+                            <span className="home-live-status-title"><CalendarCheck size={14} /> {isViewingToday ? '오늘 예약' : '예약'}</span>
+                            <span className="home-live-chip">전체 <strong>{Number(viewReservations.total || 0)}</strong></span>
+                            <span className="home-live-chip">이행 <strong>{Number(viewReservations.done || 0)}</strong></span>
+                            <span className="home-live-chip">미이행 <strong>{Number(viewReservations.pending || 0)}</strong></span>
+                            <span className="home-live-chip">취소 <strong>{Number(viewReservations.canceled || 0)}</strong></span>
+                            {Number(viewReservations.newPatient || 0) > 0 && (
+                                <span className="home-live-chip">신환 예약 <strong>{Number(viewReservations.newPatient || 0)}</strong></span>
                             )}
                         </div>
                     )}
@@ -420,12 +554,44 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
         </DashboardCard>
     );
 
+    const openDays = getMonthOpenDays({ year, month: month - 1, weekly, holidays });
+    const oldestKey = Object.keys(daily).sort()[0];
+    const oldestMonth = oldestKey ? { y: Number(oldestKey.slice(0, 4)), m: Number(oldestKey.slice(5, 7)) - 1 } : null;
+    const selectDate = (iso) => {
+        setPickedDate(iso >= todayKey ? null : iso);
+        document.getElementById('home-live-row')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
     // 목표 달성을 먼저(왼쪽, 모바일에선 맨 위) 보여줍니다.
     return (
-        <div className="dashboard-grid home-live-grid" style={{ gridTemplateColumns: '1.3fr 1fr', marginBottom: '1.5rem' }}>
-            {goalCard}
-            {liveCard}
-        </div>
+        <>
+            <div id="home-live-row" className="dashboard-grid home-live-grid" style={{ gridTemplateColumns: '1.3fr 1fr', marginBottom: '1.5rem' }}>
+                {goalCard}
+                {liveCard}
+            </div>
+            {(live || hasHistory) && (
+                <div className="dashboard-grid home-history-grid" style={{ gridTemplateColumns: '1.3fr 1fr', marginBottom: '1.5rem' }}>
+                    <MonthCompareCard
+                        daily={daily}
+                        now={now}
+                        todayMetrics={todayMetrics}
+                        useTotal={useTotal}
+                        salesGoal={goal?.salesGoal || 0}
+                        newPatientGoal={goal?.newPatientGoal || 0}
+                        openDays={openDays}
+                    />
+                    <DailyCalendarCard
+                        daily={daily}
+                        now={now}
+                        todayMetrics={todayMetrics}
+                        useTotal={useTotal}
+                        selectedDate={viewDate}
+                        onSelectDate={selectDate}
+                        oldestMonth={oldestMonth}
+                    />
+                </div>
+            )}
+        </>
     );
 };
 

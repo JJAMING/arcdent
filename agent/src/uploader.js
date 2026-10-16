@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 //   - 자기 치과 EMR 접속 설정(clinic_emr_settings) 읽기
 //   - 자기 치과 중계 프로그램 상태(clinic_agent_status) 쓰기
 
-export const AGENT_VERSION = '1.2.0';
+export const AGENT_VERSION = '1.3.0';
 
 let client = null;
 let clinicId = null;
@@ -109,3 +109,40 @@ export const uploadLiveStats = async ({ statDate, payload }) => {
         throw new Error(`업로드 실패: ${error.message}`);
     }
 };
+
+// ---------------------------------------------------------------------------
+// 지난 데이터 (supabase_history.sql). 테이블이 아직 없으면 조용히 건너뜁니다.
+// ---------------------------------------------------------------------------
+const isMissingTable = (error) => /does not exist|schema cache|PGRST205|42P01/i.test(`${error?.code} ${error?.message}`);
+let historyTablesMissing = false;
+
+export const historyAvailable = () => !historyTablesMissing;
+
+/** rows: [{ statDate: 'YYYY-MM-DD', metrics }] — 한 번에 최대 100줄씩 저장 */
+export const upsertDailyStats = async (rows) => {
+    if (!client || !clinicId || historyTablesMissing || rows.length === 0) return false;
+    const now = new Date().toISOString();
+    for (let i = 0; i < rows.length; i += 100) {
+        const chunk = rows.slice(i, i + 100).map(row => ({ clinic_id: clinicId, stat_date: row.statDate, metrics: row.metrics, updated_at: now }));
+        const { error } = await client.from('clinic_daily_stats').upsert(chunk, { onConflict: 'clinic_id,stat_date' });
+        if (error) {
+            if (isMissingTable(error)) { historyTablesMissing = true; return false; }
+            throw new Error(`일별 기록 저장 실패: ${error.message}`);
+        }
+    }
+    return true;
+};
+
+export const upsertIntradayStat = async ({ statDate, hour, metrics }) => {
+    if (!client || !clinicId || historyTablesMissing) return false;
+    const { error } = await client.from('clinic_intraday_stats').upsert({
+        clinic_id: clinicId, stat_date: statDate, hour, metrics, updated_at: new Date().toISOString(),
+    }, { onConflict: 'clinic_id,stat_date,hour' });
+    if (error) {
+        if (isMissingTable(error)) { historyTablesMissing = true; return false; }
+        throw new Error(`시간별 기록 저장 실패: ${error.message}`);
+    }
+    return true;
+};
+
+export const currentClinicId = () => clinicId;

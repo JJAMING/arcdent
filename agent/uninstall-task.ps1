@@ -7,3 +7,7 @@ if (Get-ScheduledTask -TaskName 'ArcdentAgent' -ErrorAction SilentlyContinue) {
 } else {
     Write-Host '등록된 자동 실행 작업이 없습니다.'
 }
+# 런처/중계 프로그램 프로세스가 남아 있으면 종료
+Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -and ($_.CommandLine -match 'src\\index\.js run' -or $_.CommandLine -match 'launcher\.js') } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }

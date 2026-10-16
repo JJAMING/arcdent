@@ -18,7 +18,13 @@ if (-not $nodeExe) {
     exit 1
 }
 
-$action = New-ScheduledTaskAction -Execute $nodeExe -Argument 'src\index.js run' -WorkingDirectory $dir
+# 런처가 중계 프로그램 실행 + 자동 업데이트를 맡습니다.
+# 예전 방식(src\index.js 직접 실행)으로 돌던 프로세스가 남아 있으면 먼저 정리합니다.
+Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -and ($_.CommandLine -match 'src\\index\.js run' -or $_.CommandLine -match 'launcher\.js') } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
+$action = New-ScheduledTaskAction -Execute $nodeExe -Argument 'launcher.js' -WorkingDirectory $dir
 $trigger = New-ScheduledTaskTrigger -AtStartup
 $settings = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit ([TimeSpan]::Zero) `

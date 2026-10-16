@@ -12,13 +12,15 @@ import {
     ymd,
 } from './dentweb.js';
 import {
+    buildDailyMetrics,
     buildPayload,
     summarizePayments,
     summarizeReceptions,
     summarizeReservations,
     summarizeTreatmentFees,
 } from './aggregate.js';
-import { connectSupabase, fetchEmrSettings, reportStatus, uploadLiveStats } from './uploader.js';
+import { connectSupabase, fetchEmrSettings, reportStatus, upsertDailyStats, upsertIntradayStat, uploadLiveStats } from './uploader.js';
+import { maintainHistory } from './history.js';
 
 // 사용법
 //   node src/index.js check  → 덴트웹 접속 테스트 + 계산 결과를 화면에만 출력 (전송 안 함)
@@ -103,7 +105,8 @@ const collect = async () => {
 
     const statDate = `${todayPrefix.slice(0, 4)}-${todayPrefix.slice(4, 6)}-${todayPrefix.slice(6, 8)}`;
     const payload = buildPayload({ todayReception, todayPayments, todayFees, reservations, monthPayments, monthFees, monthReceptionDays });
-    return { statDate, payload, refundCount: todayPayments.refundCount };
+    const todayMetrics = buildDailyMetrics({ reception: todayReception, payments: todayPayments, fees: todayFees, reservations });
+    return { statDate, payload, todayMetrics, refundCount: todayPayments.refundCount };
 };
 
 // 자주 나오는 오류를 이해하기 쉬운 안내로 바꿉니다.
@@ -174,6 +177,26 @@ const runCheck = async (config) => {
     log('INFO', '점검 모드라 전송은 하지 않았습니다.');
 };
 
+/**
+ * 지난 데이터 저장 (실패해도 실시간 전송은 계속)
+ *  - 오늘 일별 기록 + 이번 시간 누적 기록 ("어제 이 시간까지" 비교용)
+ *  - 지난 기록 채우기/재계산 한 가지 (history.js)
+ */
+const saveHistory = async (result) => {
+    try {
+        await upsertDailyStats([{ statDate: result.statDate, metrics: result.todayMetrics }]);
+        const m = result.todayMetrics;
+        await upsertIntradayStat({
+            statDate: result.statDate,
+            hour: new Date().getHours(),
+            metrics: { revenue: m.revenue, paid: m.paid, claim: m.claim, visits: m.visits, newPatients: m.newPatients, returningPatients: m.returningPatients },
+        });
+        await maintainHistory({ staffNames, log });
+    } catch (error) {
+        log('WARN', `지난 데이터 저장 실패 (다음 주기에 다시 시도): ${explain(error).split('\n')[0]}`);
+    }
+};
+
 /** 1회 전송. 결과를 관리자모드 상태 화면에도 보고합니다. 다음 주기 간격(초)을 돌려줍니다. */
 const runOnce = async (config) => {
     let prepared = null;
@@ -189,6 +212,7 @@ const runOnce = async (config) => {
         await connectDentweb(dentweb);
         const result = await collect();
         await uploadLiveStats(result);
+        await saveHistory(result);
         const summary = `수납 ${won(result.payload.today.paid)} · 내원 ${result.payload.today.visits}명 · 신환 ${result.payload.today.newPatients}명`;
         await reportStatus({ status: 'ok', message: summary, success: true });
         log('INFO', `전송 완료 (${info.clinicName || info.clinicId}) ${summary}`);
@@ -201,8 +225,23 @@ const runOnce = async (config) => {
     }
 };
 
+// 런처가 꺼지면(작업 해제 등) 함께 종료해서 중계 프로그램이 두 개씩 돌지 않게 합니다.
+const watchLauncher = () => {
+    const launcherPid = Number(process.env.ARCDENT_LAUNCHER_PID || 0);
+    if (!launcherPid) return;
+    setInterval(() => {
+        try {
+            process.kill(launcherPid, 0);
+        } catch {
+            log('INFO', '런처가 종료되어 중계 프로그램도 종료합니다.');
+            process.exit(0);
+        }
+    }, 30 * 1000);
+};
+
 const runLoop = async (config) => {
     log('INFO', '실행 모드 시작 (전송 간격은 관리자모드 설정을 따릅니다)');
+    watchLauncher();
     cleanupOldLogs();
 
     let lastCleanupDay = ymd(new Date());

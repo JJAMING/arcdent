@@ -506,3 +506,246 @@
     font-size: 0.78rem;
     font-weight: 700;
 }
+
+/* ---- 날짜 이동 + 비교 ---- */
+.home-live-datebar {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.8rem;
+}
+
+.home-live-datebar strong {
+    min-width: 7.5rem;
+    text-align: center;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    font-weight: 900;
+}
+
+.home-live-datebar button,
+.home-calendar-nav button {
+    display: inline-grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.home-live-datebar button:disabled,
+.home-calendar-nav button:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.home-live-datebar .home-live-today-btn {
+    width: auto;
+    padding: 0 0.7rem;
+    margin-left: 0.25rem;
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: #fff;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.home-live-compare {
+    display: grid;
+    gap: 0.15rem;
+    margin-top: 0.35rem;
+    padding-top: 0.4rem;
+    border-top: 1px dashed var(--border-color);
+}
+
+.home-live-compare > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.3rem;
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    white-space: nowrap;
+}
+
+.home-live-compare > div > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.home-compare-chip {
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.home-compare-chip.is-up { color: #059669; }
+.home-compare-chip.is-down { color: #dc2626; }
+
+/* ---- 이번 달 vs 지난달 ---- */
+.home-metric-tabs {
+    display: inline-flex;
+    padding: 0.2rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.6rem;
+    background: var(--bg-color);
+}
+
+.home-metric-tabs button {
+    padding: 0.3rem 0.75rem;
+    border: 0;
+    border-radius: 0.45rem;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.home-metric-tabs button.active {
+    background: var(--card-bg);
+    color: var(--accent-primary);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.home-month-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.home-month-summary > div {
+    display: grid;
+    gap: 0.2rem;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.65rem;
+    background: var(--bg-color);
+    min-width: 0;
+}
+
+.home-month-summary span {
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    font-weight: 800;
+}
+
+.home-month-summary strong {
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.home-month-summary strong .home-compare-chip {
+    font-size: 1.1rem;
+}
+
+.home-history-note {
+    margin-bottom: 0.6rem;
+    padding: 0.5rem 0.7rem;
+    border-radius: 0.55rem;
+    background: rgba(245, 158, 11, 0.1);
+    color: #b45309;
+    font-size: 0.78rem;
+}
+
+/* ---- 일별 현황 달력 ---- */
+.home-calendar-nav {
+    display: inline-flex;
+    gap: 0.3rem;
+}
+
+.home-calendar {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.3rem;
+}
+
+.home-calendar-weekday {
+    padding-bottom: 0.2rem;
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    font-weight: 800;
+    text-align: center;
+}
+
+.home-calendar-weekday.is-sunday { color: #ef4444; }
+.home-calendar-weekday.is-saturday { color: #3b82f6; }
+
+.home-calendar-day {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.1rem;
+    min-height: 52px;
+    padding: 0.35rem 0.4rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.55rem;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    cursor: pointer;
+    text-align: left;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    min-width: 0;
+}
+
+.home-calendar-day:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
+}
+
+.home-calendar-day.is-empty {
+    background: var(--bg-color);
+    color: var(--text-secondary);
+}
+
+.home-calendar-day.is-future {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.home-calendar-day.is-today {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 1px;
+}
+
+.home-calendar-day.is-selected {
+    outline: 3px solid #f59e0b;
+    outline-offset: 1px;
+}
+
+.home-calendar-num {
+    font-size: 0.74rem;
+    font-weight: 800;
+}
+
+.home-calendar-value {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.72rem;
+    font-weight: 900;
+}
+
+@media (max-width: 640px) {
+    .home-month-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .home-calendar-day {
+        min-height: 40px;
+        padding: 0.25rem;
+    }
+
+    .home-calendar-value {
+        font-size: 0.6rem;
+    }
+}
