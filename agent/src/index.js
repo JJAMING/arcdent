@@ -239,6 +239,17 @@ const watchLauncher = () => {
     }, 30 * 1000);
 };
 
+// 프로그램 파일이 새 버전으로 바뀌면(자동 업데이트 외에 직접 교체한 경우 포함) 스스로 종료 → 런처가 새 코드로 다시 실행
+const startedVersion = (() => {
+    try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; } catch { return ''; }
+})();
+const versionChanged = () => {
+    if (!process.env.ARCDENT_LAUNCHER_PID) return false; // 런처 없이 직접 실행한 경우는 제외
+    try {
+        return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version !== startedVersion;
+    } catch { return false; }
+};
+
 const runLoop = async (config) => {
     log('INFO', '실행 모드 시작 (전송 간격은 관리자모드 설정을 따릅니다)');
     watchLauncher();
@@ -260,6 +271,11 @@ const runLoop = async (config) => {
         if (day !== lastCleanupDay) {
             lastCleanupDay = day;
             cleanupOldLogs();
+        }
+        if (versionChanged()) {
+            log('INFO', '새 버전 파일이 감지되어 재시작합니다.');
+            await closeDentweb();
+            process.exit(0);
         }
         const intervalMs = Math.min(3600, Math.max(60, Number(intervalSeconds) || 180)) * 1000;
         if (intervalMs !== lastInterval) {
