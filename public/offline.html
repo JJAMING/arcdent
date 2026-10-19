@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Arcdent - 연결 확인</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: system-ui, -apple-system, 'Malgun Gothic', sans-serif; background: #f8fafc; color: #1e293b; }
+  @media (prefers-color-scheme: dark) { body { background: #0d0d17; color: #f1f5f9; } }
+  .box { text-align: center; padding: 24px; display: grid; gap: 14px; justify-items: center; }
+  img { width: 96px; height: 96px; }
+  p { margin: 0; color: #64748b; line-height: 1.6; }
+  button { padding: 10px 22px; border: 0; border-radius: 10px; background: #3b82f6; color: #fff; font-weight: 800; font-size: 15px; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <img src="/icon-192.png" alt="" />
+    <strong>인터넷에 연결되어 있지 않습니다</strong>
+    <p>Wi-Fi 또는 데이터 연결을 확인한 뒤 다시 시도해 주세요.</p>
+    <button type="button" onclick="location.reload()">다시 시도</button>
+  </div>
+</body>
+</html>
