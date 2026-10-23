@@ -310,7 +310,8 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
                                 <strong>{row.formatShort(row.actual)}</strong>
                                 <span> / {row.formatShort(row.target)}</span>
                             </div>
-                            {row.breakdown && <div className="home-goal-breakdown">{row.breakdown}</div>}
+                            {/* 두 게이지 칸 높이를 맞추기 위해 구성 줄이 없어도 같은 높이의 빈 줄을 둠 */}
+                            <div className={`home-goal-breakdown ${row.breakdown ? "" : "is-empty"}`}>{row.breakdown || ' '}</div>
                             <span className={`home-goal-pace-badge tone-${row.pace.tone}`}>{row.pace.text}</span>
                             <dl className="home-goal-facts">
                                 {row.remaining > 0 ? (
