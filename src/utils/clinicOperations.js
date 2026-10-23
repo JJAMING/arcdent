@@ -146,7 +146,7 @@ export const loadLatestLiveStats = async (clinicId) => {
     if (!clinicId) return null;
     const { data, error } = await supabase
         .from('live_clinic_stats')
-        .select('stat_date, payload, updated_at')
+        .select('stat_date, payload, updated_at, source')
         .eq('clinic_id', clinicId)
         .order('stat_date', { ascending: false })
         .limit(1)

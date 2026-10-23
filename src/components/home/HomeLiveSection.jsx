@@ -17,6 +17,7 @@ import { canViewItem, shouldHideAmounts } from '../../utils/permissions';
 import { loadDailyStats, loadIntradayStats, pickIntradayAt } from '../../utils/clinicHistory';
 import { ChangeChip, DailyCalendarCard, MonthCompareCard, salesOf } from './HomeHistoryCards';
 import PathNewPatientBox from './PathNewPatientBox';
+import { SAMPLE_LIVE_SOURCE, refreshSampleToday } from '../../utils/sampleClinic';
 import './HomeLiveSection.css';
 
 // 오늘 목표 아래 '내원경로별 신환(엑셀 업로드 기준)' 카드. 다시 보이게 하려면 true 로 바꾸면 됩니다.
@@ -58,7 +59,7 @@ const getPace = (achievedRate, expectedRate) => {
 // excelMonthActual: 덴트웹 미연동일 때 목표 달성률 계산에 쓰는 이번 달 엑셀 업로드 값 { paid, newPatients }
 const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
     // 병원관리자 권한: HOME 세부 항목 · 금액 숨기기
-    const { permissions } = useAuth();
+    const { permissions, isAdmin } = useAuth();
     const canSeeHome = (key) => canViewItem(permissions, 'home', key);
     const hideMoney = shouldHideAmounts(permissions);
     const MASKED = '비공개';
@@ -181,18 +182,30 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
 
     const isTodayRow = live && String(live.stat_date) === todayKey;
     const today = isTodayRow ? (live.payload?.today || {}) : null;
-    const minutesSinceUpdate = live?.updated_at ? (now.getTime() - new Date(live.updated_at).getTime()) / 60000 : null;
+    // 샘플 치과(시연용)는 항상 방금 업데이트된 것처럼 보여 "연결 확인 필요"가 뜨지 않게 합니다.
+    const isSampleLive = live?.source === SAMPLE_LIVE_SOURCE;
+    const liveUpdatedAt = isSampleLive ? now.toISOString() : live?.updated_at;
+    const minutesSinceUpdate = liveUpdatedAt ? (now.getTime() - new Date(liveUpdatedAt).getTime()) / 60000 : null;
+
+    // 샘플 치과를 관리자가 보고 있으면 오늘 숫자를 지금 시각 기준으로 계속 갱신합니다. (다른 치과에는 영향 없음)
+    useEffect(() => {
+        if (!isAdmin || !isSampleLive || !clinicId) return undefined;
+        const run = () => refreshSampleToday(clinicId).catch(() => { /* 다음 주기에 다시 시도 */ });
+        run();
+        const timer = window.setInterval(run, 10 * 60 * 1000);
+        return () => window.clearInterval(timer);
+    }, [isAdmin, isSampleLive, clinicId]);
 
     const connection = (() => {
         if (!liveReady) return { tone: 'idle', text: '불러오는 중' };
         if (!live) return { tone: 'off', text: 'EMR 미연동' };
         if (isTodayRow && minutesSinceUpdate !== null && minutesSinceUpdate <= STALE_MINUTES) {
-            return { tone: 'on', text: `EMR 연동 · ${timeLabel(live.updated_at)} 업데이트` };
+            return { tone: 'on', text: `EMR 연동 · ${timeLabel(liveUpdatedAt)} 업데이트` };
         }
         if (business.isWorkingNow) {
             return { tone: 'warn', text: `연결 확인 필요 · 마지막 ${live.updated_at ? new Date(live.updated_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}` };
         }
-        return { tone: 'idle', text: `진료시간 외 · 마지막 ${timeLabel(live.updated_at)}` };
+        return { tone: 'idle', text: `진료시간 외 · 마지막 ${timeLabel(liveUpdatedAt)}` };
     })();
 
     // 목표 달성 계산에 쓸 이번 달 실적: 덴트웹(이번 달 데이터) 우선, 없으면 엑셀

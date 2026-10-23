@@ -20,6 +20,8 @@ import { DEFAULT_IMPLANT_TYPES, IMPLANT_TYPE_COLORS, getImplantTypeCounts, getRe
 import { DEFAULT_CLINIC_FEATURE_SETTINGS, loadClinicFeatureSettings, saveClinicFeatureSettings } from '../utils/clinicFeatureSettings';
 import ClinicOperationsPanel from '../components/admin/ClinicOperationsPanel';
 import EmrIntegrationPanel from '../components/admin/EmrIntegrationPanel';
+import SampleClinicPanel from '../components/admin/SampleClinicPanel';
+import { adminClinicName } from '../utils/sampleClinic';
 import AccountManagementPanel from '../components/admin/AccountManagementPanel';
 import { getCurrentYearString, getRollingYearOptions } from '../utils/dateUtils';
 import { describeUserAgent } from '../utils/userAgent';
@@ -5736,7 +5738,7 @@ const Admin = () => {
 
     const getAuditClinicLabel = (clinicId) => {
         const clinic = adminClinics.find(item => item.id === clinicId);
-        return clinic?.name || selectedAdminClinic?.name || clinicId || '-';
+        return (clinic && adminClinicName(clinic)) || selectedAdminClinic?.name || clinicId || '-';
     };
 
     const getAuditSubCategoryLabel = (logOrKey) => {
@@ -5791,7 +5793,7 @@ const Admin = () => {
                         {!clinicSelectLoading && adminClinics.length === 0 && <option value="">등록된 치과 없음</option>}
                         {!clinicSelectLoading && adminClinics.map(item => (
                             <option key={item.id} value={item.id}>
-                                {item.name}{item.code ? ` (${item.code})` : ''}
+                                {adminClinicName(item)}{item.code ? ` (${item.code})` : ''}
                             </option>
                         ))}
                     </select>
@@ -5831,6 +5833,13 @@ const Admin = () => {
                     onClick={() => setAdminPanelTab('emr')}
                 >
                     EMR 연동
+                </button>
+                <button
+                    type="button"
+                    className={`admin-panel-tab ${adminPanelTab === 'sample' ? 'active' : ''}`}
+                    onClick={() => setAdminPanelTab('sample')}
+                >
+                    샘플 치과
                 </button>
                 <button
                     type="button"
@@ -6743,6 +6752,13 @@ const Admin = () => {
                 />
             )}
 
+            {adminPanelTab === 'sample' && (
+                <SampleClinicPanel
+                    clinics={adminClinics}
+                    onSelectClinic={(id) => handleAdminClinicChange({ target: { value: id } })}
+                />
+            )}
+
             {adminPanelTab === 'accounts' && (
                 <AccountManagementPanel
                     clinicId={selectedAdminClinicId}
@@ -6856,7 +6872,7 @@ const Admin = () => {
                             >
                                 <option value="all">전체</option>
                                 {adminClinics.map(clinic => (
-                                    <option key={clinic.id} value={clinic.id}>{clinic.name}</option>
+                                    <option key={clinic.id} value={clinic.id}>{adminClinicName(clinic)}</option>
                                 ))}
                             </select>
                         </label>
