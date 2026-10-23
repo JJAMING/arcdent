@@ -904,3 +904,7 @@
 .home-path-count { min-width: 3.6rem; text-align: right; font-weight: 800; white-space: nowrap; }
 .home-path-count small { color: var(--text-secondary); font-weight: 600; }
 .home-path-note { color: var(--text-secondary); font-size: 0.72rem; line-height: 1.4; }
+
+.home-calendar-met.is-missed {
+    background: #ef4444;
+}

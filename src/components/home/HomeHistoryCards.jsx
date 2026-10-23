@@ -195,7 +195,7 @@ export const DailyCalendarCard = ({ daily, now, todayMetrics, useTotal, selected
             const metrics = iso === todayIso && todayMetrics ? todayMetrics : daily[iso];
             const sales = valueFor(metrics);
             const target = !hideAmounts && dailyTargetFor ? dailyTargetFor(iso) : null;
-            list.push({ d, iso, metrics, sales, future: iso > todayIso, target, met: Boolean(target) && sales >= target });
+            list.push({ d, iso, metrics, sales, future: iso > todayIso, target, met: Boolean(target) && sales >= target, missed: Boolean(target) && sales > 0 && iso < todayIso && sales < target });
         }
         return list;
     }, [daily, todayMetrics, useTotal, view, firstWeekday, lastDay, todayIso, dailyTargetFor, hideAmounts]);
@@ -205,6 +205,7 @@ export const DailyCalendarCard = ({ daily, now, todayMetrics, useTotal, selected
     const workedDays = cells.filter(cell => cell && cell.sales > 0).length;
     const hasTargets = cells.some(cell => cell && cell.target);
     const metDays = cells.filter(cell => cell && cell.met).length;
+    const missedDays = cells.filter(cell => cell && cell.missed).length;
 
     const canPrev = !oldestMonth || view.y > oldestMonth.y || (view.y === oldestMonth.y && view.m > oldestMonth.m);
     const canNext = view.y < now.getFullYear() || (view.y === now.getFullYear() && view.m < now.getMonth());
@@ -218,7 +219,7 @@ export const DailyCalendarCard = ({ daily, now, todayMetrics, useTotal, selected
             title="일별 현황"
             subtitle={hideAmounts
                 ? `${view.y}년 ${view.m + 1}월 · 내원 ${monthTotal.toLocaleString()}명 · 진료 ${workedDays}일`
-                : `${view.y}년 ${view.m + 1}월 · 합계 ${shortWon(monthTotal)} · 진료 ${workedDays}일${hasTargets ? ` · ✓ 하루 목표 달성 ${metDays}일` : ''} · 단위 만원`}
+                : `${view.y}년 ${view.m + 1}월 · 합계 ${shortWon(monthTotal)} · 진료 ${workedDays}일${hasTargets ? ` · ✓ 하루 목표 달성 ${metDays}일${missedDays > 0 ? ` · ✕ 미달 ${missedDays}일` : ''}` : ''} · 단위 만원`}
             headerRight={(
                 <div className="home-calendar-nav">
                     <button type="button" onClick={() => move(-1)} disabled={!canPrev} title="이전 달"><ChevronLeft size={16} /></button>
@@ -250,7 +251,7 @@ export const DailyCalendarCard = ({ daily, now, todayMetrics, useTotal, selected
                             style={intensity ? { background: `rgba(59, 130, 246, ${intensity.toFixed(2)})`, color: intensity > 0.5 ? '#fff' : undefined } : undefined}
                             title={cell.metrics ? `${cell.iso} (누르면 위에서 이 날짜 보기)${hideAmounts ? '' : ` · 매출 ${shortWon(cell.sales)}`}${cell.target ? ` / 하루 목표 ${shortWon(cell.target)}` : ''} · 내원 ${Number(cell.metrics.visits || 0)}명 · 신환 ${Number(cell.metrics.newPatients || 0)}명` : cell.iso}
                         >
-                            <span className="home-calendar-num">{cell.d}{cell.met && <i className="home-calendar-met" title="하루 목표 달성">✓</i>}</span>
+                            <span className="home-calendar-num">{cell.d}{cell.met && <i className="home-calendar-met" title="하루 목표 달성">✓</i>}{cell.missed && <i className="home-calendar-met is-missed" title="하루 목표 미달">✕</i>}</span>
                             {cell.sales > 0 && <span className="home-calendar-value">{formatCell(cell.sales)}</span>}
                         </button>
                     );
