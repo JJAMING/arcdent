@@ -12,6 +12,8 @@ import {
     toDateKey,
 } from '../../utils/clinicOperations';
 import { loadGoalSalesBasis } from '../../utils/clinicFeatureSettings';
+import { useAuth } from '../../context/AuthContext';
+import { canViewItem, shouldHideAmounts } from '../../utils/permissions';
 import { loadDailyStats, loadIntradayStats, pickIntradayAt } from '../../utils/clinicHistory';
 import { ChangeChip, DailyCalendarCard, MonthCompareCard, salesOf } from './HomeHistoryCards';
 import './HomeLiveSection.css';
@@ -21,8 +23,8 @@ const HISTORY_REFRESH_MS = 5 * 60 * 1000;
 const WEEKDAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 const POLL_MS = 60 * 1000;
 
-const won = (value) => `${Math.round(Number(value || 0)).toLocaleString()}원`;
-const shortWon = (value) => {
+const wonRaw = (value) => `${Math.round(Number(value || 0)).toLocaleString()}원`;
+const shortWonRaw = (value) => {
     const number = Math.round(Number(value || 0));
     if (Math.abs(number) >= 100000000) return `${(number / 100000000).toFixed(2).replace(/\.?0+$/, '')}억`;
     if (Math.abs(number) >= 10000) return `${Math.round(number / 10000).toLocaleString()}만`;
@@ -30,7 +32,7 @@ const shortWon = (value) => {
 };
 const people = (value) => `${Math.round(Number(value || 0)).toLocaleString()}명`;
 // '오늘 목표' 칸용: 만원 단위까지 붙여서 (1,819만원), 1만원 미만은 원 단위
-const manWon = (value) => {
+const manWonRaw = (value) => {
     const number = Math.round(Number(value || 0));
     if (Math.abs(number) >= 10000) return `${Math.round(number / 10000).toLocaleString()}만원`;
     return `${number.toLocaleString()}원`;
@@ -52,6 +54,14 @@ const getPace = (achievedRate, expectedRate) => {
 // 홈 화면 상단: ① 이번 달 목표 달성 ② 오늘 실시간 현황(덴트웹)
 // excelMonthActual: 덴트웹 미연동일 때 목표 달성률 계산에 쓰는 이번 달 엑셀 업로드 값 { paid, newPatients }
 const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
+    // 병원관리자 권한: HOME 세부 항목 · 금액 숨기기
+    const { permissions } = useAuth();
+    const canSeeHome = (key) => canViewItem(permissions, 'home', key);
+    const hideMoney = shouldHideAmounts(permissions);
+    const MASKED = '비공개';
+    const won = hideMoney ? () => MASKED : wonRaw;
+    const shortWon = hideMoney ? () => MASKED : shortWonRaw;
+    const manWon = hideMoney ? () => MASKED : manWonRaw;
     const [now, setNow] = useState(() => new Date());
     const [live, setLive] = useState(null);
     const [liveReady, setLiveReady] = useState(false);
@@ -638,16 +648,23 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
         document.getElementById('home-live-row')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
 
+    const showGoal = canSeeHome('goal');
+    const showLive = canSeeHome('live');
+    const showMonthCompare = canSeeHome('monthCompare');
+    const showCalendar = canSeeHome('calendar');
+
     // 목표 달성을 먼저(왼쪽, 모바일에선 맨 위) 보여줍니다.
     return (
         <>
-            <div id="home-live-row" className="dashboard-grid home-live-grid" style={{ gridTemplateColumns: '1.3fr 1fr', marginBottom: '1.5rem' }}>
-                {goalCard}
-                {liveCard}
-            </div>
-            {(live || hasHistory) && (
-                <div className="dashboard-grid home-history-grid" style={{ gridTemplateColumns: '1.3fr 1fr', marginBottom: '1.5rem' }}>
-                    <MonthCompareCard
+            {(showGoal || showLive) && (
+                <div id="home-live-row" className="dashboard-grid home-live-grid" style={{ gridTemplateColumns: showGoal && showLive ? '1.3fr 1fr' : '1fr', marginBottom: '1.5rem' }}>
+                    {showGoal && goalCard}
+                    {showLive && liveCard}
+                </div>
+            )}
+            {(live || hasHistory) && (showMonthCompare || showCalendar) && (
+                <div className="dashboard-grid home-history-grid" style={{ gridTemplateColumns: showMonthCompare && showCalendar ? '1.3fr 1fr' : '1fr', marginBottom: '1.5rem' }}>
+                    {showMonthCompare && <MonthCompareCard
                         daily={daily}
                         now={now}
                         todayMetrics={todayMetrics}
@@ -655,8 +672,9 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
                         salesGoal={goal?.salesGoal || 0}
                         newPatientGoal={goal?.newPatientGoal || 0}
                         openDays={openDays}
-                    />
-                    <DailyCalendarCard
+                        hideAmounts={hideMoney}
+                    />}
+                    {showCalendar && <DailyCalendarCard
                         daily={daily}
                         now={now}
                         todayMetrics={todayMetrics}
@@ -665,8 +683,12 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
                         onSelectDate={selectDate}
                         oldestMonth={oldestMonth}
                         dailyTargetFor={dailyTargetFor}
-                    />
+                        hideAmounts={hideMoney}
+                    />}
                 </div>
+            )}
+            {!showGoal && !showLive && !showMonthCompare && !showCalendar && (
+                <div className="home-live-empty">HOME 화면에서 볼 수 있는 항목이 없습니다. 관리자에게 권한을 요청해 주세요.</div>
             )}
         </>
     );

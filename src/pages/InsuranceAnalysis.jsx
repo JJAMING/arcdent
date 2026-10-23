@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { usePermittedSubTab } from '../utils/usePermittedTab';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList,
     LineChart, Line, Legend
@@ -193,6 +194,8 @@ const InsuranceAnalysis = () => {
     const { selectedYear, setSelectedYear, half, setHalf, monthFilter, setMonthFilter } = useSessionAnalysisPeriod('insurance');
     const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [subTab, setSubTab] = useState('claim');
+    // 병원관리자 권한: 숨긴 세부 항목은 탭에서 빼고, 현재 탭이 숨겨졌으면 보이는 탭으로 이동
+    const canSee = usePermittedSubTab('insurance', subTab, setSubTab);
     const [feePage, setFeePage] = useState(1);
     const [claimYearData, setClaimYearData] = useState(() => createEmptyClaimYearData());
     const [feeYearData, setFeeYearData] = useState(() => createEmptyFeeYearData());
@@ -763,18 +766,24 @@ const InsuranceAnalysis = () => {
 
             <nav className="tab-navigation">
                 <ul className="tab-list">
+                    {canSee('claim') && (
                     <li className={subTab === 'claim' ? 'active' : ''} onClick={() => setSubTab('claim')}>
                         <WalletCards size={20} />
                         <span>보험청구액 통계</span>
                     </li>
+                    )}
+                    {canSee('fee') && (
                     <li className={subTab === 'fee' ? 'active' : ''} onClick={() => setSubTab('fee')}>
                         <ListChecks size={20} />
                         <span>보험수가별 통계</span>
                     </li>
+                    )}
+                    {canSee('adjustment') && (
                     <li className={subTab === 'adjustment' ? 'active' : ''} onClick={() => setSubTab('adjustment')}>
                         <ShieldCheck size={20} />
                         <span>조정건수/금액</span>
                     </li>
+                    )}
                 </ul>
             </nav>
 

@@ -52,8 +52,11 @@ const ChangeChip = ({ current, previous, unit }) => {
 // ---------------------------------------------------------------------------
 // ① 이번 달 vs 지난달
 // ---------------------------------------------------------------------------
-export const MonthCompareCard = ({ daily, now, todayMetrics, useTotal, salesGoal, newPatientGoal, openDays }) => {
-    const [metricKey, setMetricKey] = useState('sales');
+export const MonthCompareCard = ({ daily, now, todayMetrics, useTotal, salesGoal, newPatientGoal, openDays, hideAmounts = false }) => {
+    // 금액 숨기기 권한이면 매출·객단가 탭을 빼고 신환부터 보여줌
+    const metricOptions = hideAmounts ? METRICS.filter(item => item.unit !== 'won') : METRICS;
+    const [metricKeyState, setMetricKey] = useState(metricOptions[0].key);
+    const metricKey = metricOptions.some(item => item.key === metricKeyState) ? metricKeyState : metricOptions[0].key;
     const metric = METRICS.find(item => item.key === metricKey);
     const year = now.getFullYear();
     const month = now.getMonth();
@@ -120,7 +123,7 @@ export const MonthCompareCard = ({ daily, now, todayMetrics, useTotal, salesGoal
             subtitle={metricKey === 'perVisit' ? `1인당 매출 (누적 매출 ÷ 누적 내원) · 1~${today}일` : `누적 ${metric.label} · 동기간(1~${today}일) 비교`}
             headerRight={(
                 <div className="home-metric-tabs">
-                    {METRICS.map(item => (
+                    {metricOptions.map(item => (
                         <button key={item.key} type="button" className={item.key === metricKey ? 'active' : ''} onClick={() => setMetricKey(item.key)}>
                             {item.label}
                         </button>
@@ -175,7 +178,10 @@ export const MonthCompareCard = ({ daily, now, todayMetrics, useTotal, salesGoal
 // ---------------------------------------------------------------------------
 // ② 일별 현황 달력
 // ---------------------------------------------------------------------------
-export const DailyCalendarCard = ({ daily, now, todayMetrics, useTotal, selectedDate, onSelectDate, oldestMonth, dailyTargetFor }) => {
+export const DailyCalendarCard = ({ daily, now, todayMetrics, useTotal, selectedDate, onSelectDate, oldestMonth, dailyTargetFor, hideAmounts = false }) => {
+    // 금액 숨기기 권한이면 달력은 매출 대신 내원 수로 표시
+    const valueFor = (metrics) => (hideAmounts ? Number(metrics?.visits || 0) : salesOf(metrics, useTotal));
+    const formatCell = (value) => (hideAmounts ? `${value}명` : Math.round(value / 10000).toLocaleString());
     const [view, setView] = useState({ y: now.getFullYear(), m: now.getMonth() });
     const todayIso = isoDate(now.getFullYear(), now.getMonth(), now.getDate());
     const lastDay = new Date(view.y, view.m + 1, 0).getDate();
@@ -187,12 +193,12 @@ export const DailyCalendarCard = ({ daily, now, todayMetrics, useTotal, selected
         for (let d = 1; d <= lastDay; d += 1) {
             const iso = isoDate(view.y, view.m, d);
             const metrics = iso === todayIso && todayMetrics ? todayMetrics : daily[iso];
-            const sales = salesOf(metrics, useTotal);
-            const target = dailyTargetFor ? dailyTargetFor(iso) : null;
+            const sales = valueFor(metrics);
+            const target = !hideAmounts && dailyTargetFor ? dailyTargetFor(iso) : null;
             list.push({ d, iso, metrics, sales, future: iso > todayIso, target, met: Boolean(target) && sales >= target });
         }
         return list;
-    }, [daily, todayMetrics, useTotal, view, firstWeekday, lastDay, todayIso, dailyTargetFor]);
+    }, [daily, todayMetrics, useTotal, view, firstWeekday, lastDay, todayIso, dailyTargetFor, hideAmounts]);
 
     const maxSales = Math.max(1, ...cells.filter(Boolean).map(cell => cell.sales));
     const monthTotal = cells.filter(Boolean).reduce((acc, cell) => acc + cell.sales, 0);
@@ -210,7 +216,9 @@ export const DailyCalendarCard = ({ daily, now, todayMetrics, useTotal, selected
     return (
         <DashboardCard
             title="일별 현황"
-            subtitle={`${view.y}년 ${view.m + 1}월 · 합계 ${shortWon(monthTotal)} · 진료 ${workedDays}일${hasTargets ? ` · ✓ 하루 목표 달성 ${metDays}일` : ''} · 단위 만원`}
+            subtitle={hideAmounts
+                ? `${view.y}년 ${view.m + 1}월 · 내원 ${monthTotal.toLocaleString()}명 · 진료 ${workedDays}일`
+                : `${view.y}년 ${view.m + 1}월 · 합계 ${shortWon(monthTotal)} · 진료 ${workedDays}일${hasTargets ? ` · ✓ 하루 목표 달성 ${metDays}일` : ''} · 단위 만원`}
             headerRight={(
                 <div className="home-calendar-nav">
                     <button type="button" onClick={() => move(-1)} disabled={!canPrev} title="이전 달"><ChevronLeft size={16} /></button>
@@ -240,10 +248,10 @@ export const DailyCalendarCard = ({ daily, now, todayMetrics, useTotal, selected
                             disabled={cell.future}
                             onClick={() => onSelectDate?.(cell.iso)}
                             style={intensity ? { background: `rgba(59, 130, 246, ${intensity.toFixed(2)})`, color: intensity > 0.5 ? '#fff' : undefined } : undefined}
-                            title={cell.metrics ? `${cell.iso} (누르면 위에서 이 날짜 보기) · 매출 ${shortWon(cell.sales)}${cell.target ? ` / 하루 목표 ${shortWon(cell.target)}` : ''} · 내원 ${Number(cell.metrics.visits || 0)}명 · 신환 ${Number(cell.metrics.newPatients || 0)}명` : cell.iso}
+                            title={cell.metrics ? `${cell.iso} (누르면 위에서 이 날짜 보기)${hideAmounts ? '' : ` · 매출 ${shortWon(cell.sales)}`}${cell.target ? ` / 하루 목표 ${shortWon(cell.target)}` : ''} · 내원 ${Number(cell.metrics.visits || 0)}명 · 신환 ${Number(cell.metrics.newPatients || 0)}명` : cell.iso}
                         >
                             <span className="home-calendar-num">{cell.d}{cell.met && <i className="home-calendar-met" title="하루 목표 달성">✓</i>}</span>
-                            {cell.sales > 0 && <span className="home-calendar-value">{Math.round(cell.sales / 10000).toLocaleString()}</span>}
+                            {cell.sales > 0 && <span className="home-calendar-value">{formatCell(cell.sales)}</span>}
                         </button>
                     );
                 })}

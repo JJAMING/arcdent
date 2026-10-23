@@ -20,6 +20,7 @@ import { DEFAULT_IMPLANT_TYPES, IMPLANT_TYPE_COLORS, getImplantTypeCounts, getRe
 import { DEFAULT_CLINIC_FEATURE_SETTINGS, loadClinicFeatureSettings, saveClinicFeatureSettings } from '../utils/clinicFeatureSettings';
 import ClinicOperationsPanel from '../components/admin/ClinicOperationsPanel';
 import EmrIntegrationPanel from '../components/admin/EmrIntegrationPanel';
+import AccountManagementPanel from '../components/admin/AccountManagementPanel';
 import { getCurrentYearString, getRollingYearOptions } from '../utils/dateUtils';
 import { describeUserAgent } from '../utils/userAgent';
 import { useAuth } from '../context/AuthContext';
@@ -5833,6 +5834,13 @@ const Admin = () => {
                 </button>
                 <button
                     type="button"
+                    className={`admin-panel-tab ${adminPanelTab === 'accounts' ? 'active' : ''}`}
+                    onClick={() => setAdminPanelTab('accounts')}
+                >
+                    계정 관리
+                </button>
+                <button
+                    type="button"
                     className={`admin-panel-tab ${adminPanelTab === 'history' ? 'active' : ''}`}
                     onClick={() => setAdminPanelTab('history')}
                 >
@@ -6732,6 +6740,14 @@ const Admin = () => {
                     clinicId={selectedAdminClinicId}
                     clinicName={selectedAdminClinic?.name}
                     onSelectClinic={(id) => handleAdminClinicChange({ target: { value: id } })}
+                />
+            )}
+
+            {adminPanelTab === 'accounts' && (
+                <AccountManagementPanel
+                    clinicId={selectedAdminClinicId}
+                    clinicName={selectedAdminClinic?.name}
+                    clinicCode={selectedAdminClinic?.code}
                 />
             )}
 

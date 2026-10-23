@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { usePermittedSubTab } from '../utils/usePermittedTab';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Legend, ComposedChart, LabelList, PieChart, Pie, Cell, Line,
@@ -142,6 +143,8 @@ const SalesAnalysis = () => {
   const activeClinicId = getActiveAnalyticsClinicId(clinicId);
   const { selectedYear, setSelectedYear, half, setHalf, monthFilter, setMonthFilter } = useSessionAnalysisPeriod('sales');
   const [subTab, setSubTab] = useState('total'); // 기본탭: 총 매출 현황
+  // 병원관리자 권한: 숨긴 세부 항목은 탭에서 빼고, 현재 탭이 숨겨졌으면 보이는 탭으로 이동
+  const canSee = usePermittedSubTab('sales', subTab, setSubTab);
   const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
   const [isYearOpen, setIsYearOpen] = useState(false);
   const [salesRefreshTick, setSalesRefreshTick] = useState(0);
@@ -1767,7 +1770,7 @@ const SalesAnalysis = () => {
             { id: 'topFee', label: '진료비 상위', icon: <Award size={18} /> },
             { id: 'doctor', label: '매출분석(의사)', icon: <Activity size={18} /> },
             { id: 'summary', label: '매출 분석 정리', icon: <FileText size={18} /> }
-          ].map(tab => (
+          ].filter(tab => canSee(tab.id)).map(tab => (
             <li key={tab.id} className={subTab === tab.id ? 'active' : ''} onClick={() => setSubTab(tab.id)}>
               {tab.icon}
               <span>{tab.label}</span>

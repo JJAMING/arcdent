@@ -16,16 +16,17 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import LoginHistoryModal from './LoginHistoryModal';
+import { canViewMenu } from '../utils/permissions';
 import './Sidebar.css';
 
 const Sidebar = ({ activeTab, setActiveTab }) => {
     const { isDarkMode, toggleTheme } = useTheme();
-    const { logout, clinic, profile } = useAuth();
+    const { logout, clinic, profile, permissions } = useAuth();
     const [isLoginHistoryOpen, setIsLoginHistoryOpen] = useState(false);
     const accountName = profile?.role === 'admin'
         ? '관리자 계정'
         : clinic?.name || '치과 미연결';
-    const accountRole = profile?.role === 'admin' ? '관리자' : '치과 계정';
+    const accountRole = profile?.role === 'admin' ? '관리자' : permissions ? '병원관리자' : '치과 계정';
 
     const menuItems = [
         { id: 'home', icon: <Activity size={20} />, label: 'HOME' },
@@ -50,7 +51,7 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
             </div>
 
             <ul className="nav-list">
-                {menuItems.map((item) => (
+                {menuItems.filter((item) => canViewMenu(permissions, item.id)).map((item) => (
                     <li
                         key={item.id}
                         className={`nav-item ${activeTab === item.id ? 'active' : ''}`}

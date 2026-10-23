@@ -12,6 +12,7 @@ import Login from './pages/Login';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { isSupabaseConfigured } from './lib/supabaseClient';
+import { canViewMenu } from './utils/permissions';
 import './styles/Layout.css';
 
 const ACTIVE_TAB_SESSION_KEY = 'arcdent_active_tab';
@@ -25,7 +26,7 @@ const getInitialActiveTab = () => {
 };
 
 function AppContent() {
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, permissions } = useAuth();
     const [activeTab, setActiveTabState] = useState(getInitialActiveTab);
     const wasAuthenticatedRef = useRef(isAuthenticated);
 
@@ -59,7 +60,19 @@ function AppContent() {
         }
     }, [activeTab]);
 
+    // 병원관리자 권한으로 숨긴 메뉴에 있으면 보이는 첫 메뉴로 이동
+    const PERMISSION_MENUS = ['home', 'sales', 'treatment', 'patient', 'new-patient', 'insurance', 'consultation'];
+    const tabAllowed = activeTab === 'admin' || canViewMenu(permissions, activeTab);
+    useEffect(() => {
+        if (tabAllowed) return;
+        const next = PERMISSION_MENUS.find(menu => canViewMenu(permissions, menu));
+        if (next && next !== activeTab) setActiveTab(next);
+    }, [tabAllowed, permissions, activeTab]);
+
     const renderContent = () => {
+        if (!tabAllowed) {
+            return <div className="empty-state" style={{ padding: '3rem', textAlign: 'center' }}>볼 수 있는 메뉴가 없습니다. 관리자에게 권한을 요청해 주세요.</div>;
+        }
         switch (activeTab) {
             case 'home': return <HomeDashboard />;
             case 'sales': return <SalesAnalysis />;

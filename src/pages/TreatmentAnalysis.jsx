@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { usePermittedSubTab } from '../utils/usePermittedTab';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     LabelList
@@ -89,6 +90,8 @@ const TreatmentAnalysis = () => {
     const activeClinicId = getActiveAnalyticsClinicId(clinicId);
     const { selectedYear, setSelectedYear, half, setHalf, monthFilter, setMonthFilter } = useSessionAnalysisPeriod('treatment');
     const [subTab, setSubTab] = useState('implant');
+    // 병원관리자 권한: 숨긴 세부 항목은 탭에서 빼고, 현재 탭이 숨겨졌으면 보이는 탭으로 이동
+    const canSee = usePermittedSubTab('treatment', subTab, setSubTab);
     const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
     const [refreshTick, setRefreshTick] = useState(0);
@@ -597,14 +600,18 @@ const TreatmentAnalysis = () => {
 
             <nav className="tab-navigation">
                 <ul className="tab-list">
+                    {canSee('implant') && (
                     <li className={subTab === 'implant' ? 'active' : ''} onClick={() => setSubTab('implant')}>
                         <Stethoscope size={20} />
                         <span>임플란트 1차 수술</span>
                     </li>
+                    )}
+                    {canSee('insurance') && (
                     <li className={subTab === 'insurance' ? 'active' : ''} onClick={() => setSubTab('insurance')}>
                         <Smile size={20} />
                         <span>보험 임플/틀니</span>
                     </li>
+                    )}
                 </ul>
             </nav>
 

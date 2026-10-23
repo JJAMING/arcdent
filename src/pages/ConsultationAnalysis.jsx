@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { usePermittedSubTab } from '../utils/usePermittedTab';
 import {
     Tooltip, Legend, ResponsiveContainer,
     BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -147,6 +148,8 @@ const ConsultationAnalysis = () => {
     const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
     const [subTab, setSubTab] = useState('overall');
+    // 병원관리자 권한: 숨긴 세부 항목은 탭에서 빼고, 현재 탭이 숨겨졌으면 보이는 탭으로 이동
+    const canSee = usePermittedSubTab('consultation', subTab, setSubTab);
     const [rejectedPage, setRejectedPage] = useState(1);
     const [rejectedConsultantFilter, setRejectedConsultantFilter] = useState('all');
     const [refreshKey, setRefreshKey] = useState(0);
@@ -1468,18 +1471,24 @@ const ConsultationAnalysis = () => {
 
             <nav className="tab-navigation">
                 <ul className="tab-list">
+                    {canSee('overall') && (
                     <li className={subTab === 'overall' ? 'active' : ''} onClick={() => setSubTab('overall')}>
                         <ClipboardCheck size={20} />
                         <span>전체 동의율</span>
                     </li>
+                    )}
+                    {canSee('consultant') && (
                     <li className={subTab === 'consultant' ? 'active' : ''} onClick={() => setSubTab('consultant')}>
                         <UserCheck size={20} />
                         <span>상담자별 동의율</span>
                     </li>
+                    )}
+                    {canSee('rejected') && (
                     <li className={subTab === 'rejected' ? 'active' : ''} onClick={() => setSubTab('rejected')}>
                         <UserX size={20} />
                         <span>미동의 환자 현황</span>
                     </li>
+                    )}
                 </ul>
             </nav>
 

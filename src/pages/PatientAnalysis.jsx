@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { usePermittedSubTab } from '../utils/usePermittedTab';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, LabelList
@@ -182,6 +183,8 @@ const PatientAnalysis = () => {
 
     const { selectedYear, setSelectedYear, half, setHalf, monthFilter, setMonthFilter } = useSessionAnalysisPeriod('patient');
     const [subTab, setSubTab] = useState('newOld');
+    // 병원관리자 권한: 숨긴 세부 항목은 탭에서 빼고, 현재 탭이 숨겨졌으면 보이는 탭으로 이동
+    const canSee = usePermittedSubTab('patient', subTab, setSubTab);
     const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
     const [refreshTick, setRefreshTick] = useState(0);
@@ -1065,18 +1068,24 @@ const PatientAnalysis = () => {
             {/* 서브탭 네비게이션 */}
             <nav className="tab-navigation">
                 <ul className="tab-list">
+                    {canSee('newOld') && (
                     <li className={subTab === 'newOld' ? 'active' : ''} onClick={() => setSubTab('newOld')}>
                         <Users size={20} />
                         <span>총 환자수 (신환/구환)</span>
                     </li>
+                    )}
+                    {canSee('byDoctor') && (
                     <li className={subTab === 'byDoctor' ? 'active' : ''} onClick={() => setSubTab('byDoctor')}>
                         <Stethoscope size={20} />
                         <span>총 환자수 (의사)</span>
                     </li>
+                    )}
+                    {canSee('labRequest') && (
                     <li className={subTab === 'labRequest' ? 'active' : ''} onClick={() => setSubTab('labRequest')}>
                         <Wrench size={20} />
                         <span>기공물 의뢰 현황</span>
                     </li>
+                    )}
                 </ul>
             </nav>
 

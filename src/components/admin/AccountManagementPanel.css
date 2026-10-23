@@ -1,0 +1,330 @@
+.account-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.account-header-actions button,
+.account-credential-actions button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    white-space: nowrap;
+}
+
+.account-setup-help {
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+    line-height: 1.6;
+}
+
+/* 비밀번호 안내 */
+.account-credential {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    border: 2px solid #10b981;
+    border-radius: 0.8rem;
+    background: rgba(16, 185, 129, 0.06);
+}
+
+.account-credential-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.account-credential-head strong {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--text-primary);
+}
+
+.account-credential-head button {
+    border: 0;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.account-credential pre {
+    margin: 0.7rem 0;
+    padding: 0.7rem 0.9rem;
+    border-radius: 0.55rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    font-weight: 700;
+    white-space: pre-wrap;
+}
+
+.account-credential-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    color: #b45309;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.account-credential-help {
+    margin: 0.6rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+/* 만들기 / 수정 폼 */
+.account-form {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.8rem;
+    background: var(--card-bg);
+}
+
+.account-form-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.75rem;
+}
+
+.account-form-row label {
+    display: grid;
+    gap: 0.35rem;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.account-form-row input {
+    min-height: 38px;
+    padding: 0 0.65rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.55rem;
+    background: var(--bg-color);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.account-kind-tabs {
+    display: inline-flex;
+    padding: 0.2rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.6rem;
+    background: var(--bg-color);
+}
+
+.account-kind-tabs button {
+    padding: 0.4rem 0.8rem;
+    border: 0;
+    border-radius: 0.45rem;
+    background: transparent;
+    color: var(--text-secondary);
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.account-kind-tabs button.active {
+    background: var(--accent-primary);
+    color: #fff;
+}
+
+.account-kind-help {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+/* 권한 편집 */
+.account-permission-editor {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.account-permission-amount {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    border-radius: 0.65rem;
+    background: rgba(245, 158, 11, 0.07);
+    cursor: pointer;
+}
+
+.account-permission-amount span {
+    display: grid;
+    gap: 0.15rem;
+}
+
+.account-permission-amount strong {
+    color: var(--text-primary);
+}
+
+.account-permission-amount small {
+    color: var(--text-secondary);
+}
+
+.account-permission-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.6rem;
+}
+
+.account-permission-menu {
+    display: grid;
+    gap: 0.45rem;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.65rem;
+    background: var(--bg-color);
+}
+
+.account-permission-menu.is-off {
+    opacity: 0.55;
+}
+
+.account-permission-menu-title {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.account-permission-items {
+    display: grid;
+    gap: 0.3rem;
+    padding-left: 1.4rem;
+}
+
+.account-permission-items label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--text-primary);
+    font-size: 0.82rem;
+    cursor: pointer;
+}
+
+.account-permission-items label.is-disabled {
+    color: var(--text-secondary);
+    cursor: default;
+}
+
+.account-permission-editor input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent-primary);
+}
+
+.account-permission-note {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+}
+
+/* 목록 */
+.account-table-wrap {
+    overflow-x: auto;
+}
+
+.account-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.account-table th {
+    padding: 0.55rem 0.6rem;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-weight: 800;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.account-table td {
+    padding: 0.6rem;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.account-table tr.is-disabled td {
+    opacity: 0.55;
+}
+
+.account-login {
+    font-weight: 900;
+}
+
+.account-scope {
+    color: var(--text-secondary) !important;
+    font-size: 0.8rem;
+}
+
+.account-empty {
+    text-align: center;
+    color: var(--text-secondary) !important;
+}
+
+.account-kind {
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 800;
+}
+
+.account-kind.kind-director { background: rgba(59, 130, 246, 0.12); color: #2563eb; }
+.account-kind.kind-manager { background: rgba(139, 92, 246, 0.12); color: #7c3aed; }
+.account-kind.kind-agent { background: rgba(100, 116, 139, 0.14); color: #475569; }
+
+.account-status {
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.account-status.on { color: #059669; }
+.account-status.off { color: #dc2626; }
+
+.account-actions {
+    display: flex;
+    gap: 0.3rem;
+    justify-content: flex-end;
+}
+
+.account-actions button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.3rem 0.55rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.45rem;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    font-size: 0.76rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.account-actions button.danger:hover {
+    color: #dc2626;
+    border-color: #dc2626;
+}
+
+.account-edit-row td {
+    white-space: normal;
+    background: var(--bg-color);
+}
+
+@media (max-width: 760px) {
+    .account-form-row {
+        grid-template-columns: 1fr;
+    }
+}

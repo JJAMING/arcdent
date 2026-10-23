@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { usePermittedSubTab } from '../utils/usePermittedTab';
 import {
     PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
     BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList
@@ -238,6 +239,8 @@ const NewPatientAnalysis = () => {
     const [availableYears, setAvailableYears] = useState(() => getDefaultYearOptions());
     const [isYearOpen, setIsYearOpen] = useState(false);
     const [subTab, setSubTab] = useState('source');
+    // 병원관리자 권한: 숨긴 세부 항목은 탭에서 빼고, 현재 탭이 숨겨졌으면 보이는 탭으로 이동
+    const canSee = usePermittedSubTab('new-patient', subTab, setSubTab);
     const [yearData, setYearData] = useState(() => normalizeYearData([]));
     const [supabaseNewPatientMap, setSupabaseNewPatientMap] = useState(null);
 
@@ -1590,22 +1593,30 @@ const NewPatientAnalysis = () => {
 
             <nav className="tab-navigation">
                 <ul className="tab-list">
+                    {canSee('source') && (
                     <li className={subTab === 'source' ? 'active' : ''} onClick={() => setSubTab('source')}>
                         <MapPin size={20} />
                         <span>신환 내원경로 현황</span>
                     </li>
+                    )}
+                    {canSee('treatmentConversion') && (
                     <li className={subTab === 'treatmentConversion' ? 'active' : ''} onClick={() => setSubTab('treatmentConversion')}>
                         <ClipboardCheck size={20} />
                         <span>내원 경로별 치료 이행율</span>
                     </li>
+                    )}
+                    {canSee('age') && (
                     <li className={subTab === 'age' ? 'active' : ''} onClick={() => setSubTab('age')}>
                         <Users size={20} />
                         <span>연령별 신환 현황</span>
                     </li>
+                    )}
+                    {canSee('unitPrice') && (
                     <li className={subTab === 'unitPrice' ? 'active' : ''} onClick={() => setSubTab('unitPrice')}>
                         <WalletCards size={20} />
                         <span>내원 경로별 객단가</span>
                     </li>
+                    )}
                 </ul>
             </nav>
 

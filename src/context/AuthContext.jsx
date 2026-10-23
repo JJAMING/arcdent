@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
 import { clearSessionAnalysisPeriods } from '../utils/analysisPeriodSession';
+import { normalizePermissions } from '../utils/permissions';
 import { recordLoginEvent } from '../utils/supabaseAnalyticsStore';
 
 const AuthContext = createContext();
@@ -64,11 +65,19 @@ export const AuthProvider = ({ children }) => {
             return;
         }
 
-        const { data: profileData, error: profileFetchError } = await supabase
+        // 권한 칸(permissions, display_name)은 supabase_accounts.sql 실행 후에 생기므로, 없으면 예전 칸만 다시 조회
+        let { data: profileData, error: profileFetchError } = await supabase
             .from('profiles')
-            .select('id, user_id, clinic_id, role, clinics(id, name, code)')
+            .select('id, user_id, clinic_id, role, display_name, permissions, clinics(id, name, code)')
             .eq('user_id', targetUser.id)
             .maybeSingle();
+        if (profileFetchError && /display_name|permissions|column/i.test(profileFetchError.message || '')) {
+            ({ data: profileData, error: profileFetchError } = await supabase
+                .from('profiles')
+                .select('id, user_id, clinic_id, role, clinics(id, name, code)')
+                .eq('user_id', targetUser.id)
+                .maybeSingle());
+        }
 
         if (profileFetchError) {
             clearProfileState();
@@ -82,6 +91,9 @@ export const AuthProvider = ({ children }) => {
                 user_id: profileData.user_id,
                 clinic_id: profileData.clinic_id,
                 role: profileData.role,
+                display_name: profileData.display_name || '',
+                // 병원관리자만 권한이 있음 (관리자·원장님은 null = 전체 보기)
+                permissions: profileData.role === 'clinic_user' ? normalizePermissions(profileData.permissions) : null,
             }
             : null;
 
@@ -255,6 +267,7 @@ export const AuthProvider = ({ children }) => {
         isAdmin: profile?.role === 'admin',
         isClinicUser: profile?.role === 'clinic_user',
         clinicId: profile?.clinic_id ?? null,
+        permissions: profile?.permissions ?? null,
         session,
         user,
         profile,
