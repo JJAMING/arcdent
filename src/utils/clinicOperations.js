@@ -155,18 +155,35 @@ export const loadLatestLiveStats = async (clinicId) => {
     return data || null;
 };
 
+// ⚠️ 채널 이름은 구독할 때마다 달라야 합니다.
+//    supabase.channel(이름)은 같은 이름의 채널이 아직 닫히는 중이면 그 채널을 그대로 돌려주는데,
+//    이미 연결된 채널에 .on()을 붙이면 예외가 나서 앱 전체가 흰 화면으로 꺼졌습니다.
+let liveChannelSeq = 0;
+
 export const subscribeLiveStats = (clinicId, onChange) => {
     if (!clinicId) return () => {};
-    const channel = supabase
-        .channel(`live-clinic-stats-${clinicId}`)
-        .on('postgres_changes', {
-            event: '*',
-            schema: 'public',
-            table: 'live_clinic_stats',
-            filter: `clinic_id=eq.${clinicId}`,
-        }, (event) => onChange?.(event.new || null))
-        .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    liveChannelSeq += 1;
+    let channel = null;
+    try {
+        channel = supabase
+            .channel(`live-clinic-stats-${clinicId}-${Date.now()}-${liveChannelSeq}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'live_clinic_stats',
+                filter: `clinic_id=eq.${clinicId}`,
+            }, (event) => {
+                // 삭제 이벤트 등 내용이 없는 신호는 무시
+                if (event?.new && event.new.stat_date) onChange?.(event.new);
+            })
+            .subscribe();
+    } catch (error) {
+        // 실시간 연결이 안 돼도 1분 폴링으로 계속 갱신되므로 화면은 유지
+        console.warn('[live] realtime subscribe failed:', error);
+    }
+    return () => {
+        if (channel) supabase.removeChannel(channel).catch(() => {});
+    };
 };
 
 // ---------------------------------------------------------------------------

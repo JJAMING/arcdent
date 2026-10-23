@@ -19,6 +19,42 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- 시작 감시: 10초가 지나도 화면이 비어 있으면 1번 자동 새로고침, 그래도 비면 안내 + 오류 내용 표시 -->
+    <script>
+      (function () {
+        var KEY = 'arcdent_boot_reload_at';
+        var lastError = '';
+        window.addEventListener('error', function (e) {
+          var t = e && e.target;
+          lastError = (e && e.message) || (t && (t.src || t.href) ? '파일을 받지 못함: ' + (t.src || t.href) : '') || lastError;
+        }, true);
+        window.addEventListener('unhandledrejection', function (e) {
+          lastError = '비동기 오류: ' + ((e && e.reason && (e.reason.message || e.reason)) || '');
+        });
+        setTimeout(function () {
+          var root = document.getElementById('root');
+          if (!root || root.childElementCount > 0) return;
+          try {
+            var last = Number(sessionStorage.getItem(KEY) || 0);
+            if (Date.now() - last > 60000) {
+              sessionStorage.setItem(KEY, String(Date.now()));
+              sessionStorage.setItem('arcdent_boot_last_error', String(lastError || '화면이 10초 동안 비어 있음'));
+              location.reload();
+              return;
+            }
+          } catch (err) { /* 저장소를 못 쓰면 안내만 표시 */ }
+          root.innerHTML =
+            '<div style="min-height:100vh;display:grid;place-items:center;padding:24px;font-family:system-ui,sans-serif;text-align:center;color:#1e293b">' +
+            '<div style="display:grid;gap:14px;justify-items:center;max-width:420px">' +
+            '<img src="/icon-192.png" alt="" width="72" height="72">' +
+            '<strong>화면을 불러오지 못했습니다</strong>' +
+            '<span style="color:#64748b;line-height:1.6">인터넷 연결을 확인한 뒤 새로고침해 주세요. 계속되면 이 화면을 캡처해서 알려주세요.</span>' +
+            '<button onclick="location.reload()" style="padding:10px 22px;border:0;border-radius:10px;background:#3b82f6;color:#fff;font-weight:800">새로고침</button>' +
+            '<code style="font-size:11px;color:#94a3b8;word-break:break-all">' + String(lastError || '화면이 비어 있음').replace(/</g, '&lt;') + '</code>' +
+            '</div></div>';
+        }, 10000);
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
