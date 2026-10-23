@@ -19,6 +19,8 @@ import { ChangeChip, DailyCalendarCard, MonthCompareCard, salesOf } from './Home
 import PathNewPatientBox from './PathNewPatientBox';
 import './HomeLiveSection.css';
 
+// 오늘 목표 아래 '내원경로별 신환(엑셀 업로드 기준)' 카드. 다시 보이게 하려면 true 로 바꾸면 됩니다.
+const SHOW_PATH_NEW_PATIENTS = false;
 const STALE_MINUTES = 10;
 const HISTORY_REFRESH_MS = 5 * 60 * 1000;
 const WEEKDAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
@@ -397,7 +399,7 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
                     }) : (
                         <div className="home-goal-today-empty">{todayEmptyMessage}</div>
                     )}
-                    {canSeeHome('pathNewPatients') && <PathNewPatientBox clinicId={clinicId} year={year} month={month} />}
+                    {SHOW_PATH_NEW_PATIENTS && canSeeHome('pathNewPatients') && <PathNewPatientBox clinicId={clinicId} year={year} month={month} />}
                 </div>
             </div>
             <div className="home-goal-legend">
