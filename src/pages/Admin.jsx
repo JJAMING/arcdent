@@ -204,7 +204,7 @@ const hasSuspiciousTotalVisits = ({ totalVisits, newPt, oldPt }) => {
 const normalizeHeader = (val) => String(val ?? '').trim().replace(/\s+/g, '');
 
 const isNewPatientPathDistributionFile = (filename) => (
-    /^[12]\d{3}년\d{1,2}월내원환자내원경로분포/.test(normalizeHeader(filename))
+    /^[12]\d{3}년\d{1,2}월(?:내원|신규)환자내원경로분포/.test(normalizeHeader(filename))
 );
 
 const isNewPatientTreatmentRateFile = (filename) => {
@@ -426,8 +426,8 @@ const normalizeAgeRange = (value) => {
 
 const extractPathFromDistributionFileName = (filename) => {
     const baseName = filename.split(/[\\/]/).pop().replace(/\.[^.]+$/, '').trim();
-    const spacedMatch = baseName.match(/내원환자\s*내원경로\s*분포\s*[-_\s]*(.+)$/);
-    const compactMatch = normalizeHeader(baseName).match(/내원환자내원경로분포(.+)$/);
+    const spacedMatch = baseName.match(/(?:내원|신규)환자\s*내원경로\s*분포\s*[-_\s]*(.+)$/);
+    const compactMatch = normalizeHeader(baseName).match(/(?:내원|신규)환자내원경로분포(.+)$/);
     const path = spacedMatch?.[1] || compactMatch?.[1] || '';
     return path.trim().replace(/^[-_\s]+|[-_\s]+$/g, '');
 };
@@ -678,7 +678,7 @@ const parseNewPatientAgeExcel = (file) => new Promise((resolve, reject) => {
 const parseNewPatientPathRows = (rows, fileName) => {
     const yearMonth = extractYearMonthFromFileName(fileName);
     if (!yearMonth) {
-        throw new Error(`파일명에서 연월을 찾을 수 없습니다. 예: 2025년01월내원환자내원경로분포.xlsx`);
+        throw new Error(`파일명에서 연월을 찾을 수 없습니다. 예: 2025년01월내원환자내원경로분포.xlsx 또는 2025년01월신규환자내원경로분포.xlsx`);
     }
 
     let headerIdx = -1;
