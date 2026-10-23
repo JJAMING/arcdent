@@ -889,3 +889,18 @@
 .home-goal-breakdown.is-empty {
     visibility: hidden;
 }
+
+/* 오늘 목표 아래: 내원경로별 신환 (엑셀 업로드 기준) */
+.home-path-box { display: grid; gap: 0.55rem; padding-top: 0.85rem; border-top: 1px dashed var(--border-color); }
+.home-path-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.home-path-title { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; font-weight: 800; color: var(--text-primary); }
+.home-path-total { font-size: 0.8rem; color: #2563eb; }
+.home-path-list { display: grid; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
+.home-path-list li { display: grid; grid-template-columns: minmax(3.5rem, 28%) 1fr auto; align-items: center; gap: 0.5rem; font-size: 0.78rem; }
+.home-path-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); font-weight: 700; }
+.home-path-bar { height: 0.5rem; border-radius: 999px; background: var(--border-color); overflow: hidden; }
+.home-path-bar i { display: block; height: 100%; border-radius: 999px; background: #2563eb; }
+.home-path-list li.is-rest .home-path-bar i { background: #94a3b8; }
+.home-path-count { min-width: 3.6rem; text-align: right; font-weight: 800; white-space: nowrap; }
+.home-path-count small { color: var(--text-secondary); font-weight: 600; }
+.home-path-note { color: var(--text-secondary); font-size: 0.72rem; line-height: 1.4; }

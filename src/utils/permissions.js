@@ -10,6 +10,7 @@ export const PERMISSION_CATALOG = [
         label: 'HOME (실시간 현황)',
         items: [
             { key: 'goal', label: '목표 달성' },
+            { key: 'pathNewPatients', label: '내원경로별 신환 (목표 카드 안)' },
             { key: 'live', label: '오늘 실시간 현황' },
             { key: 'monthCompare', label: '이번 달 vs 지난달' },
             { key: 'calendar', label: '일별 현황 달력' },

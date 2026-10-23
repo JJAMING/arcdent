@@ -16,6 +16,7 @@ import { useAuth } from '../../context/AuthContext';
 import { canViewItem, shouldHideAmounts } from '../../utils/permissions';
 import { loadDailyStats, loadIntradayStats, pickIntradayAt } from '../../utils/clinicHistory';
 import { ChangeChip, DailyCalendarCard, MonthCompareCard, salesOf } from './HomeHistoryCards';
+import PathNewPatientBox from './PathNewPatientBox';
 import './HomeLiveSection.css';
 
 const STALE_MINUTES = 10;
@@ -396,6 +397,7 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
                     }) : (
                         <div className="home-goal-today-empty">{todayEmptyMessage}</div>
                     )}
+                    {canSeeHome('pathNewPatients') && <PathNewPatientBox clinicId={clinicId} year={year} month={month} />}
                 </div>
             </div>
             <div className="home-goal-legend">
