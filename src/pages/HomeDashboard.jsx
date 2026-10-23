@@ -165,6 +165,10 @@ const buildInsuranceFeesDashboardStore = (rows = []) => rows.reduce((store, row)
     return store;
 }, {});
 
+// 홈 화면은 EMR 실시간 연동 항목만 보여줍니다. (엑셀 업로드 기준 월별 분석은 각 분석 메뉴에 있음)
+// 다시 보이게 하려면 true 로 바꾸면 됩니다.
+const SHOW_EXCEL_SECTION = false;
+
 const HomeDashboard = () => {
     const { clinicId } = useAuth();
     const activeClinicId = getActiveAnalyticsClinicId(clinicId);
@@ -496,9 +500,10 @@ const HomeDashboard = () => {
             <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
                 <div>
                     <h1>종합 대시보드</h1>
-                    <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>병원의 주요 지표를 한눈에 확인합니다.</p>
+                    <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>목표 달성과 오늘 현황을 실시간으로 확인합니다.</p>
                 </div>
 
+                {SHOW_EXCEL_SECTION && (
                 <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
                     <div className="year-selector-container">
                         <button className="year-select-btn" onClick={() => setIsYearOpen(!isYearOpen)}>
@@ -561,10 +566,13 @@ const HomeDashboard = () => {
                         )}
                     </div>
                 </div>
+                )}
             </header>
 
             <HomeLiveSection clinicId={activeClinicId} excelMonthActual={excelMonthActual} />
 
+            {SHOW_EXCEL_SECTION && (
+                <>
             <h2 className="home-section-title">월별 분석 <span>엑셀 업로드 기준</span></h2>
             <div className="patient-kpi-row" style={{ marginBottom: '1.5rem' }}>
                 {[
@@ -693,6 +701,8 @@ const HomeDashboard = () => {
                 periodLabel={periodLabel}
                 defaultInsight={homeInsightText}
             />
+                </>
+            )}
         </div>
     );
 };
