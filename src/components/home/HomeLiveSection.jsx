@@ -258,15 +258,19 @@ const HomeLiveSection = ({ clinicId, excelMonthActual }) => {
             }
             return { key, label, valueLabel, target, value: todayValue, remaining, rate, format, monthDone, pace };
         };
+        // ⚠️ 목표가 없거나 아직 불러오기 전이면 build()가 null 을 돌려줍니다.
+        //    예전에는 null 을 펼쳐서({...null}) 빈 항목이 만들어졌고, 그 항목의 format 이 없어
+        //    'format is not a function' 오류로 앱 전체가 흰 화면이 됐습니다.
+        const salesItem = build({ key: 'sales', label: '매출', valueLabel: useTotalSales ? '매출' : '수납', monthTarget: goal?.salesGoal, monthValue: monthSales, todayValue: todaySales, format: manWon });
+        if (salesItem) {
+            salesItem.breakdown = useTotalSales && todayClaim !== null ? `수납 ${manWon(today.paid)} + 청구 ${manWon(todayClaim)}` : '';
+        }
         return {
             expectedNow,
             items: [
-                {
-                    ...build({ key: 'sales', label: '매출', valueLabel: useTotalSales ? '매출' : '수납', monthTarget: goal?.salesGoal, monthValue: monthSales, todayValue: todaySales, format: manWon }),
-                    breakdown: useTotalSales && todayClaim !== null ? `수납 ${manWon(today.paid)} + 청구 ${manWon(todayClaim)}` : '',
-                },
+                salesItem,
                 build({ key: 'newPatients', label: '신환', valueLabel: '현재', monthTarget: goal?.newPatientGoal, monthValue: monthActual.newPatients, todayValue: Number(today.newPatients || 0), format: people, wholeNumber: true }),
-            ].filter(Boolean),
+            ].filter(item => item && typeof item.format === 'function'),
         };
     })();
 
