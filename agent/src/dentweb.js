@@ -1,7 +1,8 @@
 import sql from 'mssql';
 
 // 덴트웹 DB(MS-SQL) 조회 모듈. 덴트웹이 외부 연동용으로 공개한 뷰/프로시저만 "읽기"로 사용합니다.
-// 조회한 원본 행은 합계 계산에 필요한 칸만 남기고 바로 버립니다. (이름·연락처 등은 메모리에도 보관하지 않음)
+// 조회한 원본 행은 합계 계산에 필요한 칸만 남기고 바로 버립니다. (연락처·주소 등은 조회하지 않음)
+// 예외: 상담일지 환자 검색용 최근 내원 환자 명단(fetchRecentPatients 등)은 차트번호·이름·출생연도·성별·날짜만 읽습니다.
 
 let pool = null;
 let poolKey = '';
@@ -138,4 +139,77 @@ export const fetchNewRegistrationsByRange = async (fromDate, toDate) => {
             GROUP BY LEFT(sz등록시각, 8)
         `);
     return new Map(result.recordset.map(row => [String(row.d), Number(row.cnt) || 0]));
+};
+
+// ---------------------------------------------------------------------------
+// 상담일지 환자 검색용 (supabase_emr_patients.sql)
+//   차트번호 · 이름 · 출생연도 · 성별 · 등록일 · 최근 내원일만 읽습니다. (연락처 · 주소 · 메모 없음)
+// ---------------------------------------------------------------------------
+const toIsoDate = (value) => {
+    const text = String(value || '').trim();
+    return /^\d{8}/.test(text) ? `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}` : null;
+};
+const toBirthYear = (value) => {
+    const year = Number(String(value || '').slice(0, 4));
+    return year >= 1900 && year <= new Date().getFullYear() ? year : null;
+};
+// 덴트웹 b성별: true = 여자, false = 남자
+const toGender = (value) => (value === true || value === 1 ? 'F' : value === false || value === 0 ? 'M' : '');
+const toTimestamp = (value) => {
+    const t = String(value || '').trim();
+    if (!/^\d{14}$/.test(t)) return null;
+    const date = new Date(Number(t.slice(0, 4)), Number(t.slice(4, 6)) - 1, Number(t.slice(6, 8)), Number(t.slice(8, 10)), Number(t.slice(10, 12)), Number(t.slice(12, 14)));
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
+/** fromDate 이후 내원했거나 새로 등록된 환자 */
+export const fetchRecentPatients = async (fromDate) => {
+    const result = await pool.request()
+        .input('from', sql.VarChar(8), ymd(fromDate))
+        .input('from14', sql.VarChar(14), `${ymd(fromDate)}000000`)
+        .query(`
+            SELECT n환자ID, sz차트번호, sz이름, b성별, sz생년월일, sz등록시각, sz최종내원일
+            FROM dbo.PUB_V환자정보
+            WHERE sz최종내원일 >= @from OR sz등록시각 >= @from14
+        `);
+    return result.recordset
+        .filter(row => Number(row.n환자ID) > 0)
+        .map(row => ({
+            patient_key: String(row.n환자ID),
+            chart_no: String(row.sz차트번호 || '').trim(),
+            name: String(row.sz이름 || '').trim(),
+            birth_year: toBirthYear(row.sz생년월일),
+            gender: toGender(row.b성별),
+            registered_date: toIsoDate(row.sz등록시각),
+            last_visit_date: toIsoDate(row.sz최종내원일),
+        }));
+};
+
+/** 오늘 접수 환자 (접수 시각 포함) — 오늘 상담할 환자를 검색 목록 맨 위에 보여주기 위함 */
+export const fetchTodayReceptionPatients = async (date) => {
+    const result = await pool.request()
+        .input('date', sql.VarChar(8), ymd(date))
+        .query('EXEC dbo.PUB_P접수목록 @date');
+    return result.recordset
+        .filter(row => Number(row.n환자ID) > 0)
+        .map(row => ({
+            patient_key: String(row.n환자ID),
+            chart_no: String(row.sz차트번호 || '').trim(),
+            name: String(row.sz이름 || '').trim(),
+            birth_year: toBirthYear(row.sz생년월일),
+            gender: toGender(row.b성별),
+            is_new: row.b신환여부 === true || row.b신환여부 === 1,
+            reception_at: toTimestamp(row.sz접수시각),
+        }));
+};
+
+/** 재직 중인 의사 (직종 1 = 의사, 퇴사일 없음) — 상담일지 '담당 원장님' 자동 채움 */
+export const fetchActiveDoctors = async () => {
+    const result = await pool.request().query(`
+        SELECT nID, sz이름 FROM dbo.PUB_V직원정보
+        WHERE n직종 = 1 AND (sz퇴사일 IS NULL OR LTRIM(RTRIM(sz퇴사일)) = '')
+    `);
+    return result.recordset
+        .map(row => ({ staff_key: String(row.nID), name: String(row.sz이름 || '').trim() }))
+        .filter(row => row.name);
 };

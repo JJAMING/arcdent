@@ -21,6 +21,7 @@ import { DEFAULT_CLINIC_FEATURE_SETTINGS, loadClinicFeatureSettings, saveClinicF
 import ClinicOperationsPanel from '../components/admin/ClinicOperationsPanel';
 import EmrIntegrationPanel from '../components/admin/EmrIntegrationPanel';
 import SampleClinicPanel from '../components/admin/SampleClinicPanel';
+import JournalOptionsEditor from '../components/journal/JournalOptionsEditor';
 import { adminClinicName } from '../utils/sampleClinic';
 import { loadJournalAnalyticsRows, mergeJournalRowsByMonth } from '../utils/consultationJournal';
 import AccountManagementPanel from '../components/admin/AccountManagementPanel';
@@ -5842,6 +5843,13 @@ const Admin = () => {
                 </button>
                 <button
                     type="button"
+                    className={`admin-panel-tab ${adminPanelTab === 'journal' ? 'active' : ''}`}
+                    onClick={() => setAdminPanelTab('journal')}
+                >
+                    상담일지 설정
+                </button>
+                <button
+                    type="button"
                     className={`admin-panel-tab ${adminPanelTab === 'sample' ? 'active' : ''}`}
                     onClick={() => setAdminPanelTab('sample')}
                 >
@@ -6756,6 +6764,20 @@ const Admin = () => {
                     clinicName={selectedAdminClinic?.name}
                     onSelectClinic={(id) => handleAdminClinicChange({ target: { value: id } })}
                 />
+            )}
+
+            {adminPanelTab === 'journal' && (
+                <div className="admin-card emr-card">
+                    <div className="admin-card-header">
+                        <h2>상담일지 설정 {selectedAdminClinic ? `· ${selectedAdminClinic.name}` : ''}</h2>
+                    </div>
+                    <p className="admin-helper-text">
+                        상담일지 작성 화면에서 고르는 상담자, 원장님, 내원경로, 진료분류, 미동의 사유 목록입니다.
+                        원장님은 EMR 연동 치과라면 덴트웹 재직 의사가 자동으로 들어옵니다.
+                        병원관리자(작성 권한)도 상담일지 화면의 "선택 목록 관리" 버튼으로 바꿀 수 있습니다.
+                    </p>
+                    <JournalOptionsEditor key={selectedAdminClinicId} clinicId={selectedAdminClinicId} />
+                </div>
             )}
 
             {adminPanelTab === 'sample' && (

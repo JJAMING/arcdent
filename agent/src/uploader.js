@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 //   - 자기 치과 EMR 접속 설정(clinic_emr_settings) 읽기
 //   - 자기 치과 중계 프로그램 상태(clinic_agent_status) 쓰기
 
-export const AGENT_VERSION = '1.3.2';
+export const AGENT_VERSION = '1.4.0';
 
 let client = null;
 let clinicId = null;
@@ -146,3 +146,57 @@ export const upsertIntradayStat = async ({ statDate, hour, metrics }) => {
 };
 
 export const currentClinicId = () => clinicId;
+
+// ---------------------------------------------------------------------------
+// 상담일지 환자 검색용 명단 (supabase_emr_patients.sql). 테이블이 아직 없으면 조용히 건너뜁니다.
+// ---------------------------------------------------------------------------
+let directoryTablesMissing = false;
+export const directoryAvailable = () => !directoryTablesMissing;
+
+const directoryError = (error, label) => {
+    if (isMissingTable(error)) {
+        directoryTablesMissing = true;
+        return false;
+    }
+    throw new Error(`${label}: ${error.message}`);
+};
+
+/** rows: emr_recent_patients 칸 그대로 (clinic_id 제외). 500줄씩 저장 */
+export const upsertRecentPatients = async (rows) => {
+    if (!client || !clinicId || directoryTablesMissing || rows.length === 0) return false;
+    const now = new Date().toISOString();
+    for (let i = 0; i < rows.length; i += 500) {
+        const chunk = rows.slice(i, i + 500).map(row => ({ ...row, clinic_id: clinicId, updated_at: now }));
+        const { error } = await client.from('emr_recent_patients').upsert(chunk, { onConflict: 'clinic_id,patient_key' });
+        if (error) return directoryError(error, '환자 명단 저장 실패');
+    }
+    return true;
+};
+
+/** 최근 내원일이 beforeDate('YYYY-MM-DD') 이전인 환자를 지웁니다. (30일 보관) */
+export const deleteOldRecentPatients = async (beforeDate) => {
+    if (!client || !clinicId || directoryTablesMissing) return false;
+    const { error } = await client.from('emr_recent_patients').delete()
+        .eq('clinic_id', clinicId)
+        .or(`last_visit_date.lt.${beforeDate},last_visit_date.is.null`)
+        .or(`last_reception_at.is.null,last_reception_at.lt.${beforeDate}T00:00:00`);
+    if (error) return directoryError(error, '오래된 환자 명단 삭제 실패');
+    return true;
+};
+
+/** 원장님 목록을 덴트웹 재직 의사로 맞춥니다. */
+export const replaceDoctors = async (rows) => {
+    if (!client || !clinicId || directoryTablesMissing) return false;
+    const now = new Date().toISOString();
+    if (rows.length > 0) {
+        const { error } = await client.from('emr_doctors')
+            .upsert(rows.map(row => ({ ...row, clinic_id: clinicId, updated_at: now })), { onConflict: 'clinic_id,staff_key' });
+        if (error) return directoryError(error, '원장님 목록 저장 실패');
+    }
+    const keep = rows.map(row => row.staff_key);
+    let query = client.from('emr_doctors').delete().eq('clinic_id', clinicId);
+    if (keep.length > 0) query = query.not('staff_key', 'in', `(${keep.join(',')})`);
+    const { error } = await query;
+    if (error) return directoryError(error, '퇴사 원장님 정리 실패');
+    return true;
+};

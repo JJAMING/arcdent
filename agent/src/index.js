@@ -21,6 +21,7 @@ import {
 } from './aggregate.js';
 import { connectSupabase, fetchEmrSettings, reportStatus, upsertDailyStats, upsertIntradayStat, uploadLiveStats } from './uploader.js';
 import { maintainHistory } from './history.js';
+import { syncPatientDirectory } from './patients.js';
 
 // 사용법
 //   node src/index.js check  → 덴트웹 접속 테스트 + 계산 결과를 화면에만 출력 (전송 안 함)
@@ -213,6 +214,8 @@ const runOnce = async (config) => {
         const result = await collect();
         await uploadLiveStats(result);
         await saveHistory(result);
+        // 상담일지 환자 검색 명단 (실패해도 실시간 전송은 계속)
+        await syncPatientDirectory({ log }).catch(error => log('WARN', `상담일지 환자 명단 전송 실패 (다음 주기에 다시 시도): ${explain(error).split(/\r?\n/)[0]}`));
         const summary = `수납 ${won(result.payload.today.paid)} · 내원 ${result.payload.today.visits}명 · 신환 ${result.payload.today.newPatients}명`;
         await reportStatus({ status: 'ok', message: summary, success: true });
         log('INFO', `전송 완료 (${info.clinicName || info.clinicId}) ${summary}`);

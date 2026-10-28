@@ -363,3 +363,57 @@ export const loadJournalAnalyticsRows = async (clinicId, year = null) => {
         return { overall: [], consultant: [], rejected: [] };
     }
 };
+
+// ---------------------------------------------------------------------------
+// 덴트웹 최근 내원 환자 검색 · 재직 의사 (supabase_emr_patients.sql, 중계 프로그램 1.4.0 이상)
+// 테이블이 없거나 EMR 미연동 치과면 빈 목록을 돌려줍니다.
+// ---------------------------------------------------------------------------
+const PATIENT_COLUMNS = 'patient_key, chart_no, name, birth_year, gender, registered_date, last_visit_date, last_reception_at';
+const cleanSearchTerm = (value) => String(value || '').replace(/[,()%*\\]/g, '').trim();
+
+export const searchRecentPatients = async (clinicId, term, { limit = 12 } = {}) => {
+    const clean = cleanSearchTerm(term);
+    if (!clinicId || !clean) return [];
+    const { data, error } = await supabase
+        .from('emr_recent_patients')
+        .select(PATIENT_COLUMNS)
+        .eq('clinic_id', clinicId)
+        .or(`name.ilike.${clean}%,chart_no.ilike.${clean}%`)
+        .order('last_reception_at', { ascending: false, nullsFirst: false })
+        .order('last_visit_date', { ascending: false })
+        .limit(limit);
+    if (error) return [];
+    return data || [];
+};
+
+export const loadTodayReceptionPatients = async (clinicId, todayKey, { limit = 40 } = {}) => {
+    if (!clinicId) return [];
+    const { data, error } = await supabase
+        .from('emr_recent_patients')
+        .select(PATIENT_COLUMNS)
+        .eq('clinic_id', clinicId)
+        .eq('last_visit_date', todayKey)
+        .not('last_reception_at', 'is', null)
+        .order('last_reception_at', { ascending: false })
+        .limit(limit);
+    if (error) return [];
+    return data || [];
+};
+
+export const loadEmrDoctors = async (clinicId) => {
+    if (!clinicId) return [];
+    const { data, error } = await supabase
+        .from('emr_doctors')
+        .select('name')
+        .eq('clinic_id', clinicId)
+        .order('name', { ascending: true });
+    if (error) return [];
+    return Array.from(new Set((data || []).map(row => String(row.name || '').trim()).filter(Boolean)));
+};
+
+/** 덴트웹 등록일이 상담한 달과 같으면 신환, 아니면 구환 */
+export const patientTypeFromEmr = (patient, consultDate) => {
+    const registered = String(patient?.registered_date || '');
+    if (!registered) return null;
+    return registered.slice(0, 7) === String(consultDate || '').slice(0, 7) ? 'new' : 'returning';
+};

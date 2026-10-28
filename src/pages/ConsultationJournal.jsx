@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, ListChecks, NotebookPen, Pencil, Plus, Save, Settings2, Trash2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ListChecks, NotebookPen, Pencil, Save, Settings2, Trash2, X } from 'lucide-react';
+import JournalOptionsEditor from '../components/journal/JournalOptionsEditor';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId } from '../utils/supabaseAnalyticsStore';
 import { canViewItem, shouldHideAmounts } from '../utils/permissions';
 import { loadLatestLiveStats, toDateKey } from '../utils/clinicOperations';
 import {
     INSURANCE_DECISIONS,
-    JOURNAL_OPTION_GROUPS,
     JOURNAL_RESULTS,
     JOURNAL_RESULT_LABEL,
     deleteJournalEntry,
@@ -14,11 +14,14 @@ import {
     effectiveAgreedAmount,
     findLatestJournalByChart,
     loadJournalEntries,
+    loadEmrDoctors,
     loadJournalOptions,
+    loadTodayReceptionPatients,
     normalizeJournalOptions,
+    patientTypeFromEmr,
     rejectedAmountOf,
     saveJournalEntry,
-    saveJournalOptions,
+    searchRecentPatients,
     summarizeJournalEntries,
 } from '../utils/consultationJournal';
 import './SalesAnalysis.css';
@@ -83,79 +86,140 @@ const ChoiceInput = ({ id, label, value, onChange, options, placeholder }) => (
     </label>
 );
 
-// ---------------------------------------------------------------------------
-// 선택 목록 관리 (상담자, 원장님, 내원경로, 진료분류, 미동의 사유)
-// ---------------------------------------------------------------------------
-const OptionsEditor = ({ options, onClose, onSave }) => {
-    const [draft, setDraft] = useState(() => normalizeJournalOptions(options));
-    const [inputs, setInputs] = useState({});
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState('');
-
-    const add = (key) => {
-        const value = String(inputs[key] || '').trim();
-        if (!value) return;
-        setDraft(current => ({ ...current, [key]: Array.from(new Set([...current[key], value])) }));
-        setInputs(current => ({ ...current, [key]: '' }));
-    };
-    const remove = (key, value) => setDraft(current => ({ ...current, [key]: current[key].filter(item => item !== value) }));
-    const save = async () => {
-        setSaving(true);
-        setError('');
-        try {
-            await onSave(draft);
-            onClose();
-        } catch (err) {
-            setError(err.message || '저장하지 못했습니다.');
-        } finally {
-            setSaving(false);
-        }
-    };
-
+// 버튼으로 고르기 + 목록에 없으면 직접 입력 (상담자, 원장님)
+const ChipPicker = ({ label, value, onChange, options }) => {
+    const [typing, setTyping] = useState(false);
+    const isCustom = value && !options.includes(value);
     return (
-        <div className="journal-modal-backdrop" role="dialog" aria-modal="true" aria-label="선택 목록 관리">
-            <div className="journal-modal">
-                <div className="journal-modal-head">
-                    <h3>선택 목록 관리</h3>
-                    <button type="button" className="journal-icon-btn" onClick={onClose} aria-label="닫기"><X size={18} /></button>
-                </div>
-                <p className="journal-muted">작성 화면에서 고를 수 있는 목록입니다. 목록에 없는 값도 직접 입력할 수 있습니다.</p>
-                {error && <div className="journal-alert is-error">{error}</div>}
-                <div className="journal-options-grid">
-                    {JOURNAL_OPTION_GROUPS.map(group => (
-                        <section key={group.key} className="journal-options-group">
-                            <h4>{group.label}</h4>
-                            <div className="journal-chips">
-                                {draft[group.key].length === 0 && <span className="journal-muted">아직 없습니다</span>}
-                                {draft[group.key].map(item => (
-                                    <span key={item} className="journal-chip">
-                                        {item}
-                                        <button type="button" onClick={() => remove(group.key, item)} aria-label={`${item} 삭제`}><X size={12} /></button>
-                                    </span>
-                                ))}
-                            </div>
-                            <div className="journal-options-add">
-                                <input
-                                    value={inputs[group.key] || ''}
-                                    onChange={event => setInputs(current => ({ ...current, [group.key]: event.target.value }))}
-                                    onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); add(group.key); } }}
-                                    placeholder={`${group.label} 추가`}
-                                />
-                                <button type="button" className="journal-btn" onClick={() => add(group.key)}><Plus size={14} /> 추가</button>
-                            </div>
-                        </section>
-                    ))}
-                </div>
-                <div className="journal-modal-actions">
-                    <button type="button" className="journal-btn" onClick={onClose}>취소</button>
-                    <button type="button" className="journal-btn is-primary" onClick={save} disabled={saving}>
-                        <Save size={15} /> {saving ? '저장 중...' : '저장'}
+        <div className="journal-field">
+            <span>{label}</span>
+            <div className="journal-chip-picker">
+                {options.map(option => (
+                    <button key={option} type="button" className={value === option ? 'active' : ''} onClick={() => onChange(value === option ? '' : option)}>
+                        {option}
                     </button>
-                </div>
+                ))}
+                {isCustom && !typing && (
+                    <button type="button" className="active" onClick={() => setTyping(true)}>{value}</button>
+                )}
+                {typing ? (
+                    <input
+                        autoFocus
+                        value={value}
+                        onChange={event => onChange(event.target.value)}
+                        onBlur={() => setTyping(false)}
+                        onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); setTyping(false); } }}
+                        placeholder="이름 입력"
+                    />
+                ) : (
+                    <button type="button" className="is-add" onClick={() => setTyping(true)}>+ 직접 입력</button>
+                )}
             </div>
         </div>
     );
 };
+
+const genderLabel = (gender) => (gender === 'F' ? '여' : gender === 'M' ? '남' : '');
+const describePatient = (patient) => {
+    const parts = [];
+    if (patient.birth_year) parts.push(`${String(patient.birth_year).slice(2)}년생`);
+    if (genderLabel(patient.gender)) parts.push(genderLabel(patient.gender));
+    return parts.join('·');
+};
+const receptionTime = (iso) => (iso ? new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '');
+
+// 덴트웹 최근 내원 환자 검색 (성함 또는 차트번호). 칸이 비어 있으면 오늘 접수 환자를 보여줍니다.
+const PatientSearchInput = ({ label, value, onChange, onPick, search, loadToday, placeholder, required, inputMode, onBlurExtra }) => {
+    const [open, setOpen] = useState(false);
+    const [results, setResults] = useState([]);
+    const [highlight, setHighlight] = useState(0);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        if (!open) return undefined;
+        let cancelled = false;
+        const term = String(value || '').trim();
+        setLoading(true);
+        const timer = window.setTimeout(() => {
+            (term ? search(term) : loadToday())
+                .then(list => { if (!cancelled) { setResults(list); setHighlight(0); } })
+                .finally(() => { if (!cancelled) setLoading(false); });
+        }, term ? 180 : 0);
+        return () => { cancelled = true; window.clearTimeout(timer); };
+    }, [value, open, search, loadToday]);
+
+    const pick = (patient) => {
+        onPick(patient);
+        setOpen(false);
+    };
+
+    const handleKeyDown = (event) => {
+        if (!open || results.length === 0) return;
+        if (event.key === 'ArrowDown') { event.preventDefault(); setHighlight(h => Math.min(results.length - 1, h + 1)); }
+        else if (event.key === 'ArrowUp') { event.preventDefault(); setHighlight(h => Math.max(0, h - 1)); }
+        else if (event.key === 'Enter') { event.preventDefault(); pick(results[highlight]); }
+        else if (event.key === 'Escape') setOpen(false);
+    };
+
+    const term = String(value || '').trim();
+    const todayIso = toDateKey(new Date());
+    return (
+        <label className="journal-field journal-patient-search">
+            <span>{label}</span>
+            <input
+                value={value}
+                inputMode={inputMode}
+                onChange={event => { onChange(event.target.value); setOpen(true); }}
+                onFocus={() => setOpen(true)}
+                onBlur={() => { window.setTimeout(() => setOpen(false), 150); onBlurExtra?.(); }}
+                onKeyDown={handleKeyDown}
+                placeholder={placeholder}
+                required={required}
+                autoComplete="off"
+            />
+            {open && (loading || results.length > 0) && (
+                <div className="journal-patient-dropdown" role="listbox">
+                    <div className="journal-patient-dropdown-title">{term ? '덴트웹 최근 30일 내원 환자' : '오늘 접수 환자'}</div>
+                    {loading && results.length === 0 && <div className="journal-muted journal-patient-empty">찾는 중...</div>}
+                    {results.map((patient, index) => (
+                        <button
+                            type="button"
+                            key={patient.patient_key}
+                            className={index === highlight ? 'active' : ''}
+                            onMouseDown={event => event.preventDefault()}
+                            onClick={() => pick(patient)}
+                        >
+                            <strong>{patient.name}</strong>
+                            <small>{describePatient(patient)}</small>
+                            <span>차트 {patient.chart_no || '-'}</span>
+                            <em>
+                                {patient.last_reception_at && patient.last_visit_date === todayIso
+                                    ? `오늘 ${receptionTime(patient.last_reception_at)} 접수`
+                                    : `${String(patient.last_visit_date || '').slice(5).replace('-', '/')} 내원`}
+                            </em>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </label>
+    );
+};
+
+// ---------------------------------------------------------------------------
+// 선택 목록 관리 창 (관리자모드 "상담일지 설정"과 같은 편집기)
+// ---------------------------------------------------------------------------
+const OptionsModal = ({ clinicId, onClose, onSaved }) => (
+    <div className="journal-modal-backdrop" role="dialog" aria-modal="true" aria-label="선택 목록 관리">
+        <div className="journal-modal">
+            <div className="journal-modal-head">
+                <h3>선택 목록 관리</h3>
+                <button type="button" className="journal-icon-btn" onClick={onClose} aria-label="닫기"><X size={18} /></button>
+            </div>
+            <p className="journal-muted">작성 화면에서 고를 수 있는 목록입니다. 목록에 없는 값도 직접 입력할 수 있습니다.</p>
+            <JournalOptionsEditor clinicId={clinicId} onCancel={onClose} onSaved={(saved) => { onSaved(saved); onClose(); }} />
+        </div>
+    </div>
+);
 
 const ConsultationJournal = () => {
     const { clinicId, isAdmin, permissions } = useAuth();
@@ -172,6 +236,7 @@ const ConsultationJournal = () => {
     const [loading, setLoading] = useState(false);
     const [options, setOptions] = useState(() => normalizeJournalOptions());
     const [showOptions, setShowOptions] = useState(false);
+    const [emrDoctors, setEmrDoctors] = useState([]);
     const [form, setForm] = useState(() => emptyForm(todayKey));
     const [touched, setTouched] = useState({ diagnosis: false, agreed: false });
     const [previous, setPrevious] = useState(null);
@@ -190,6 +255,7 @@ const ConsultationJournal = () => {
     useEffect(() => {
         if (!activeClinicId) return;
         loadJournalOptions(activeClinicId).then(setOptions).catch(err => setMessage({ tone: 'error', text: err.message }));
+        loadEmrDoctors(activeClinicId).then(setEmrDoctors);
     }, [activeClinicId]);
 
     // 선택한 달의 상담일지
@@ -236,8 +302,14 @@ const ConsultationJournal = () => {
 
     const listOptions = useMemo(() => ({
         counselors: Array.from(new Set([...options.counselors, ...entries.map(e => e.counselor).filter(Boolean)])),
-        doctors: Array.from(new Set([...options.doctors, ...entries.map(e => e.doctor).filter(Boolean)])),
-    }), [options, entries]);
+        doctors: Array.from(new Set([...emrDoctors, ...options.doctors, ...entries.map(e => e.doctor).filter(Boolean)])),
+    }), [options, entries, emrDoctors]);
+    // 원장님 버튼: 덴트웹 재직 의사 + 직접 추가한 이름
+    const doctorOptions = useMemo(() => Array.from(new Set([...emrDoctors, ...options.doctors])), [emrDoctors, options.doctors]);
+
+    // 덴트웹 최근 내원 환자 검색
+    const searchPatients = useCallback((term) => searchRecentPatients(activeClinicId, term), [activeClinicId]);
+    const loadTodayPatients = useCallback(() => loadTodayReceptionPatients(activeClinicId, todayKey), [activeClinicId, todayKey]);
 
     const filteredEntries = useMemo(() => {
         const search = filters.search.trim();
@@ -286,16 +358,16 @@ const ConsultationJournal = () => {
     };
 
     // 차트번호로 이전 상담 찾기 → 이름·구분·경로 자동 채움
-    const lookupChart = async () => {
-        if (form.id || !form.chartNo.trim()) return;
+    const lookupChart = async (chartNo = form.chartNo) => {
+        if (form.id || !String(chartNo || '').trim()) return;
         try {
-            const found = await findLatestJournalByChart(activeClinicId, form.chartNo);
+            const found = await findLatestJournalByChart(activeClinicId, chartNo);
             setPrevious(found);
             if (!found) return;
             setForm(current => ({
                 ...current,
                 patientName: current.patientName || found.patientName,
-                patientType: found.date.slice(0, 7) === current.date.slice(0, 7) ? found.patientType : 'returning',
+                patientType: current.emrPicked ? current.patientType : (found.date.slice(0, 7) === current.date.slice(0, 7) ? found.patientType : 'returning'),
                 visitChannel: current.visitChannel || found.visitChannel,
                 counselor: current.counselor || found.counselor,
                 doctor: current.doctor || found.doctor,
@@ -305,6 +377,19 @@ const ConsultationJournal = () => {
             setPrevious(null);
         }
     };
+    // 덴트웹 환자를 고르면 성함·차트번호·신환/구환을 채우고, 이전 상담이 있으면 불러옵니다.
+    const pickPatient = (patient) => {
+        const type = patientTypeFromEmr(patient, form.date);
+        setForm(current => ({
+            ...current,
+            patientName: patient.name || current.patientName,
+            chartNo: patient.chart_no || current.chartNo,
+            patientType: type || current.patientType,
+            emrPicked: Boolean(type),
+        }));
+        if (patient.chart_no) lookupChart(patient.chart_no);
+    };
+
     const planChangeSuggested = Boolean(previous && !form.planChanged && amountOf(form.consultationAmount) > 0
         && amountOf(form.consultationAmount) !== Number(previous.consultationAmount || 0));
 
@@ -319,8 +404,9 @@ const ConsultationJournal = () => {
         setSaving(true);
         setMessage({ tone: '', text: '' });
         try {
+            const { emrPicked, ...formValues } = form; // eslint-disable-line no-unused-vars
             const saved = await saveJournalEntry(activeClinicId, {
-                ...form,
+                ...formValues,
                 diagnosisAmount: amountOf(form.diagnosisAmount),
                 consultationAmount: amountOf(form.consultationAmount),
                 agreedAmount: amountOf(form.agreedAmount),
@@ -356,11 +442,10 @@ const ConsultationJournal = () => {
         }
     };
 
-    const handleSaveOptions = useCallback(async (draft) => {
-        const saved = await saveJournalOptions(activeClinicId, draft);
+    const handleOptionsSaved = (saved) => {
         setOptions(saved);
         setMessage({ tone: 'success', text: '선택 목록을 저장했습니다.' });
-    }, [activeClinicId]);
+    };
 
     if (!activeClinicId) {
         return (
@@ -435,19 +520,31 @@ const ConsultationJournal = () => {
                             <span>상담 날짜 *</span>
                             <input type="date" value={form.date} max={todayKey} onChange={event => update({ date: event.target.value })} required />
                         </label>
-                        <label className="journal-field">
-                            <span>차트번호</span>
-                            <input value={form.chartNo} onChange={event => update({ chartNo: event.target.value })} onBlur={lookupChart} placeholder="예: 7001" />
-                        </label>
-                        <label className="journal-field">
-                            <span>환자 성함 *</span>
-                            <input value={form.patientName} onChange={event => update({ patientName: event.target.value })} placeholder="홍길동" required />
-                        </label>
+                        <PatientSearchInput
+                            label="차트번호"
+                            value={form.chartNo}
+                            onChange={value => update({ chartNo: value })}
+                            onPick={pickPatient}
+                            search={searchPatients}
+                            loadToday={loadTodayPatients}
+                            onBlurExtra={() => lookupChart()}
+                            placeholder="예: 7001"
+                        />
+                        <PatientSearchInput
+                            label="환자 성함 *"
+                            value={form.patientName}
+                            onChange={value => update({ patientName: value })}
+                            onPick={pickPatient}
+                            search={searchPatients}
+                            loadToday={loadTodayPatients}
+                            placeholder="이름 일부 입력 (예: 홍길)"
+                            required
+                        />
                         <div className="journal-field">
                             <span>구분</span>
                             <div className="journal-segment">
                                 {[['new', '신환'], ['returning', '구환']].map(([value, label]) => (
-                                    <button key={value} type="button" className={form.patientType === value ? 'active' : ''} onClick={() => update({ patientType: value })}>{label}</button>
+                                    <button key={value} type="button" className={`patient-${value} ${form.patientType === value ? 'active' : ''}`} onClick={() => update({ patientType: value, emrPicked: false })}>{label}</button>
                                 ))}
                             </div>
                         </div>
@@ -463,9 +560,12 @@ const ConsultationJournal = () => {
                         </div>
                     )}
 
-                    <div className="journal-form-grid">
-                        <ChoiceInput id="journal-counselor" label="상담자" value={form.counselor} onChange={value => update({ counselor: value })} options={options.counselors} />
-                        <ChoiceInput id="journal-doctor" label="담당 원장님 (진단)" value={form.doctor} onChange={value => update({ doctor: value })} options={options.doctors} />
+                    <div className="journal-form-grid is-two">
+                        <ChipPicker label="상담자" value={form.counselor} onChange={value => update({ counselor: value })} options={options.counselors} />
+                        <ChipPicker label="담당 원장님 (진단)" value={form.doctor} onChange={value => update({ doctor: value })} options={doctorOptions} />
+                    </div>
+
+                    <div className="journal-form-grid is-two">
                         <ChoiceInput id="journal-channel" label="내원경로" value={form.visitChannel} onChange={value => update({ visitChannel: value })} options={options.visitChannels} />
                         <ChoiceInput id="journal-category" label="진료분류" value={form.treatmentCategory} onChange={value => update({ treatmentCategory: value })} options={options.treatmentCategories} />
                     </div>
@@ -588,7 +688,7 @@ const ConsultationJournal = () => {
                                         <td>{entry.date.slice(5).replace('-', '/')}</td>
                                         <td className="font-bold">{entry.patientName}</td>
                                         <td>{entry.chartNo || '-'}</td>
-                                        <td>{entry.patientType === 'new' ? '신환' : '구환'}</td>
+                                        <td><span className={`journal-patient-type patient-${entry.patientType}`}>{entry.patientType === 'new' ? '신환' : '구환'}</span></td>
                                         <td>{entry.counselor || '-'}</td>
                                         <td>{entry.doctor || '-'}</td>
                                         <td>{entry.visitChannel || '-'}</td>
@@ -624,7 +724,7 @@ const ConsultationJournal = () => {
                 </div>
             )}
 
-            {showOptions && <OptionsEditor options={options} onClose={() => setShowOptions(false)} onSave={handleSaveOptions} />}
+            {showOptions && <OptionsModal clinicId={activeClinicId} onClose={() => setShowOptions(false)} onSaved={handleOptionsSaved} />}
         </div>
     );
 };
