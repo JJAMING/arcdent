@@ -794,8 +794,6 @@ const ConsultationJournal = () => {
                             value={form.rejectReason}
                             onChange={value => update({ rejectReason: value })}
                             options={options.rejectReasons}
-                            disabled={!showReason}
-                            disabledHint="상담결과가 부분동의 · 미동의 · 동의 후 취소일 때 고릅니다"
                             inputPlaceholder="사유 입력"
                         />
                     </div>
