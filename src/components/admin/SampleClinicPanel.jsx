@@ -32,7 +32,9 @@ const SampleClinicPanel = ({ clinics = [], onSelectClinic }) => {
         setSuccess('');
         try {
             const result = await fillSampleClinic(sampleClinic.id, { onProgress: setProgress });
-            setSuccess(`채우기 완료: 월별 분석 자료 ${result.analyticsRows}건, 일별 기록 ${result.dailyRows}일 (${result.months}개월)`);
+            setSuccess(`채우기 완료: 월별 분석 자료 ${result.analyticsRows}건, 일별 기록 ${result.dailyRows}일, 상담일지 ${result.journals}건 (${result.months}개월)`);
+            window.dispatchEvent(new Event("consultationJournalUpdated"));
+            window.dispatchEvent(new Event("consultationAnalysisUpdated"));
             window.dispatchEvent(new Event('clinicOperationsUpdated'));
             window.dispatchEvent(new Event('salesDataUpdated'));
             window.dispatchEvent(new Event('patientLedgerUpdated'));
@@ -53,7 +55,7 @@ const SampleClinicPanel = ({ clinics = [], onSelectClinic }) => {
             </div>
             <p className="admin-helper-text">
                 원장님 미팅에서 다른 치과 자료를 보여드릴 수 없을 때 쓰는 가상 치과입니다.
-                홈, 매출, 진료, 환자, 신환, 보험청구, 상담 메뉴에 올해 1월부터 오늘까지의 가상 숫자를 넣습니다.
+                홈, 매출, 진료, 환자, 신환, 보험청구, 상담분석, 상담일지 메뉴에 올해 1월부터 오늘까지의 가상 숫자를 넣습니다.
                 환자 이름은 모두 가상(예: 김○○)이고 실제 치과 자료는 건드리지 않습니다.
             </p>
             {error && <div className="admin-history-error">{error}</div>}

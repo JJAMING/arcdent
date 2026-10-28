@@ -447,6 +447,210 @@ const buildMonthlyRows = ({ clinicId, year, month, days }) => {
 };
 
 // ---------------------------------------------------------------------------
+// 상담일지 (가상) + 상담일지 화면용 오늘 접수 환자 · 원장님 목록
+//  - 자동으로 만든 일지는 created_by 가 비어 있어서, 시연 중 직접 쓴 일지와 구분해 다시 만들 때만 지웁니다.
+// ---------------------------------------------------------------------------
+const GIVEN_NAMES = ['민서', '지훈', '서연', '도윤', '하은', '준호', '예린', '성민', '영숙', '정희', '순자', '경호', '미경', '동현', '수빈', '재원', '혜진', '상철', '은주', '태호', '지영', '현우', '말순', '옥자', '진수', '다은', '종민', '숙희', '병철', '유진'];
+const JOURNAL_CHANNELS = ['지인소개', '가족소개', '네이버검색', '네이버블로그', '간판', '직장·집 근처', 'SNS', '지나가다'];
+const JOURNAL_CHANNEL_WEIGHTS = [0.24, 0.12, 0.16, 0.12, 0.08, 0.14, 0.08, 0.06];
+const JOURNAL_CATEGORIES = [
+    { name: '임플란트', weight: 0.32, perTooth: 1100000, teeth: [1, 3] },
+    { name: '보철치료', weight: 0.28, perTooth: 550000, teeth: [1, 4] },
+    { name: '보존치료', weight: 0.2, perTooth: 250000, teeth: [1, 5] },
+    { name: '교정', weight: 0.08, perTooth: 0, flat: 4500000, teeth: [0, 0] },
+    { name: '틀니', weight: 0.07, perTooth: 0, flat: 1800000, teeth: [0, 0] },
+    { name: '기타', weight: 0.05, perTooth: 300000, teeth: [1, 2] },
+];
+const JOURNAL_REASONS = ['상의 및 고민 필요', '비용 부담', '기간 미룸', '타치과 비교', '치료 전 다른 치료 필요', '일정 및 거리'];
+const JOURNAL_MEMOS = [
+    '치료 순서와 기간 설명함. 다음 내원 때 결정하기로 함.',
+    '비용 부담 이야기하셔서 분할 수납 안내함.',
+    '보험 적용 범위 설명, 가족과 상의 후 연락 주신다고 함.',
+    '통증 있는 부위부터 먼저 진행 원하심.',
+    '타 치과 견적과 비교 중이라고 하심. 1주 후 재연락.',
+    '치료 계획서 출력해서 드림.',
+    '임플란트 브랜드 차이 문의하셔서 설명함.',
+    '다음 주 예약 잡고 귀가.',
+];
+
+const pickWeighted = (items, weights, rng) => {
+    const total = weights.reduce((sum, w) => sum + w, 0);
+    let r = rng() * total;
+    for (let i = 0; i < items.length; i += 1) {
+        r -= weights[i];
+        if (r <= 0) return items[i];
+    }
+    return items[items.length - 1];
+};
+const fakeName = (rng) => `${SURNAMES[Math.floor(rng() * SURNAMES.length)]}${GIVEN_NAMES[Math.floor(rng() * GIVEN_NAMES.length)]}`;
+const fakeChart = (rng, year) => `${String(year - Math.floor(rng() * 12)).slice(2)}-${String(Math.floor(1000 + rng() * 11000)).padStart(5, '0')}`;
+const pickDoctor = (rng) => pickWeighted(DOCTORS.map(d => d.name), DOCTORS.map(d => d.share), rng);
+
+/** 그 날 접수 환자 (가상). 오늘이면 지금 시각까지 접수된 사람만 */
+const buildReceptionPatients = (key, full, calendar, now = null) => {
+    if (!full) return [];
+    const rng = makeRng(`sample-reception-${key}`);
+    const date = parseDateKey(key);
+    const hours = calendar.weekly[date.getDay()];
+    const start = toMinutes(hours.start) ?? 570;
+    const end = toMinutes(hours.end) ?? 1110;
+    const isToday = now && key === toDateKey(now);
+    const nowMinute = isToday ? now.getHours() * 60 + now.getMinutes() : 24 * 60;
+    const list = [];
+    for (let i = 0; i < full.visits; i += 1) {
+        const minute = Math.round(start + ((end - start - 20) * (i + rng() * 0.8)) / full.visits);
+        if (minute > nowMinute) break;
+        const isNew = i % Math.max(1, Math.round(full.visits / Math.max(1, full.newPatients))) === 0 && list.filter(p => p.isNew).length < full.newPatients;
+        const elapsed = nowMinute - minute;
+        const status = !isToday ? 4 : elapsed > 90 ? 4 : elapsed > 60 ? 3 : elapsed > 25 ? 2 : elapsed > 10 ? 1 : 0;
+        list.push({
+            key: `S${key.replace(/-/g, '')}${String(i).padStart(3, '0')}`,
+            name: fakeName(rng),
+            chart: fakeChart(rng, date.getFullYear()),
+            birthYear: 1945 + Math.floor(rng() * 60),
+            gender: rng() < 0.52 ? 'F' : 'M',
+            isNew,
+            minute,
+            status,
+            doctor: pickDoctor(rng),
+        });
+    }
+    return list;
+};
+
+/** 그 날 상담일지 (가상) — 접수 환자 중 진료가 끝난 환자 일부 */
+const buildJournalRowsForDay = (clinicId, key, receptions) => {
+    const rng = makeRng(`sample-journal-${key}`);
+    const done = receptions.filter(p => p.status >= 3);
+    if (done.length === 0) return [];
+    const newOnes = done.filter(p => p.isNew);
+    const returning = done.filter(p => !p.isNew);
+    const chosen = [
+        ...newOnes.filter(() => rng() < 0.7),
+        ...returning.filter(() => rng() < 0.05),
+    ];
+    const date = parseDateKey(key);
+    return chosen.map(patient => {
+        const category = pickWeighted(JOURNAL_CATEGORIES, JOURNAL_CATEGORIES.map(c => c.weight), rng);
+        const teeth = category.teeth[1] ? category.teeth[0] + Math.floor(rng() * (category.teeth[1] - category.teeth[0] + 1)) : 0;
+        const consult = roundTo(category.flat ? category.flat * (0.85 + rng() * 0.3) : category.perTooth * teeth * (0.9 + rng() * 0.25), 10000);
+        const diagnosis = roundTo(consult * (1 + rng() * 0.25), 10000);
+        const pick = rng();
+        const result = pick < 0.5 ? 'full' : pick < 0.68 ? 'partial' : pick < 0.95 ? 'declined' : 'cancelled';
+        const agreed = result === 'full' ? consult : result === 'partial' ? roundTo(consult * (0.4 + rng() * 0.4), 10000) : 0;
+        const agreedTeeth = result === 'full' ? teeth : result === 'partial' ? Math.max(1, Math.round(teeth * 0.5)) : 0;
+        const insurable = (category.name === '임플란트' || category.name === '틀니') && date.getFullYear() - patient.birthYear >= 65;
+        const isInsurance = insurable && rng() < 0.6;
+        const createdAt = new Date(date.getFullYear(), date.getMonth(), date.getDate(), Math.floor((patient.minute + 70) / 60), (patient.minute + 70) % 60);
+        return {
+            clinic_id: clinicId,
+            consult_date: key,
+            patient_name: patient.name,
+            chart_no: patient.chart,
+            patient_type: patient.isNew ? 'new' : 'returning',
+            counselor: rng() < 0.6 ? CONSULTANTS[0] : CONSULTANTS[1],
+            doctor: patient.doctor,
+            visit_channel: patient.isNew ? pickWeighted(JOURNAL_CHANNELS, JOURNAL_CHANNEL_WEIGHTS, rng) : '',
+            treatment_category: category.name,
+            consulted_teeth: teeth,
+            agreed_teeth: agreedTeeth,
+            result,
+            diagnosis_amount: diagnosis,
+            consultation_amount: consult,
+            agreed_amount: agreed,
+            is_insurance: isInsurance,
+            insurance_decision: isInsurance && result !== 'declined' && result !== 'cancelled' ? (category.name === '임플란트' ? 'implant' : 'denture') : '',
+            plan_changed: rng() < 0.08,
+            reject_reason: result === 'full' ? '' : JOURNAL_REASONS[Math.floor(rng() * JOURNAL_REASONS.length)],
+            memo: rng() < 0.55 ? JOURNAL_MEMOS[Math.floor(rng() * JOURNAL_MEMOS.length)] : '',
+            created_at: createdAt.toISOString(),
+            updated_at: createdAt.toISOString(),
+        };
+    });
+};
+
+const toPatientRow = (clinicId, key, patient, stamp) => {
+    const date = parseDateKey(key);
+    return {
+        clinic_id: clinicId,
+        patient_key: patient.key,
+        chart_no: patient.chart,
+        name: patient.name,
+        birth_year: patient.birthYear,
+        gender: patient.gender,
+        registered_date: patient.isNew ? key : `${date.getFullYear() - 2}-03-02`,
+        last_visit_date: key,
+        last_reception_at: new Date(date.getFullYear(), date.getMonth(), date.getDate(), Math.floor(patient.minute / 60), patient.minute % 60).toISOString(),
+        reception_status: patient.status,
+        reception_doctor: patient.doctor,
+        updated_at: stamp,
+    };
+};
+
+/** 상담일지 화면용: 원장님 목록 · 최근 30일 접수 환자 · 오늘 상담일지를 지금 시각 기준으로 맞춥니다. */
+const refreshSampleJournalToday = async (clinicId, calendar, now, dailyByKey) => {
+    const stamp = now.toISOString();
+    const todayKey = toDateKey(now);
+    const cutoff = toDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30));
+    // 테이블이 아직 없으면(SQL 미실행) 조용히 건너뜀
+    const optional = (error) => {
+        if (error && !/does not exist|schema cache|PGRST205|42P01/i.test(`${error.code} ${error.message}`)) throw new Error(error.message);
+    };
+
+    optional((await supabase.from('emr_doctors').upsert(
+        DOCTORS.map((doctor, index) => ({ clinic_id: clinicId, staff_key: `S${index + 1}`, name: doctor.name, updated_at: stamp })),
+        { onConflict: 'clinic_id,staff_key' },
+    )).error);
+
+    const patientRows = [];
+    Object.keys(dailyByKey).filter(key => key >= cutoff).forEach(key => {
+        buildReceptionPatients(key, dailyByKey[key].__full, calendar, now)
+            .forEach(patient => patientRows.push(toPatientRow(clinicId, key, patient, stamp)));
+    });
+    for (const chunk of chunked(patientRows, 500)) {
+        optional((await supabase.from('emr_recent_patients').upsert(chunk, { onConflict: 'clinic_id,patient_key' })).error);
+    }
+    optional((await supabase.from('emr_recent_patients').delete().eq('clinic_id', clinicId).lt('last_visit_date', cutoff)).error);
+
+    // 오늘 상담일지: 자동으로 만든 것만 다시 만듦 (시연 중 직접 쓴 일지는 그대로)
+    const todayFull = dailyByKey[todayKey]?.__full;
+    const todayRows = buildJournalRowsForDay(clinicId, todayKey, buildReceptionPatients(todayKey, todayFull, calendar, now));
+    optional((await supabase.from('consultation_journals').delete().eq('clinic_id', clinicId).eq('consult_date', todayKey).is('created_by', null)).error);
+    if (todayRows.length > 0) optional((await supabase.from('consultation_journals').insert(todayRows)).error);
+};
+
+/** 올해 1월 ~ 어제 상담일지 (자동으로 만든 것만 지우고 다시 만듦) + 선택 목록 */
+const fillSampleJournals = async (clinicId, calendar, now, dailyByKey) => {
+    const todayKey = toDateKey(now);
+    const rows = [];
+    Object.keys(dailyByKey).filter(key => key < todayKey).forEach(key => {
+        rows.push(...buildJournalRowsForDay(clinicId, key, buildReceptionPatients(key, dailyByKey[key].__full, calendar)));
+    });
+    const { error: deleteError } = await supabase.from('consultation_journals').delete()
+        .eq('clinic_id', clinicId).lt('consult_date', todayKey).is('created_by', null);
+    if (deleteError) {
+        if (/does not exist|schema cache|PGRST205|42P01/i.test(`${deleteError.code} ${deleteError.message}`)) return 0;
+        throw new Error(`상담일지 정리 실패: ${deleteError.message}`);
+    }
+    for (const chunk of chunked(rows, 500)) {
+        mustSucceed((await supabase.from('consultation_journals').insert(chunk)).error, '상담일지 저장 실패');
+    }
+    mustSucceed((await supabase.from('consultation_journal_settings').upsert({
+        clinic_id: clinicId,
+        options: {
+            counselors: CONSULTANTS,
+            doctors: [],
+            visitChannels: JOURNAL_CHANNELS,
+            treatmentCategories: JOURNAL_CATEGORIES.map(c => c.name),
+            rejectReasons: JOURNAL_REASONS,
+            hiddenDoctors: [],
+        },
+        updated_at: now.toISOString(),
+    }, { onConflict: 'clinic_id' })).error, '상담일지 선택 목록 저장 실패');
+    return rows.length;
+};
+
+// ---------------------------------------------------------------------------
 // 저장
 // ---------------------------------------------------------------------------
 const chunked = (list, size = 100) => {
@@ -488,6 +692,7 @@ export const refreshSampleToday = async (clinicId, now = new Date()) => {
     for (const chunk of chunked(intraday)) {
         mustSucceed((await supabase.from('clinic_intraday_stats').upsert(chunk, { onConflict: 'clinic_id,stat_date,hour' })).error, '시간별 기록 저장 실패');
     }
+    await refreshSampleJournalToday(clinicId, calendar, now, dailyByKey);
 };
 
 /** 올해 1월 ~ 오늘까지 모든 메뉴의 가상 자료를 채웁니다. */
@@ -540,7 +745,10 @@ export const fillSampleClinic = async (clinicId, { onProgress = () => {} } = {})
         mustSucceed((await supabase.from('clinic_daily_stats').upsert(chunk, { onConflict: 'clinic_id,stat_date' })).error, '일별 기록 저장 실패');
     }
 
+    onProgress('상담일지 저장 중...');
+    const journalCount = await fillSampleJournals(clinicId, calendar, now, dailyByKey);
+
     onProgress('오늘 실시간 현황 저장 중...');
     await refreshSampleToday(clinicId, now);
-    return { months: monthCount, analyticsRows: analyticsRows.length, dailyRows: dailyRows.length + 1 };
+    return { months: monthCount, analyticsRows: analyticsRows.length, dailyRows: dailyRows.length + 1, journals: journalCount };
 };

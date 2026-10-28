@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, FileText, ListChecks, NotebookPen, Pencil, Save, Settings2, Trash2, X } from 'lucide-react';
 import JournalOptionsEditor from '../components/journal/JournalOptionsEditor';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId } from '../utils/supabaseAnalyticsStore';
 import { canViewItem, shouldHideAmounts } from '../utils/permissions';
 import { loadLatestLiveStats, toDateKey } from '../utils/clinicOperations';
+import { SAMPLE_LIVE_SOURCE, refreshSampleToday } from '../utils/sampleClinic';
 import {
     INSURANCE_DECISIONS,
     RECEPTION_STATUS,
@@ -429,6 +430,7 @@ const ConsultationJournal = () => {
     const [options, setOptions] = useState(() => normalizeJournalOptions());
     const [showOptions, setShowOptions] = useState(false);
     const [detailEntry, setDetailEntry] = useState(null);
+    const sampleRefreshedRef = useRef('');
     const [emrDoctors, setEmrDoctors] = useState([]);
     const [form, setForm] = useState(() => emptyForm(todayKey));
     const [touched, setTouched] = useState({ diagnosis: false, agreed: false });
@@ -473,12 +475,17 @@ const ConsultationJournal = () => {
         if (!activeClinicId) return undefined;
         loadLatestLiveStats(activeClinicId)
             .then(row => {
+                // 샘플 치과(시연용)를 관리자가 열면 오늘 접수·상담일지를 지금 시각 기준으로 한 번 맞춤
+                if (!cancelled && isAdmin && row?.source === SAMPLE_LIVE_SOURCE && sampleRefreshedRef.current !== activeClinicId) {
+                    sampleRefreshedRef.current = activeClinicId;
+                    refreshSampleToday(activeClinicId).then(() => setRefreshKey(key => key + 1)).catch(() => {});
+                }
                 if (cancelled || !row || String(row.stat_date) !== todayKey) return;
                 setTodayNewPatients(Number(row.payload?.today?.newPatients || 0));
             })
             .catch(() => {});
         return () => { cancelled = true; };
-    }, [activeClinicId, todayKey, refreshKey]);
+    }, [activeClinicId, todayKey, refreshKey, isAdmin]);
 
     useEffect(() => {
         const handle = () => setRefreshKey(key => key + 1);
