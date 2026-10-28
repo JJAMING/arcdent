@@ -18,7 +18,7 @@ import './styles/Layout.css';
 
 const ACTIVE_TAB_SESSION_KEY = 'arcdent_active_tab';
 const ADMIN_TAB_REQUESTED_SESSION_KEY = 'arcdent_admin_tab_requested';
-const VALID_TABS = new Set(['home', 'sales', 'treatment', 'patient', 'new-patient', 'consultation', 'insurance', 'admin']);
+const VALID_TABS = new Set(['home', 'sales', 'treatment', 'patient', 'new-patient', 'consultation', 'journal', 'insurance', 'admin']);
 
 const getInitialActiveTab = () => {
     if (typeof window === 'undefined') return 'home';
