@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, ListChecks, NotebookPen, Pencil, Save, Settings2, Trash2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileText, ListChecks, NotebookPen, Pencil, Save, Settings2, Trash2, X } from 'lucide-react';
 import JournalOptionsEditor from '../components/journal/JournalOptionsEditor';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId } from '../utils/supabaseAnalyticsStore';
@@ -129,9 +129,17 @@ const DropdownInput = ({ label, value, onChange, options, placeholder }) => {
 };
 
 // 버튼으로 고르기 + 목록에 없으면 직접 입력 (상담자, 원장님)
-const ChipPicker = ({ label, value, onChange, options }) => {
+const ChipPicker = ({ label, value, onChange, options, disabled = false, disabledHint = '', inputPlaceholder = '직접 입력' }) => {
     const [typing, setTyping] = useState(false);
     const isCustom = value && !options.includes(value);
+    if (disabled) {
+        return (
+            <div className="journal-field is-disabled">
+                <span>{label}</span>
+                <div className="journal-muted journal-chip-disabled">{disabledHint}</div>
+            </div>
+        );
+    }
     return (
         <div className="journal-field">
             <span>{label}</span>
@@ -151,7 +159,7 @@ const ChipPicker = ({ label, value, onChange, options }) => {
                         onChange={event => onChange(event.target.value)}
                         onBlur={() => setTyping(false)}
                         onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); setTyping(false); } }}
-                        placeholder="이름 입력"
+                        placeholder={inputPlaceholder}
                     />
                 ) : (
                     <button type="button" className="is-add" onClick={() => setTyping(true)}>+ 직접 입력</button>
@@ -333,6 +341,63 @@ const TodayReceptionPanel = ({ patients, loaded, selectedChart, onPick }) => {
 };
 
 // ---------------------------------------------------------------------------
+// 상담 한 건 상세 (목록에서 성함 · 상담 내용 아이콘을 누르면)
+// ---------------------------------------------------------------------------
+const JournalDetailModal = ({ entry, money, canWrite, onClose, onEdit }) => {
+    useEffect(() => {
+        const onKey = (event) => { if (event.key === 'Escape') onClose(); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [onClose]);
+    const insurance = entry.isInsurance
+        ? (INSURANCE_DECISIONS.find(item => item.value === entry.insuranceDecision)?.label || '보험 상담')
+        : '-';
+    const rows = [
+        ['상담 날짜', entry.date],
+        ['구분', entry.patientType === 'new' ? '신환' : '구환'],
+        ['상담자', entry.counselor || '-'],
+        ['담당 원장님', entry.doctor || '-'],
+        ['진료분류', entry.treatmentCategory || '-'],
+        ['내원경로', entry.visitChannel || '-'],
+        ['치아 (상담/동의)', entry.consultedTeeth || entry.agreedTeeth ? `${entry.consultedTeeth} / ${entry.agreedTeeth}` : '-'],
+        ['보험', insurance],
+        ['치료계획 변동', entry.planChanged ? '변동' : '-'],
+        ['진단금액', money(diagnosisAmountOf(entry))],
+        ['상담금액', money(entry.consultationAmount)],
+        ['동의금액', money(effectiveAgreedAmount(entry))],
+        ['비동의금액', money(rejectedAmountOf(entry))],
+        ['사유', entry.rejectReason || '-'],
+    ];
+    return (
+        <div className="journal-modal-backdrop" role="dialog" aria-modal="true" aria-label="상담일지 상세" onClick={onClose}>
+            <div className="journal-modal journal-detail" onClick={event => event.stopPropagation()}>
+                <div className="journal-modal-head">
+                    <h3>
+                        {entry.patientName}
+                        <small>차트 {entry.chartNo || '-'}</small>
+                        <span className={`journal-result result-${entry.result}`}>{JOURNAL_RESULT_LABEL[entry.result]}</span>
+                    </h3>
+                    <button type="button" className="journal-icon-btn" onClick={onClose} aria-label="닫기"><X size={18} /></button>
+                </div>
+                <dl className="journal-detail-grid">
+                    {rows.map(([label, value]) => (
+                        <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
+                    ))}
+                </dl>
+                <div className="journal-detail-memo">
+                    <span>상담 내용</span>
+                    <p>{entry.memo || '작성한 상담 내용이 없습니다.'}</p>
+                </div>
+                <div className="journal-modal-actions">
+                    <button type="button" className="journal-btn" onClick={onClose}>닫기</button>
+                    {canWrite && <button type="button" className="journal-btn is-primary" onClick={onEdit}><Pencil size={15} /> 수정</button>}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ---------------------------------------------------------------------------
 // 선택 목록 관리 창 (관리자모드 "상담일지 설정"과 같은 편집기)
 // ---------------------------------------------------------------------------
 const OptionsModal = ({ clinicId, onClose, onSaved }) => (
@@ -363,6 +428,7 @@ const ConsultationJournal = () => {
     const [loading, setLoading] = useState(false);
     const [options, setOptions] = useState(() => normalizeJournalOptions());
     const [showOptions, setShowOptions] = useState(false);
+    const [detailEntry, setDetailEntry] = useState(null);
     const [emrDoctors, setEmrDoctors] = useState([]);
     const [form, setForm] = useState(() => emptyForm(todayKey));
     const [touched, setTouched] = useState({ diagnosis: false, agreed: false });
@@ -720,9 +786,18 @@ const ConsultationJournal = () => {
                         <ChipPicker label="담당 원장님" value={form.doctor} onChange={value => update({ doctor: value })} options={doctorOptions} />
                     </div>
 
-                    <div className="journal-form-grid is-two">
+                    <div className="journal-form-grid is-three">
                         <ChipPicker label="진료분류" value={form.treatmentCategory} onChange={value => update({ treatmentCategory: value })} options={options.treatmentCategories} />
                         <DropdownInput label="내원경로" value={form.visitChannel} onChange={value => update({ visitChannel: value })} options={options.visitChannels} />
+                        <ChipPicker
+                            label={form.result === 'partial' ? '부분동의 사유' : '미동의 사유'}
+                            value={form.rejectReason}
+                            onChange={value => update({ rejectReason: value })}
+                            options={options.rejectReasons}
+                            disabled={!showReason}
+                            disabledHint="상담결과가 부분동의 · 미동의 · 동의 후 취소일 때 고릅니다"
+                            inputPlaceholder="사유 입력"
+                        />
                     </div>
 
                     <div className="journal-field">
@@ -793,9 +868,6 @@ const ConsultationJournal = () => {
                             <input type="checkbox" checked={form.planChanged} onChange={event => update({ planChanged: event.target.checked })} />
                             <span>치료계획 변동</span>
                         </label>
-                        {showReason && (
-                            <DropdownInput label={form.result === 'partial' ? '부분동의 사유' : '미동의 사유'} value={form.rejectReason} onChange={value => update({ rejectReason: value })} options={options.rejectReasons} />
-                        )}
                     </div>
 
                     <label className="journal-field">
@@ -838,7 +910,7 @@ const ConsultationJournal = () => {
                                     <th>날짜</th><th>성함</th><th>차트번호</th><th>구분</th><th>상담자</th><th>원장님</th>
                                     <th>내원경로</th><th>진료분류</th><th>치아<br />(상담/동의)</th><th>결과</th>
                                     <th>진단금액</th><th>상담금액</th><th>동의금액</th><th>비동의금액</th>
-                                    <th>보험</th><th>계획<br />변동</th><th>사유</th><th>상담 내용</th>
+                                    <th>보험</th><th>계획<br />변동</th><th>사유</th><th>상담<br />내용</th>
                                     {canWrite && <th>관리</th>}
                                 </tr>
                             </thead>
@@ -850,7 +922,9 @@ const ConsultationJournal = () => {
                                 {!loading && pagedEntries.map(entry => (
                                     <tr key={entry.id}>
                                         <td>{entry.date.slice(5).replace('-', '/')}</td>
-                                        <td className="font-bold">{entry.patientName}</td>
+                                        <td className="font-bold">
+                                            <button type="button" className="journal-name-btn" onClick={() => setDetailEntry(entry)}>{entry.patientName}</button>
+                                        </td>
                                         <td>{entry.chartNo || '-'}</td>
                                         <td><span className={`journal-patient-type patient-${entry.patientType}`}>{entry.patientType === 'new' ? '신환' : '구환'}</span></td>
                                         <td>{entry.counselor || '-'}</td>
@@ -866,7 +940,13 @@ const ConsultationJournal = () => {
                                         <td>{entry.isInsurance ? (INSURANCE_DECISIONS.find(item => item.value === entry.insuranceDecision)?.label || '보험') : '-'}</td>
                                         <td>{entry.planChanged ? '변동' : '-'}</td>
                                         <td>{entry.rejectReason || '-'}</td>
-                                        <td className="journal-memo" title={entry.memo}>{entry.memo || '-'}</td>
+                                        <td className="journal-memo-cell">
+                                            {entry.memo ? (
+                                                <button type="button" className="journal-memo-btn" title={entry.memo.length > 80 ? `${entry.memo.slice(0, 80)}…` : entry.memo} onClick={() => setDetailEntry(entry)} aria-label="상담 내용 보기">
+                                                    <FileText size={16} />
+                                                </button>
+                                            ) : '-'}
+                                        </td>
                                         {canWrite && (
                                             <td className="journal-row-actions">
                                                 <button type="button" className="journal-icon-btn" onClick={() => handleEdit(entry)} aria-label="수정"><Pencil size={15} /></button>
@@ -889,6 +969,15 @@ const ConsultationJournal = () => {
             )}
 
             {showOptions && <OptionsModal clinicId={activeClinicId} onClose={() => setShowOptions(false)} onSaved={handleOptionsSaved} />}
+            {detailEntry && (
+                <JournalDetailModal
+                    entry={detailEntry}
+                    money={money}
+                    canWrite={canWrite}
+                    onClose={() => setDetailEntry(null)}
+                    onEdit={() => { const entry = detailEntry; setDetailEntry(null); handleEdit(entry); }}
+                />
+            )}
         </div>
     );
 };
