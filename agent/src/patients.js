@@ -1,4 +1,4 @@
-import { fetchActiveDoctors, fetchRecentPatients, fetchTodayReceptionPatients, ymd } from './dentweb.js';
+import { fetchActiveDoctors, fetchRecentPatients, fetchStaffNames, fetchTodayReceptionPatients, ymd } from './dentweb.js';
 import { deleteOldRecentPatients, directoryAvailable, replaceDoctors, upsertRecentPatients } from './uploader.js';
 
 // 상담일지 환자 검색용 명단 동기화 (supabase_emr_patients.sql)
@@ -14,6 +14,7 @@ const DOCTOR_SYNC_MS = 6 * 60 * 60 * 1000;
 let recentCache = new Map(); // patient_key → row
 let lastFullSyncAt = 0;
 let lastDoctorSyncAt = 0;
+let staffNames = new Map(); // 직원 ID → 이름 (접수 담당의사 이름)
 let lastCleanupDay = '';
 const sentHash = new Map(); // patient_key → 마지막으로 보낸 내용
 
@@ -22,7 +23,7 @@ const isoDay = (date) => {
     return `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}`;
 };
 
-const COLUMNS = ['patient_key', 'chart_no', 'name', 'birth_year', 'gender', 'registered_date', 'last_visit_date', 'last_reception_at'];
+const COLUMNS = ['patient_key', 'chart_no', 'name', 'birth_year', 'gender', 'registered_date', 'last_visit_date', 'last_reception_at', 'reception_status', 'reception_doctor'];
 const completeRow = (row) => Object.fromEntries(COLUMNS.map(key => [key, row[key] ?? null]));
 
 export const syncPatientDirectory = async ({ log }) => {
@@ -35,15 +36,19 @@ export const syncPatientDirectory = async ({ log }) => {
     if (Date.now() - lastFullSyncAt > FULL_SYNC_MS || recentCache.size === 0) {
         const rows = await fetchRecentPatients(cutoff);
         const next = new Map(rows.map(row => [row.patient_key, completeRow(row)]));
-        // 오늘 접수 시각은 다음 단계에서 다시 덮어씀
+        // 접수 시각 · 상태 · 담당의사는 접수 목록에서 온 값이라 그대로 유지 (오늘 것은 다음 단계에서 다시 덮어씀)
         recentCache.forEach((row, key) => {
-            if (next.has(key) && row.last_reception_at) next.get(key).last_reception_at = row.last_reception_at;
+            if (!next.has(key)) return;
+            ['last_reception_at', 'reception_status', 'reception_doctor'].forEach(field => {
+                if (row[field] !== null && row[field] !== undefined) next.get(key)[field] = row[field];
+            });
         });
         recentCache = next;
         lastFullSyncAt = Date.now();
     }
 
-    // 오늘 접수 환자: 내원일 = 오늘, 접수 시각 표시, 신환이면 등록일 = 오늘
+    // 오늘 접수 환자: 내원일 = 오늘, 접수 시각 · 상태 · 담당의사, 신환이면 등록일 = 오늘
+    if (staffNames.size === 0 || Date.now() - lastDoctorSyncAt > DOCTOR_SYNC_MS) staffNames = await fetchStaffNames();
     const todayRows = await fetchTodayReceptionPatients(today);
     todayRows.forEach(row => {
         const base = recentCache.get(row.patient_key) || completeRow({ ...row, registered_date: row.is_new ? todayIso : null });
@@ -56,6 +61,8 @@ export const syncPatientDirectory = async ({ log }) => {
             registered_date: base.registered_date || (row.is_new ? todayIso : null),
             last_visit_date: todayIso,
             last_reception_at: row.reception_at || base.last_reception_at,
+            reception_status: row.reception_status ?? base.reception_status,
+            reception_doctor: (row.doctor_id && staffNames.get(row.doctor_id)) || base.reception_doctor || null,
         }));
     });
 

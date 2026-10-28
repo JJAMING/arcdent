@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Save, X } from 'lucide-react';
 import '../../pages/ConsultationJournal.css';
-import { JOURNAL_OPTION_GROUPS, loadEmrDoctors, loadJournalOptions, normalizeJournalOptions, saveJournalOptions } from '../../utils/consultationJournal';
+import { JOURNAL_OPTION_GROUPS, isHiddenDoctor, loadEmrDoctors, loadJournalOptions, normalizeJournalOptions, saveJournalOptions } from '../../utils/consultationJournal';
 
 // 상담일지 선택 목록 (상담자, 원장님, 내원경로, 진료분류, 미동의 사유)
 //  - 상담일지 화면의 "선택 목록 관리" 창과 관리자모드 "상담일지 설정" 탭에서 같이 씁니다.
@@ -68,12 +68,35 @@ const JournalOptionsEditor = ({ clinicId, onSaved, onCancel, saveLabel = '저장
                     <section key={group.key} className="journal-options-group">
                         <h4>{group.label}</h4>
                         {group.key === 'doctors' && (
+                            <>
                             <div className="journal-options-emr">
                                 <span>덴트웹 자동</span>
                                 {emrDoctors.length > 0
-                                    ? emrDoctors.map(name => <span key={name} className="journal-chip is-emr">{name}</span>)
+                                    ? emrDoctors.map(name => {
+                                        const autoHidden = isHiddenDoctor(name, {});
+                                        const hidden = isHiddenDoctor(name, draft);
+                                        return (
+                                            <button
+                                                key={name}
+                                                type="button"
+                                                className={`journal-chip is-emr ${hidden ? 'is-hidden' : ''}`}
+                                                disabled={autoHidden}
+                                                title={autoHidden ? '공용 계정이라 자동으로 숨김' : hidden ? '눌러서 다시 보이기' : '눌러서 숨기기'}
+                                                onClick={() => setDraft(current => ({
+                                                    ...current,
+                                                    hiddenDoctors: hidden
+                                                        ? current.hiddenDoctors.filter(item => item !== name)
+                                                        : [...current.hiddenDoctors, name],
+                                                }))}
+                                            >
+                                                {name}{hidden ? ' (숨김)' : ''}
+                                            </button>
+                                        );
+                                    })
                                     : <span className="journal-muted">EMR 연동 후 재직 의사가 자동으로 들어옵니다</span>}
                             </div>
+                            {emrDoctors.length > 0 && <span className="journal-muted">덴트웹 이름을 누르면 숨기거나 다시 보이게 합니다.</span>}
+                            </>
                         )}
                         <div className="journal-chips">
                             {draft[group.key].length === 0 && <span className="journal-muted">{group.key === 'doctors' ? '추가한 이름 없음' : '아직 없습니다'}</span>}

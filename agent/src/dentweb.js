@@ -185,7 +185,8 @@ export const fetchRecentPatients = async (fromDate) => {
         }));
 };
 
-/** 오늘 접수 환자 (접수 시각 포함) — 오늘 상담할 환자를 검색 목록 맨 위에 보여주기 위함 */
+/** 오늘 접수 환자 (접수 시각 · 상태 · 담당의사 포함) — 상담일지 '오늘 접수 현황'
+ *  n상태: 0=접수, 1=준비완료, 2=진료중, 3=진료완료, 4=수납완료 */
 export const fetchTodayReceptionPatients = async (date) => {
     const result = await pool.request()
         .input('date', sql.VarChar(8), ymd(date))
@@ -200,6 +201,8 @@ export const fetchTodayReceptionPatients = async (date) => {
             gender: toGender(row.b성별),
             is_new: row.b신환여부 === true || row.b신환여부 === 1,
             reception_at: toTimestamp(row.sz접수시각),
+            reception_status: Number.isInteger(Number(row.n상태)) ? Number(row.n상태) : null,
+            doctor_id: Number(row.n담당의사) || 0,
         }));
 };
 

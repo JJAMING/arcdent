@@ -22,6 +22,10 @@ create table if not exists public.emr_recent_patients (
     primary key (clinic_id, patient_key)
 );
 
+-- 오늘 접수 현황용 (중계 프로그램 1.5.0): 접수 상태(0 접수 · 1 준비완료 · 2 진료중 · 3 진료완료 · 4 수납완료), 접수 담당의사 이름
+alter table public.emr_recent_patients add column if not exists reception_status smallint;
+alter table public.emr_recent_patients add column if not exists reception_doctor text;
+
 create index if not exists emr_recent_patients_clinic_name_idx on public.emr_recent_patients (clinic_id, name);
 create index if not exists emr_recent_patients_clinic_chart_idx on public.emr_recent_patients (clinic_id, chart_no);
 create index if not exists emr_recent_patients_clinic_visit_idx on public.emr_recent_patients (clinic_id, last_visit_date);

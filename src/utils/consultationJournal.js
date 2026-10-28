@@ -48,9 +48,24 @@ const throwFriendly = (error) => {
 
 const cleanList = (list) => Array.from(new Set((Array.isArray(list) ? list : []).map(item => String(item || '').trim()).filter(Boolean)));
 
-export const normalizeJournalOptions = (options = {}) => Object.fromEntries(
-    JOURNAL_OPTION_GROUPS.map(({ key }) => [key, Array.isArray(options?.[key]) ? cleanList(options[key]) : [...DEFAULT_JOURNAL_OPTIONS[key]]]),
+export const normalizeJournalOptions = (options = {}) => ({
+    ...Object.fromEntries(
+        JOURNAL_OPTION_GROUPS.map(({ key }) => [key, Array.isArray(options?.[key]) ? cleanList(options[key]) : [...DEFAULT_JOURNAL_OPTIONS[key]]]),
+    ),
+    // 덴트웹에서 자동으로 들어오는 원장님 중 숨길 이름
+    hiddenDoctors: cleanList(options?.hiddenDoctors),
+});
+
+// 덴트웹에 의사로 등록된 공용 계정(예: 검진/체크)은 기본으로 숨깁니다.
+const PSEUDO_DOCTOR_PATTERN = /검진|체크|공용|\//;
+export const isHiddenDoctor = (name, options) => (
+    PSEUDO_DOCTOR_PATTERN.test(String(name || '')) || (options?.hiddenDoctors || []).includes(name)
 );
+/** 원장님 버튼 목록: 덴트웹 재직 의사(숨긴 이름 제외) + 직접 추가한 이름 */
+export const visibleDoctorOptions = (emrDoctors = [], options = {}) => Array.from(new Set([
+    ...emrDoctors.filter(name => !isHiddenDoctor(name, options)),
+    ...(options?.doctors || []),
+]));
 
 export const loadJournalOptions = async (clinicId) => {
     if (!clinicId) return normalizeJournalOptions();
@@ -368,36 +383,55 @@ export const loadJournalAnalyticsRows = async (clinicId, year = null) => {
 // 덴트웹 최근 내원 환자 검색 · 재직 의사 (supabase_emr_patients.sql, 중계 프로그램 1.4.0 이상)
 // 테이블이 없거나 EMR 미연동 치과면 빈 목록을 돌려줍니다.
 // ---------------------------------------------------------------------------
-const PATIENT_COLUMNS = 'patient_key, chart_no, name, birth_year, gender, registered_date, last_visit_date, last_reception_at';
+const PATIENT_COLUMNS_BASE = 'patient_key, chart_no, name, birth_year, gender, registered_date, last_visit_date, last_reception_at';
+const PATIENT_COLUMNS = `${PATIENT_COLUMNS_BASE}, reception_status, reception_doctor`;
+let receptionColumnsMissing = false;
+
+// 접수 상태 · 담당의사 칸이 아직 없으면(SQL 재실행 전) 기본 칸만 다시 조회합니다.
+const selectPatients = async (buildQuery) => {
+    if (!receptionColumnsMissing) {
+        const { data, error } = await buildQuery(PATIENT_COLUMNS);
+        if (!error) return data || [];
+        if (!/reception_(status|doctor)/.test(String(error.message))) return [];
+        receptionColumnsMissing = true;
+    }
+    const { data, error } = await buildQuery(PATIENT_COLUMNS_BASE);
+    return error ? [] : (data || []);
+};
+
+export const RECEPTION_STATUS = {
+    0: { label: '대기', tone: 'waiting' },
+    1: { label: '준비완료', tone: 'ready' },
+    2: { label: '진료중', tone: 'treating' },
+    3: { label: '진료완료', tone: 'treated' },
+    4: { label: '수납완료', tone: 'paid' },
+};
 const cleanSearchTerm = (value) => String(value || '').replace(/[,()%*\\]/g, '').trim();
 
 export const searchRecentPatients = async (clinicId, term, { limit = 12 } = {}) => {
     const clean = cleanSearchTerm(term);
     if (!clinicId || !clean) return [];
-    const { data, error } = await supabase
+    return selectPatients(columns => supabase
         .from('emr_recent_patients')
-        .select(PATIENT_COLUMNS)
+        .select(columns)
         .eq('clinic_id', clinicId)
         .or(`name.ilike.${clean}%,chart_no.ilike.${clean}%`)
         .order('last_reception_at', { ascending: false, nullsFirst: false })
         .order('last_visit_date', { ascending: false })
-        .limit(limit);
-    if (error) return [];
-    return data || [];
+        .limit(limit));
 };
 
-export const loadTodayReceptionPatients = async (clinicId, todayKey, { limit = 40 } = {}) => {
+export const loadTodayReceptionPatients = async (clinicId, todayKey, { limit = 400 } = {}) => {
     if (!clinicId) return [];
-    const { data, error } = await supabase
+    const startOfDay = new Date(`${todayKey}T00:00:00`).toISOString();
+    return selectPatients(columns => supabase
         .from('emr_recent_patients')
-        .select(PATIENT_COLUMNS)
+        .select(columns)
         .eq('clinic_id', clinicId)
         .eq('last_visit_date', todayKey)
-        .not('last_reception_at', 'is', null)
+        .gte('last_reception_at', startOfDay)
         .order('last_reception_at', { ascending: false })
-        .limit(limit);
-    if (error) return [];
-    return data || [];
+        .limit(limit));
 };
 
 export const loadEmrDoctors = async (clinicId) => {

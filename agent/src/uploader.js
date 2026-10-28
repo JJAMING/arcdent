@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 //   - 자기 치과 EMR 접속 설정(clinic_emr_settings) 읽기
 //   - 자기 치과 중계 프로그램 상태(clinic_agent_status) 쓰기
 
-export const AGENT_VERSION = '1.4.1';
+export const AGENT_VERSION = '1.5.0';
 
 let client = null;
 let clinicId = null;
@@ -169,12 +169,25 @@ const directoryError = (error, label) => {
 };
 
 /** rows: emr_recent_patients 칸 그대로 (clinic_id 제외). 500줄씩 저장 */
+// 접수 상태 · 담당의사 칸은 SQL을 다시 실행해야 생깁니다. 없으면 그 두 칸만 빼고 보냅니다.
+const RECEPTION_COLUMNS = ['reception_status', 'reception_doctor'];
+let receptionColumnsMissing = false;
+
 export const upsertRecentPatients = async (rows) => {
     if (!client || !clinicId || directoryTablesMissing || rows.length === 0) return false;
     const now = new Date().toISOString();
     for (let i = 0; i < rows.length; i += 500) {
-        const chunk = rows.slice(i, i + 500).map(row => ({ ...row, clinic_id: clinicId, updated_at: now }));
-        const { error } = await client.from('emr_recent_patients').upsert(chunk, { onConflict: 'clinic_id,patient_key' });
+        const chunk = rows.slice(i, i + 500).map(row => {
+            const next = { ...row, clinic_id: clinicId, updated_at: now };
+            if (receptionColumnsMissing) RECEPTION_COLUMNS.forEach(key => delete next[key]);
+            return next;
+        });
+        let { error } = await client.from('emr_recent_patients').upsert(chunk, { onConflict: 'clinic_id,patient_key' });
+        if (error && !receptionColumnsMissing && RECEPTION_COLUMNS.some(key => String(error.message).includes(key))) {
+            receptionColumnsMissing = true;
+            chunk.forEach(row => RECEPTION_COLUMNS.forEach(key => delete row[key]));
+            ({ error } = await client.from('emr_recent_patients').upsert(chunk, { onConflict: 'clinic_id,patient_key' }));
+        }
         if (error) return directoryError(error, '환자 명단 저장 실패');
     }
     return true;

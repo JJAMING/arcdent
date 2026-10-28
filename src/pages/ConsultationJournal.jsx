@@ -7,12 +7,14 @@ import { canViewItem, shouldHideAmounts } from '../utils/permissions';
 import { loadLatestLiveStats, toDateKey } from '../utils/clinicOperations';
 import {
     INSURANCE_DECISIONS,
+    RECEPTION_STATUS,
     JOURNAL_RESULTS,
     JOURNAL_RESULT_LABEL,
     deleteJournalEntry,
     diagnosisAmountOf,
     effectiveAgreedAmount,
     findLatestJournalByChart,
+    isHiddenDoctor,
     loadJournalEntries,
     loadEmrDoctors,
     loadJournalOptions,
@@ -23,6 +25,7 @@ import {
     saveJournalEntry,
     searchRecentPatients,
     summarizeJournalEntries,
+    visibleDoctorOptions,
 } from '../utils/consultationJournal';
 import './SalesAnalysis.css';
 import './ConsultationJournal.css';
@@ -245,6 +248,82 @@ const PatientSearchInput = ({ label, value, onChange, onPick, search, loadToday,
 };
 
 // ---------------------------------------------------------------------------
+// 왼쪽: 오늘 접수 현황 (덴트웹 접수 목록) — 누르면 오른쪽 작성 폼에 채움
+// ---------------------------------------------------------------------------
+const RECEPTION_FILTERS = [
+    { key: 'todo', label: '작성 전' },
+    { key: 'new', label: '신환' },
+    { key: 'all', label: '전체' },
+];
+const TodayReceptionPanel = ({ patients, loaded, isWritten, selectedChart, onPick }) => {
+    const [filter, setFilter] = useState('todo');
+    const isNewToday = (patient) => String(patient.registered_date || '') === toDateKey(new Date());
+    const newPatients = patients.filter(isNewToday);
+    const writtenNew = newPatients.filter(isWritten).length;
+    const shown = patients.filter(patient => (
+        filter === 'all' ? true : filter === 'new' ? isNewToday(patient) : !isWritten(patient)
+    ));
+
+    return (
+        <aside className="journal-reception">
+            <div className="journal-reception-head">
+                <h3>오늘 접수 현황</h3>
+                <span className="journal-muted">1분마다 새로고침</span>
+            </div>
+            <div className="journal-reception-stats">
+                <div><span>접수</span><strong>{patients.length}</strong></div>
+                <div><span>신환</span><strong className="is-new">{newPatients.length}</strong></div>
+                <div className={newPatients.length > writtenNew ? 'is-warn' : ''}><span>신환 작성</span><strong>{writtenNew}/{newPatients.length}</strong></div>
+            </div>
+            <div className="journal-segment is-small">
+                {RECEPTION_FILTERS.map(item => (
+                    <button key={item.key} type="button" className={filter === item.key ? 'active' : ''} onClick={() => setFilter(item.key)}>{item.label}</button>
+                ))}
+            </div>
+            <div className="journal-reception-list">
+                {!loaded && <div className="journal-muted journal-reception-empty">불러오는 중...</div>}
+                {loaded && patients.length === 0 && (
+                    <div className="journal-muted journal-reception-empty">오늘 접수 환자가 없습니다. (EMR 연동 치과에서만 표시됩니다)</div>
+                )}
+                {loaded && patients.length > 0 && shown.length === 0 && (
+                    <div className="journal-muted journal-reception-empty">{filter === 'todo' ? '모두 작성했습니다 👍' : '해당 환자가 없습니다.'}</div>
+                )}
+                {shown.map(patient => {
+                    const written = isWritten(patient);
+                    const status = RECEPTION_STATUS[patient.reception_status];
+                    const isNew = isNewToday(patient);
+                    return (
+                        <button
+                            key={patient.patient_key}
+                            type="button"
+                            className={`journal-reception-item ${selectedChart && selectedChart === patient.chart_no ? 'is-selected' : ''} ${written ? 'is-written' : ''}`}
+                            onClick={() => onPick(patient)}
+                        >
+                            <span className="journal-reception-time">{receptionTime(patient.last_reception_at)}</span>
+                            <span className="journal-reception-main">
+                                <span className="journal-reception-name">
+                                    <strong>{patient.name}</strong>
+                                    <small>{describePatient(patient)}</small>
+                                    <span className={`journal-patient-type patient-${isNew ? 'new' : 'returning'}`}>{isNew ? '신환' : '구환'}</span>
+                                </span>
+                                <span className="journal-reception-sub">
+                                    차트 {patient.chart_no || '-'}
+                                    {patient.reception_doctor ? ` · ${patient.reception_doctor}` : ''}
+                                </span>
+                            </span>
+                            <span className="journal-reception-side">
+                                {status && <span className={`journal-status status-${status.tone}`}>{status.label}</span>}
+                                <span className={`journal-written ${written ? 'is-done' : ''}`}>{written ? '✓ 작성' : '작성 전'}</span>
+                            </span>
+                        </button>
+                    );
+                })}
+            </div>
+        </aside>
+    );
+};
+
+// ---------------------------------------------------------------------------
 // 선택 목록 관리 창 (관리자모드 "상담일지 설정"과 같은 편집기)
 // ---------------------------------------------------------------------------
 const OptionsModal = ({ clinicId, onClose, onSaved }) => (
@@ -344,11 +423,31 @@ const ConsultationJournal = () => {
         doctors: Array.from(new Set([...emrDoctors, ...options.doctors, ...entries.map(e => e.doctor).filter(Boolean)])),
     }), [options, entries, emrDoctors]);
     // 원장님 버튼: 덴트웹 재직 의사 + 직접 추가한 이름
-    const doctorOptions = useMemo(() => Array.from(new Set([...emrDoctors, ...options.doctors])), [emrDoctors, options.doctors]);
+    const doctorOptions = useMemo(() => visibleDoctorOptions(emrDoctors, options), [emrDoctors, options]);
 
     // 덴트웹 최근 내원 환자 검색
     const searchPatients = useCallback((term) => searchRecentPatients(activeClinicId, term), [activeClinicId]);
     const loadTodayPatients = useCallback(() => loadTodayReceptionPatients(activeClinicId, todayKey), [activeClinicId, todayKey]);
+    const [todayPatients, setTodayPatients] = useState([]);
+    const [todayPatientsLoaded, setTodayPatientsLoaded] = useState(false);
+    useEffect(() => {
+        let cancelled = false;
+        setTodayPatientsLoaded(false);
+        const load = () => loadTodayPatients().then(list => {
+            if (cancelled) return;
+            setTodayPatients(list);
+            setTodayPatientsLoaded(true);
+        });
+        load();
+        const timer = window.setInterval(load, 60 * 1000);
+        return () => { cancelled = true; window.clearInterval(timer); };
+    }, [loadTodayPatients, refreshKey]);
+    // 오늘 상담일지를 쓴 환자 (차트번호 또는 성함으로 확인)
+    const writtenToday = useMemo(() => {
+        const charts = new Set(todayEntries.map(entry => entry.chartNo).filter(Boolean));
+        const names = new Set(todayEntries.map(entry => entry.patientName).filter(Boolean));
+        return (patient) => (patient.chart_no ? charts.has(patient.chart_no) : false) || names.has(patient.name);
+    }, [todayEntries]);
 
     const filteredEntries = useMemo(() => {
         const search = filters.search.trim();
@@ -417,15 +516,26 @@ const ConsultationJournal = () => {
         }
     };
     // 덴트웹 환자를 고르면 성함·차트번호·신환/구환을 채우고, 이전 상담이 있으면 불러옵니다.
-    const pickPatient = (patient) => {
-        const type = patientTypeFromEmr(patient, form.date);
-        setForm(current => ({
-            ...current,
-            patientName: patient.name || current.patientName,
-            chartNo: patient.chart_no || current.chartNo,
-            patientType: type || current.patientType,
-            emrPicked: Boolean(type),
-        }));
+    const pickPatient = (patient, { fresh = false } = {}) => {
+        const startFresh = fresh || Boolean(form.id);
+        if (startFresh) {
+            setTouched({ diagnosis: false, agreed: false });
+            setPrevious(null);
+        }
+        const date = startFresh ? todayKey : form.date;
+        const type = patientTypeFromEmr(patient, date);
+        const receptionDoctor = patient.reception_doctor && !isHiddenDoctor(patient.reception_doctor, options) ? patient.reception_doctor : '';
+        setForm(current => {
+            const base = startFresh ? emptyForm(date) : current;
+            return {
+                ...base,
+                patientName: patient.name || base.patientName,
+                chartNo: patient.chart_no || base.chartNo,
+                patientType: type || base.patientType,
+                doctor: receptionDoctor || base.doctor,
+                emrPicked: Boolean(type),
+            };
+        });
         if (patient.chart_no) lookupChart(patient.chart_no);
     };
 
@@ -553,6 +663,14 @@ const ConsultationJournal = () => {
             {message.text && <div className={`journal-alert is-${message.tone}`}>{message.text}</div>}
 
             {tab === 'write' && canWrite && (
+                <div className="journal-workspace">
+                <TodayReceptionPanel
+                    patients={todayPatients}
+                    loaded={todayPatientsLoaded}
+                    isWritten={writtenToday}
+                    selectedChart={form.chartNo}
+                    onPick={patient => pickPatient(patient, { fresh: true })}
+                />
                 <form className="journal-card journal-form" onSubmit={handleSave}>
                     <div className="journal-form-grid">
                         <label className="journal-field">
@@ -599,7 +717,7 @@ const ConsultationJournal = () => {
                         </div>
                     )}
 
-                    <div className="journal-form-grid is-two">
+                    <div className="journal-form-grid is-stack">
                         <ChipPicker label="상담자" value={form.counselor} onChange={value => update({ counselor: value })} options={options.counselors} />
                         <ChipPicker label="담당 원장님" value={form.doctor} onChange={value => update({ doctor: value })} options={doctorOptions} />
                     </div>
@@ -695,6 +813,7 @@ const ConsultationJournal = () => {
                         </button>
                     </div>
                 </form>
+                </div>
             )}
 
             {tab === 'list' && canList && (

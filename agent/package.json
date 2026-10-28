@@ -1,6 +1,6 @@
 {
   "name": "arcdent-dentweb-agent",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "private": true,
   "description": "덴트웹 실시간 현황을 아크덴트(Supabase)로 보내는 중계 프로그램",
   "type": "module",
