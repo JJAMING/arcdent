@@ -22,6 +22,7 @@ import ClinicOperationsPanel from '../components/admin/ClinicOperationsPanel';
 import EmrIntegrationPanel from '../components/admin/EmrIntegrationPanel';
 import SampleClinicPanel from '../components/admin/SampleClinicPanel';
 import { adminClinicName } from '../utils/sampleClinic';
+import { loadJournalAnalyticsRows, mergeJournalRowsByMonth } from '../utils/consultationJournal';
 import AccountManagementPanel from '../components/admin/AccountManagementPanel';
 import { getCurrentYearString, getRollingYearOptions } from '../utils/dateUtils';
 import { describeUserAgent } from '../utils/userAgent';
@@ -1905,6 +1906,11 @@ const Admin = () => {
             fetchRows('insurance', 'claim'),
             fetchRows('insurance', 'fee_stats'),
         ]);
+        // 상담일지가 있는 달은 일지로 계산 (상담분석 화면과 같은 기준)
+        const journalRows = await loadJournalAnalyticsRows(selectedAdminClinicId, year);
+        const consultationOverallMerged = mergeJournalRowsByMonth(consultationOverallRows, journalRows.overall);
+        const consultationConsultantMerged = mergeJournalRowsByMonth(consultationConsultantRows, journalRows.consultant);
+        const consultationRejectedMerged = mergeJournalRowsByMonth(consultationRejectedRows, journalRows.rejected);
 
         const stores = {
             parsed_sales_data: emptyReportMonthStore(year),
@@ -1939,9 +1945,9 @@ const Admin = () => {
         newPatientAgeRows.forEach(row => putReportPayload(stores[NEW_PATIENT_STORAGE_KEY], year, row, payload => ({
             ages: payload.ages || {},
         })));
-        consultationOverallRows.forEach(row => putReportPayload(stores.consultation_overall_data, year, row));
-        consultationConsultantRows.forEach(row => putReportPayload(stores[CONSULTATION_CONSULTANT_STORAGE_KEY], year, row));
-        consultationRejectedRows.forEach(row => putReportPayload(stores[CONSULTATION_REJECTED_STORAGE_KEY], year, row));
+        consultationOverallMerged.forEach(row => putReportPayload(stores.consultation_overall_data, year, row));
+        consultationConsultantMerged.forEach(row => putReportPayload(stores[CONSULTATION_CONSULTANT_STORAGE_KEY], year, row));
+        consultationRejectedMerged.forEach(row => putReportPayload(stores[CONSULTATION_REJECTED_STORAGE_KEY], year, row));
         insuranceClaimRows.forEach(row => putReportPayload(stores.insurance_claim_data, year, row));
         insuranceFeeRows.forEach(row => putReportPayload(stores.insurance_fee_stats_data, year, row, payload => ({
             fees: payload.rows || payload.fees || [],

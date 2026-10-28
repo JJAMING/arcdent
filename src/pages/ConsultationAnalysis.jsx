@@ -12,6 +12,7 @@ import ManagementInsight from '../components/ManagementInsight';
 import AnalysisPeriodControls from '../components/AnalysisPeriodControls';
 import { useAuth } from '../context/AuthContext';
 import { getActiveAnalyticsClinicId, loadAnalyticsData } from '../utils/supabaseAnalyticsStore';
+import { loadJournalAnalyticsRows, mergeJournalRowsByMonth } from '../utils/consultationJournal';
 import { getCurrentYearString, getDefaultYearOptions } from '../utils/dateUtils';
 import { useSessionAnalysisPeriod } from '../utils/analysisPeriodSession';
 import './SalesAnalysis.css';
@@ -170,16 +171,18 @@ const ConsultationAnalysis = () => {
 
             if (activeClinicId) {
                 try {
-                    const [overallRows, consultantRows, rejectedRows, treatmentRows] = await Promise.all([
+                    const [overallRows, consultantRows, rejectedRows, treatmentRows, journalRows] = await Promise.all([
                         loadAnalyticsData({ clinicId: activeClinicId, category: 'consultation', subCategory: 'overall' }),
                         loadAnalyticsData({ clinicId: activeClinicId, category: 'consultation', subCategory: 'consultant' }),
                         loadAnalyticsData({ clinicId: activeClinicId, category: 'consultation', subCategory: 'rejected' }),
                         loadAnalyticsData({ clinicId: activeClinicId, category: 'sales', subCategory: 'treatment_plan' }),
+                        loadJournalAnalyticsRows(activeClinicId),
                     ]);
 
-                    const overallStore = buildConsultationStoreFromRows(overallRows);
-                    const consultantStore = buildConsultationStoreFromRows(consultantRows);
-                    const rejectedStore = buildConsultationStoreFromRows(rejectedRows);
+                    // 상담일지가 있는 달은 일지로 계산하고, 없는 달은 기존 업로드 자료를 그대로 씁니다.
+                    const overallStore = buildConsultationStoreFromRows(mergeJournalRowsByMonth(overallRows, journalRows.overall));
+                    const consultantStore = buildConsultationStoreFromRows(mergeJournalRowsByMonth(consultantRows, journalRows.consultant));
+                    const rejectedStore = buildConsultationStoreFromRows(mergeJournalRowsByMonth(rejectedRows, journalRows.rejected));
                     const treatmentPlanRows = buildTreatmentPlansFromSupabaseRows(treatmentRows);
 
                     if (Object.keys(overallStore).length > 0) nextOverall = overallStore;

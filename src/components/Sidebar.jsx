@@ -5,6 +5,7 @@ import {
     History,
     LogOut,
     MessageSquare,
+    NotebookPen,
     Moon,
     Settings,
     ShieldCheck,
@@ -36,6 +37,8 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
         { id: 'new-patient', icon: <UserPlus size={20} />, label: '신환분석' },
         { id: 'insurance', icon: <ShieldCheck size={20} />, label: '보험청구분석' },
         { id: 'consultation', icon: <MessageSquare size={20} />, label: '상담분석' },
+        // 분석 메뉴와 구분: 직접 기록하는 메뉴
+        { id: 'journal', icon: <NotebookPen size={20} />, label: '상담일지', dividerBefore: '기록' },
     ];
 
     return (
@@ -52,14 +55,18 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
 
             <ul className="nav-list">
                 {menuItems.filter((item) => canViewMenu(permissions, item.id)).map((item) => (
-                    <li
-                        key={item.id}
-                        className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
-                        onClick={() => setActiveTab(item.id)}
-                    >
-                        {item.icon}
-                        <span>{item.label}</span>
-                    </li>
+                    <React.Fragment key={item.id}>
+                        {item.dividerBefore && (
+                            <li className="nav-divider" aria-hidden="true"><span>{item.dividerBefore}</span></li>
+                        )}
+                        <li
+                            className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
+                            onClick={() => setActiveTab(item.id)}
+                        >
+                            {item.icon}
+                            <span>{item.label}</span>
+                        </li>
+                    </React.Fragment>
                 ))}
             </ul>
 

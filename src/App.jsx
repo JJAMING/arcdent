@@ -6,6 +6,7 @@ import TreatmentAnalysis from './pages/TreatmentAnalysis';
 import PatientAnalysis from './pages/PatientAnalysis';
 import NewPatientAnalysis from './pages/NewPatientAnalysis';
 import ConsultationAnalysis from './pages/ConsultationAnalysis';
+import ConsultationJournal from './pages/ConsultationJournal';
 import InsuranceAnalysis from './pages/InsuranceAnalysis';
 import Admin from './pages/Admin';
 import Login from './pages/Login';
@@ -61,7 +62,7 @@ function AppContent() {
     }, [activeTab]);
 
     // 병원관리자 권한으로 숨긴 메뉴에 있으면 보이는 첫 메뉴로 이동
-    const PERMISSION_MENUS = ['home', 'sales', 'treatment', 'patient', 'new-patient', 'insurance', 'consultation'];
+    const PERMISSION_MENUS = ['home', 'sales', 'treatment', 'patient', 'new-patient', 'insurance', 'consultation', 'journal'];
     const tabAllowed = activeTab === 'admin' || canViewMenu(permissions, activeTab);
     useEffect(() => {
         if (tabAllowed) return;
@@ -80,6 +81,7 @@ function AppContent() {
             case 'patient': return <PatientAnalysis />;
             case 'new-patient': return <NewPatientAnalysis />;
             case 'consultation': return <ConsultationAnalysis />;
+            case 'journal': return <ConsultationJournal />;
             case 'insurance': return <InsuranceAnalysis />;
             case 'admin': return <Admin />;
             default: return <HomeDashboard />;

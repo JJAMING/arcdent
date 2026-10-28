@@ -80,6 +80,26 @@
     color: white;
 }
 
+/* 분석 메뉴와 기록 메뉴(상담일지) 사이 구분선 */
+.nav-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0.6rem 0.25rem 0.1rem;
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    list-style: none;
+}
+
+.nav-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border-color);
+}
+
 .sidebar-footer {
     margin-top: auto;
     padding-top: 1rem;
@@ -158,6 +178,18 @@
         overflow-x: auto;
         padding-bottom: 0.15rem;
         scrollbar-width: thin;
+    }
+
+    .nav-divider {
+        flex: 0 0 auto;
+        margin: 0.35rem 0.1rem;
+        width: 1px;
+        background: var(--border-color);
+    }
+
+    .nav-divider span,
+    .nav-divider::after {
+        display: none;
     }
 
     .nav-item {

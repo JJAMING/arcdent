@@ -74,6 +74,14 @@ export const PERMISSION_CATALOG = [
             { key: 'rejected', label: '미동의 환자 현황' },
         ],
     },
+    {
+        menu: 'journal',
+        label: '상담일지',
+        items: [
+            { key: 'list', label: '상담 목록 보기' },
+            { key: 'write', label: '작성·수정·삭제 (끄면 보기만)' },
+        ],
+    },
 ];
 
 const MENU_IDS = new Set(PERMISSION_CATALOG.map(entry => entry.menu));
