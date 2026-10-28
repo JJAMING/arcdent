@@ -75,16 +75,55 @@ const toForm = (entry) => ({
     agreedAmount: withComma(entry.agreedAmount),
 });
 
-// 목록에 있는 값 + 직접 입력 (datalist)
-const ChoiceInput = ({ id, label, value, onChange, options, placeholder }) => (
-    <label className="journal-field">
-        <span>{label}</span>
-        <input list={`${id}-list`} value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder || '선택 또는 입력'} />
-        <datalist id={`${id}-list`}>
-            {options.map(option => <option key={option} value={option} />)}
-        </datalist>
-    </label>
-);
+// 칸 바로 아래에 펼쳐지는 목록 (몇 글자 치면 걸러지고, 목록에 없으면 그대로 직접 입력)
+const DropdownInput = ({ label, value, onChange, options, placeholder }) => {
+    const [open, setOpen] = useState(false);
+    const [highlight, setHighlight] = useState(0);
+    const term = String(value || '').trim();
+    const filtered = term && !options.includes(term) ? options.filter(option => option.includes(term)) : options;
+
+    const choose = (option) => {
+        onChange(option);
+        setOpen(false);
+    };
+    const handleKeyDown = (event) => {
+        if (!open || filtered.length === 0) return;
+        if (event.key === 'ArrowDown') { event.preventDefault(); setHighlight(h => Math.min(filtered.length - 1, h + 1)); }
+        else if (event.key === 'ArrowUp') { event.preventDefault(); setHighlight(h => Math.max(0, h - 1)); }
+        else if (event.key === 'Enter') { event.preventDefault(); choose(filtered[highlight]); }
+        else if (event.key === 'Escape') setOpen(false);
+    };
+
+    return (
+        <label className="journal-field journal-dropdown-field">
+            <span>{label}</span>
+            <input
+                value={value}
+                onChange={event => { onChange(event.target.value); setOpen(true); setHighlight(0); }}
+                onFocus={() => { setOpen(true); setHighlight(0); }}
+                onBlur={() => window.setTimeout(() => setOpen(false), 150)}
+                onKeyDown={handleKeyDown}
+                placeholder={placeholder || '선택 또는 입력'}
+                autoComplete="off"
+            />
+            {open && filtered.length > 0 && (
+                <div className="journal-dropdown" role="listbox">
+                    {filtered.map((option, index) => (
+                        <button
+                            key={option}
+                            type="button"
+                            className={`${index === highlight ? 'active' : ''} ${option === value ? 'is-selected' : ''}`}
+                            onMouseDown={event => event.preventDefault()}
+                            onClick={() => choose(option)}
+                        >
+                            {option}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </label>
+    );
+};
 
 // 버튼으로 고르기 + 목록에 없으면 직접 입력 (상담자, 원장님)
 const ChipPicker = ({ label, value, onChange, options }) => {
@@ -562,12 +601,12 @@ const ConsultationJournal = () => {
 
                     <div className="journal-form-grid is-two">
                         <ChipPicker label="상담자" value={form.counselor} onChange={value => update({ counselor: value })} options={options.counselors} />
-                        <ChipPicker label="담당 원장님 (진단)" value={form.doctor} onChange={value => update({ doctor: value })} options={doctorOptions} />
+                        <ChipPicker label="담당 원장님" value={form.doctor} onChange={value => update({ doctor: value })} options={doctorOptions} />
                     </div>
 
                     <div className="journal-form-grid is-two">
-                        <ChoiceInput id="journal-channel" label="내원경로" value={form.visitChannel} onChange={value => update({ visitChannel: value })} options={options.visitChannels} />
-                        <ChoiceInput id="journal-category" label="진료분류" value={form.treatmentCategory} onChange={value => update({ treatmentCategory: value })} options={options.treatmentCategories} />
+                        <ChipPicker label="진료분류" value={form.treatmentCategory} onChange={value => update({ treatmentCategory: value })} options={options.treatmentCategories} />
+                        <DropdownInput label="내원경로" value={form.visitChannel} onChange={value => update({ visitChannel: value })} options={options.visitChannels} />
                     </div>
 
                     <div className="journal-field">
@@ -613,25 +652,33 @@ const ConsultationJournal = () => {
                         </div>
                     )}
 
-                    <div className="journal-form-grid">
-                        <label className="journal-check">
-                            <input type="checkbox" checked={form.isInsurance} onChange={event => update({ isInsurance: event.target.checked, insuranceDecision: event.target.checked ? form.insuranceDecision : '' })} />
-                            <span>보험 상담</span>
-                        </label>
-                        {form.isInsurance && (
-                            <label className="journal-field">
-                                <span>보험 결정 종류</span>
-                                <select value={form.insuranceDecision} onChange={event => update({ insuranceDecision: event.target.value })}>
-                                    {INSURANCE_DECISIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-                                </select>
+                    <div className="journal-options-row">
+                        <div className="journal-insurance">
+                            <label className="journal-check">
+                                <input type="checkbox" checked={form.isInsurance} onChange={event => update({ isInsurance: event.target.checked, insuranceDecision: event.target.checked ? form.insuranceDecision : '' })} />
+                                <span>보험 상담</span>
                             </label>
-                        )}
+                            {form.isInsurance && (
+                                <div className="journal-chip-picker is-compact" role="group" aria-label="보험 결정 종류">
+                                    {INSURANCE_DECISIONS.filter(item => item.value).map(item => (
+                                        <button
+                                            key={item.value}
+                                            type="button"
+                                            className={form.insuranceDecision === item.value ? 'active' : ''}
+                                            onClick={() => update({ insuranceDecision: form.insuranceDecision === item.value ? '' : item.value })}
+                                        >
+                                            {item.label.replace(/\s?보험\s?/, '')}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                         <label className="journal-check">
                             <input type="checkbox" checked={form.planChanged} onChange={event => update({ planChanged: event.target.checked })} />
                             <span>치료계획 변동</span>
                         </label>
                         {showReason && (
-                            <ChoiceInput id="journal-reason" label={form.result === 'partial' ? '부분동의 사유' : '미동의 사유'} value={form.rejectReason} onChange={value => update({ rejectReason: value })} options={options.rejectReasons} />
+                            <DropdownInput label={form.result === 'partial' ? '부분동의 사유' : '미동의 사유'} value={form.rejectReason} onChange={value => update({ rejectReason: value })} options={options.rejectReasons} />
                         )}
                     </div>
 

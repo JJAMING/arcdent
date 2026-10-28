@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 //   - 자기 치과 EMR 접속 설정(clinic_emr_settings) 읽기
 //   - 자기 치과 중계 프로그램 상태(clinic_agent_status) 쓰기
 
-export const AGENT_VERSION = '1.4.0';
+export const AGENT_VERSION = '1.4.1';
 
 let client = null;
 let clinicId = null;
@@ -150,12 +150,19 @@ export const currentClinicId = () => clinicId;
 // ---------------------------------------------------------------------------
 // 상담일지 환자 검색용 명단 (supabase_emr_patients.sql). 테이블이 아직 없으면 조용히 건너뜁니다.
 // ---------------------------------------------------------------------------
+// 테이블이 없으면 30분 동안 건너뛰고 다시 확인합니다. (SQL을 나중에 실행해도 재시작 없이 반영)
+const DIRECTORY_RETRY_MS = 30 * 60 * 1000;
 let directoryTablesMissing = false;
-export const directoryAvailable = () => !directoryTablesMissing;
+let directoryMissingAt = 0;
+export const directoryAvailable = () => {
+    if (directoryTablesMissing && Date.now() - directoryMissingAt > DIRECTORY_RETRY_MS) directoryTablesMissing = false;
+    return !directoryTablesMissing;
+};
 
 const directoryError = (error, label) => {
     if (isMissingTable(error)) {
         directoryTablesMissing = true;
+        directoryMissingAt = Date.now();
         return false;
     }
     throw new Error(`${label}: ${error.message}`);
