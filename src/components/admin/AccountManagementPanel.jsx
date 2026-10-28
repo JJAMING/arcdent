@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Copy, KeyRound, Plus, RefreshCw, ShieldCheck, Trash2, UserCog, X } from 'lucide-react';
+import { Copy, Eye, EyeOff, KeyRound, Plus, RefreshCw, ShieldCheck, Trash2, UserCog, X } from 'lucide-react';
 import {
     ACCOUNT_KIND_LABEL,
     LOGIN_DOMAIN,
@@ -7,6 +7,7 @@ import {
     createAccount,
     deleteAccount,
     listAccounts,
+    passwordProblem,
     resetAccountPassword,
     setAccountEnabled,
     updateAccount,
@@ -122,9 +123,43 @@ const CredentialNotice = ({ notice, onClose }) => {
 };
 
 // ---------------------------------------------------------------------------
+// 비밀번호: 자동 생성 또는 관리자가 직접 입력
+// ---------------------------------------------------------------------------
+const PasswordChoice = ({ mode, onModeChange, password, onPasswordChange, loginId }) => {
+    const [visible, setVisible] = useState(false);
+    const problem = mode === 'custom' && password ? passwordProblem(password, loginId) : '';
+    return (
+        <div className="account-password">
+            <span>비밀번호</span>
+            <div className="account-kind-tabs">
+                <button type="button" className={mode === 'auto' ? 'active' : ''} onClick={() => onModeChange('auto')}>자동 생성</button>
+                <button type="button" className={mode === 'custom' ? 'active' : ''} onClick={() => onModeChange('custom')}>직접 입력</button>
+            </div>
+            {mode === 'custom' && (
+                <>
+                    <div className="account-password-input">
+                        <input
+                            type={visible ? 'text' : 'password'}
+                            value={password}
+                            onChange={event => onPasswordChange(event.target.value)}
+                            placeholder="영문+숫자 8자 이상"
+                            autoComplete="new-password"
+                        />
+                        <button type="button" onClick={() => setVisible(v => !v)} aria-label={visible ? '비밀번호 가리기' : '비밀번호 보기'}>
+                            {visible ? <EyeOff size={15} /> : <Eye size={15} />}
+                        </button>
+                    </div>
+                    <small className={problem ? 'is-error' : ''}>{problem || '8자 이상, 영문과 숫자를 섞어 주세요. 아이디는 넣을 수 없습니다.'}</small>
+                </>
+            )}
+        </div>
+    );
+};
+
+// ---------------------------------------------------------------------------
 // 관리자모드 > 계정 관리
 // ---------------------------------------------------------------------------
-const emptyForm = () => ({ loginId: '', displayName: '', kind: 'director', permissions: { ...EMPTY_PERMISSIONS } });
+const emptyForm = () => ({ loginId: '', displayName: '', kind: 'director', permissions: { ...EMPTY_PERMISSIONS }, passwordMode: 'auto', password: '' });
 
 const AccountManagementPanel = ({ clinicId, clinicName, clinicCode }) => {
     const [accounts, setAccounts] = useState([]);
@@ -136,6 +171,7 @@ const AccountManagementPanel = ({ clinicId, clinicName, clinicCode }) => {
     const [form, setForm] = useState(emptyForm);
     const [saving, setSaving] = useState(false);
     const [editing, setEditing] = useState(null); // { userId, displayName, kind, permissions }
+    const [resetting, setResetting] = useState(null); // { account, mode, password }
 
     const refresh = useCallback(async () => {
         if (!clinicId) { setAccounts([]); return; }
@@ -153,6 +189,7 @@ const AccountManagementPanel = ({ clinicId, clinicName, clinicCode }) => {
     useEffect(() => {
         setCreating(false);
         setEditing(null);
+        setResetting(null);
         setNotice(null);
         refresh();
     }, [refresh]);
@@ -181,6 +218,11 @@ const AccountManagementPanel = ({ clinicId, clinicName, clinicCode }) => {
             setError('아이디는 영문 소문자·숫자로 시작하는 3~30자입니다. (영문·숫자·. _ - 만 사용)');
             return;
         }
+        const customPassword = form.kind !== 'agent' && form.passwordMode === 'custom' ? form.password : '';
+        if (form.kind !== 'agent' && form.passwordMode === 'custom') {
+            const problem = passwordProblem(customPassword, loginId);
+            if (problem) { setError(problem); return; }
+        }
         setSaving(true);
         try {
             const result = await createAccount({
@@ -189,6 +231,7 @@ const AccountManagementPanel = ({ clinicId, clinicName, clinicCode }) => {
                 displayName: form.displayName,
                 kind: form.kind,
                 permissions: form.kind === 'manager' ? form.permissions : null,
+                password: customPassword,
             });
             setNotice({
                 kind: form.kind,
@@ -207,14 +250,33 @@ const AccountManagementPanel = ({ clinicId, clinicName, clinicCode }) => {
         }
     };
 
+    // 비밀번호 버튼: 원장님·병원관리자는 직접 입력 / 자동 생성 선택, 중계 계정은 자동 생성만
     const handleReset = async (account) => {
-        if (!window.confirm(`"${account.loginId}" 비밀번호를 새로 만들까요? 기존 비밀번호로는 더 이상 로그인할 수 없습니다.`)) return;
+        if (account.kind === 'agent') {
+            if (!window.confirm(`"${account.loginId}" 비밀번호를 새로 만들까요?\n중계 계정이라 치과 PC의 setup.bat 에도 새 비밀번호를 다시 넣어야 하고, 그 전까지 EMR 연동이 끊깁니다.`)) return;
+            await submitReset(account, '');
+            return;
+        }
+        setResetting({ account, mode: 'custom', password: '' });
+        setCreating(false);
+        setEditing(null);
+    };
+
+    const submitReset = async (account, customPassword) => {
+        if (customPassword) {
+            const problem = passwordProblem(customPassword, account.loginId);
+            if (problem) { setError(problem); return; }
+        }
+        setSaving(true);
         try {
-            const result = await resetAccountPassword(account.userId);
+            const result = await resetAccountPassword(account.userId, customPassword);
             setNotice({ kind: account.kind, title: `"${account.loginId}" 새 비밀번호`, loginId: account.loginId, email: account.email, password: result.password });
+            setResetting(null);
             flash(result.message);
         } catch (err) {
             setError(err.message);
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -328,6 +390,15 @@ const AccountManagementPanel = ({ clinicId, clinicName, clinicCode }) => {
                             {form.kind === 'manager' && '병원관리자: 아래에서 체크한 메뉴·항목만 볼 수 있습니다.'}
                             {form.kind === 'agent' && 'EMR 중계 계정: 치과 PC의 중계 프로그램(setup.bat)에 넣는 계정입니다. 앱 화면에는 로그인할 수 없습니다.'}
                         </p>
+                        {form.kind !== 'agent' && (
+                            <PasswordChoice
+                                mode={form.passwordMode}
+                                onModeChange={passwordMode => setForm(current => ({ ...current, passwordMode }))}
+                                password={form.password}
+                                onPasswordChange={password => setForm(current => ({ ...current, password }))}
+                                loginId={form.loginId.trim().toLowerCase()}
+                            />
+                        )}
                         {form.kind === 'manager' && (
                             <PermissionEditor value={form.permissions} onChange={permissions => setForm(current => ({ ...current, permissions }))} />
                         )}
@@ -335,6 +406,31 @@ const AccountManagementPanel = ({ clinicId, clinicName, clinicCode }) => {
                             <button type="button" className="admin-implant-secondary-btn" onClick={() => setCreating(false)}>취소</button>
                             <button type="button" className="admin-implant-primary-btn" onClick={handleCreate} disabled={saving}>
                                 {saving ? '만드는 중...' : '계정 만들기'}
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {resetting && (
+                    <div className="account-form">
+                        <h4 className="account-form-title">"{resetting.account.loginId}" 비밀번호 바꾸기</h4>
+                        <PasswordChoice
+                            mode={resetting.mode}
+                            onModeChange={mode => setResetting(current => ({ ...current, mode }))}
+                            password={resetting.password}
+                            onPasswordChange={password => setResetting(current => ({ ...current, password }))}
+                            loginId={resetting.account.loginId}
+                        />
+                        <p className="account-kind-help">바꾸면 기존 비밀번호로는 더 이상 로그인할 수 없습니다. 이미 로그인된 기기는 다음 로그인 때부터 새 비밀번호가 필요합니다.</p>
+                        <div className="clinic-settings-actions">
+                            <button type="button" className="admin-implant-secondary-btn" onClick={() => setResetting(null)}>취소</button>
+                            <button
+                                type="button"
+                                className="admin-implant-primary-btn"
+                                disabled={saving || (resetting.mode === 'custom' && Boolean(passwordProblem(resetting.password, resetting.account.loginId)))}
+                                onClick={() => submitReset(resetting.account, resetting.mode === 'custom' ? resetting.password : '')}
+                            >
+                                {saving ? '바꾸는 중...' : '비밀번호 바꾸기'}
                             </button>
                         </div>
                     </div>

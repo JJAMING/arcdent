@@ -13,8 +13,17 @@ const LOGIN_ID_RE = /^[a-z0-9][a-z0-9._-]{2,29}$/;
 const BAN_FOREVER = '876000h';
 const KINDS = new Set(['director', 'manager', 'agent']);
 
-const MENU_IDS = new Set(['home', 'sales', 'treatment', 'patient', 'new-patient', 'insurance', 'consultation']);
-const ITEM_RE = /^(home|sales|treatment|patient|new-patient|insurance|consultation):[A-Za-z]{2,40}$/;
+const MENU_IDS = new Set(['home', 'sales', 'treatment', 'patient', 'new-patient', 'insurance', 'consultation', 'journal']);
+const ITEM_RE = /^(home|sales|treatment|patient|new-patient|insurance|consultation|journal):[A-Za-z]{2,40}$/;
+
+// 관리자가 직접 정하는 비밀번호: 8~64자, 영문과 숫자를 섞고, 아이디가 들어가면 안 됨
+const passwordProblem = (password, loginId) => {
+    if (password.length < 8 || password.length > 64) return '비밀번호는 8~64자로 정해 주세요.';
+    if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) return '비밀번호에 영문과 숫자를 함께 넣어 주세요.';
+    if (/\s/.test(password)) return '비밀번호에 띄어쓰기는 쓸 수 없습니다.';
+    if (loginId && password.toLowerCase().includes(String(loginId).toLowerCase())) return '비밀번호에 아이디를 넣을 수 없습니다.';
+    return '';
+};
 
 const json = (res, status, body) => {
     res.statusCode = status;
@@ -128,7 +137,13 @@ export default async function handler(req, res) {
             const { data: clinic } = await admin.from('clinics').select('id, name').eq('id', clinicId).maybeSingle();
             if (!clinic) return json(res, 400, { ok: false, message: '치과를 찾을 수 없습니다.' });
 
-            const password = makePassword();
+            // 직접 입력한 비밀번호가 있으면 그것으로 (중계 계정은 항상 자동 생성)
+            const customPassword = kind === 'agent' ? '' : String(body.password || '');
+            if (customPassword) {
+                const problem = passwordProblem(customPassword, loginId);
+                if (problem) return json(res, 400, { ok: false, message: problem });
+            }
+            const password = customPassword || makePassword();
             const { data: created, error } = await admin.auth.admin.createUser({
                 email: `${loginId}@${LOGIN_DOMAIN}`,
                 password,
@@ -168,10 +183,19 @@ export default async function handler(req, res) {
         if (!target) return json(res, 404, { ok: false, message: '계정을 찾을 수 없습니다.' });
 
         if (action === 'resetPassword') {
-            const password = makePassword();
+            const customPassword = String(body.password || '');
+            if (customPassword && kindOf(target) === 'agent') {
+                return json(res, 400, { ok: false, message: '중계 계정은 비밀번호를 직접 정할 수 없습니다. (자동 생성만 가능)' });
+            }
+            if (customPassword) {
+                const { data: userData } = await admin.auth.admin.getUserById(target.user_id);
+                const problem = passwordProblem(customPassword, loginIdOf(userData?.user?.email || ''));
+                if (problem) return json(res, 400, { ok: false, message: problem });
+            }
+            const password = customPassword || makePassword();
             const { error } = await admin.auth.admin.updateUserById(target.user_id, { password });
             if (error) throw error;
-            return json(res, 200, { ok: true, message: '비밀번호를 새로 만들었습니다.', password });
+            return json(res, 200, { ok: true, message: customPassword ? '비밀번호를 바꿨습니다.' : '비밀번호를 새로 만들었습니다.', password });
         }
 
         if (action === 'setEnabled') {

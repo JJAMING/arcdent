@@ -43,7 +43,17 @@ const callAdminApi = async (action, payload = {}) => {
 
 export const listAccounts = (clinicId) => callAdminApi('list', { clinicId }).then(result => result.accounts || []);
 export const createAccount = (payload) => callAdminApi('create', payload);
-export const resetAccountPassword = (userId) => callAdminApi('resetPassword', { userId });
+export const resetAccountPassword = (userId, password = '') => callAdminApi('resetPassword', { userId, password });
+
+/** 직접 정하는 비밀번호 확인 (서버와 같은 규칙). 문제가 없으면 '' */
+export const passwordProblem = (password, loginId = '') => {
+    const value = String(password || '');
+    if (value.length < 8 || value.length > 64) return '비밀번호는 8~64자로 정해 주세요.';
+    if (!/[A-Za-z]/.test(value) || !/[0-9]/.test(value)) return '비밀번호에 영문과 숫자를 함께 넣어 주세요.';
+    if (/\s/.test(value)) return '비밀번호에 띄어쓰기는 쓸 수 없습니다.';
+    if (loginId && value.toLowerCase().includes(String(loginId).toLowerCase())) return '비밀번호에 아이디를 넣을 수 없습니다.';
+    return '';
+};
 export const setAccountEnabled = (userId, enabled) => callAdminApi('setEnabled', { userId, enabled });
 export const updateAccount = (payload) => callAdminApi('update', payload);
 export const deleteAccount = (userId) => callAdminApi('delete', { userId });
