@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 //   - 자기 치과 EMR 접속 설정(clinic_emr_settings) 읽기
 //   - 자기 치과 중계 프로그램 상태(clinic_agent_status) 쓰기
 
-export const AGENT_VERSION = '1.5.0';
+export const AGENT_VERSION = '1.5.1';
 
 let client = null;
 let clinicId = null;
@@ -172,6 +172,14 @@ const directoryError = (error, label) => {
 // 접수 상태 · 담당의사 칸은 SQL을 다시 실행해야 생깁니다. 없으면 그 두 칸만 빼고 보냅니다.
 const RECEPTION_COLUMNS = ['reception_status', 'reception_doctor'];
 let receptionColumnsMissing = false;
+let receptionColumnsMissingAt = 0;
+
+/** 칸이 없어서 빼고 보내던 중이면 30분마다 다시 시도합니다. 다시 시도할 차례면 true (→ 전체 명단을 다시 보냄) */
+export const retryReceptionColumnsIfDue = () => {
+    if (!receptionColumnsMissing || Date.now() - receptionColumnsMissingAt < DIRECTORY_RETRY_MS) return false;
+    receptionColumnsMissing = false;
+    return true;
+};
 
 export const upsertRecentPatients = async (rows) => {
     if (!client || !clinicId || directoryTablesMissing || rows.length === 0) return false;
@@ -185,6 +193,7 @@ export const upsertRecentPatients = async (rows) => {
         let { error } = await client.from('emr_recent_patients').upsert(chunk, { onConflict: 'clinic_id,patient_key' });
         if (error && !receptionColumnsMissing && RECEPTION_COLUMNS.some(key => String(error.message).includes(key))) {
             receptionColumnsMissing = true;
+            receptionColumnsMissingAt = Date.now();
             chunk.forEach(row => RECEPTION_COLUMNS.forEach(key => delete row[key]));
             ({ error } = await client.from('emr_recent_patients').upsert(chunk, { onConflict: 'clinic_id,patient_key' }));
         }

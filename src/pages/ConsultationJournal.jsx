@@ -251,21 +251,33 @@ const PatientSearchInput = ({ label, value, onChange, onPick, search, loadToday,
 // 왼쪽: 오늘 접수 현황 (덴트웹 접수 목록) — 누르면 오른쪽 작성 폼에 채움
 // ---------------------------------------------------------------------------
 const RECEPTION_FILTERS = [
+    { key: 'target', label: '상담 대상' },
     { key: 'todo', label: '작성 전' },
-    { key: 'new', label: '신환' },
     { key: 'all', label: '전체' },
 ];
+// 진료완료(3) · 수납완료(4)
+const isTreatmentDone = (patient) => patient.reception_status === 3 || patient.reception_status === 4;
 const TodayReceptionPanel = ({ patients, loaded, isWritten, selectedChart, onPick }) => {
-    const [filter, setFilter] = useState('todo');
+    const [filter, setFilter] = useState('target');
+    const [search, setSearch] = useState('');
     const isNewToday = (patient) => String(patient.registered_date || '') === toDateKey(new Date());
     const newPatients = patients.filter(isNewToday);
     const writtenNew = newPatients.filter(isWritten).length;
-    const shown = patients.filter(patient => (
-        filter === 'all' ? true : filter === 'new' ? isNewToday(patient) : !isWritten(patient)
-    ));
+    // 지금 써야 할 환자: 진료가 끝났는데 상담일지를 아직 안 쓴 환자
+    const isUrgent = (patient) => isTreatmentDone(patient) && !isWritten(patient);
+    // 상담 대상: 신환 전체 + 진료완료·수납완료인데 작성 전인 구환
+    const isTarget = (patient) => isNewToday(patient) || isUrgent(patient);
+    const term = search.trim();
+    const shown = patients
+        .filter(patient => (term
+            ? patient.name.includes(term) || String(patient.chart_no || '').includes(term)
+            : filter === 'all' ? true : filter === 'todo' ? !isWritten(patient) : isTarget(patient)))
+        .sort((a, b) => Number(isUrgent(b)) - Number(isUrgent(a))
+            || String(b.last_reception_at || '').localeCompare(String(a.last_reception_at || '')));
 
     return (
         <aside className="journal-reception">
+            <div className="journal-reception-inner">
             <div className="journal-reception-head">
                 <h3>오늘 접수 현황</h3>
                 <span className="journal-muted">1분마다 새로고침</span>
@@ -277,16 +289,22 @@ const TodayReceptionPanel = ({ patients, loaded, isWritten, selectedChart, onPic
             </div>
             <div className="journal-segment is-small">
                 {RECEPTION_FILTERS.map(item => (
-                    <button key={item.key} type="button" className={filter === item.key ? 'active' : ''} onClick={() => setFilter(item.key)}>{item.label}</button>
+                    <button key={item.key} type="button" className={!term && filter === item.key ? 'active' : ''} onClick={() => { setFilter(item.key); setSearch(''); }}>{item.label}</button>
                 ))}
             </div>
+            <input
+                className="journal-reception-search"
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+                placeholder="이름·차트번호로 찾기"
+            />
             <div className="journal-reception-list">
                 {!loaded && <div className="journal-muted journal-reception-empty">불러오는 중...</div>}
                 {loaded && patients.length === 0 && (
                     <div className="journal-muted journal-reception-empty">오늘 접수 환자가 없습니다. (EMR 연동 치과에서만 표시됩니다)</div>
                 )}
                 {loaded && patients.length > 0 && shown.length === 0 && (
-                    <div className="journal-muted journal-reception-empty">{filter === 'todo' ? '모두 작성했습니다 👍' : '해당 환자가 없습니다.'}</div>
+                    <div className="journal-muted journal-reception-empty">{term ? '찾는 환자가 없습니다.' : filter === 'all' ? '해당 환자가 없습니다.' : '모두 작성했습니다 👍'}</div>
                 )}
                 {shown.map(patient => {
                     const written = isWritten(patient);
@@ -296,7 +314,7 @@ const TodayReceptionPanel = ({ patients, loaded, isWritten, selectedChart, onPic
                         <button
                             key={patient.patient_key}
                             type="button"
-                            className={`journal-reception-item ${selectedChart && selectedChart === patient.chart_no ? 'is-selected' : ''} ${written ? 'is-written' : ''}`}
+                            className={`journal-reception-item ${selectedChart && selectedChart === patient.chart_no ? 'is-selected' : ''} ${written ? 'is-written' : ''} ${isUrgent(patient) ? 'is-urgent' : ''}`}
                             onClick={() => onPick(patient)}
                         >
                             <span className="journal-reception-time">{receptionTime(patient.last_reception_at)}</span>
@@ -318,6 +336,7 @@ const TodayReceptionPanel = ({ patients, loaded, isWritten, selectedChart, onPic
                         </button>
                     );
                 })}
+            </div>
             </div>
         </aside>
     );
@@ -717,7 +736,7 @@ const ConsultationJournal = () => {
                         </div>
                     )}
 
-                    <div className="journal-form-grid is-stack">
+                    <div className="journal-form-grid is-two">
                         <ChipPicker label="상담자" value={form.counselor} onChange={value => update({ counselor: value })} options={options.counselors} />
                         <ChipPicker label="담당 원장님" value={form.doctor} onChange={value => update({ doctor: value })} options={doctorOptions} />
                     </div>

@@ -1,5 +1,5 @@
 import { fetchActiveDoctors, fetchRecentPatients, fetchStaffNames, fetchTodayReceptionPatients, ymd } from './dentweb.js';
-import { deleteOldRecentPatients, directoryAvailable, replaceDoctors, upsertRecentPatients } from './uploader.js';
+import { deleteOldRecentPatients, directoryAvailable, replaceDoctors, retryReceptionColumnsIfDue, upsertRecentPatients } from './uploader.js';
 
 // 상담일지 환자 검색용 명단 동기화 (supabase_emr_patients.sql)
 //  - 최근 30일 내원 환자: 30분마다 전체 확인, 오늘 접수 환자는 매 주기 반영
@@ -28,6 +28,8 @@ const completeRow = (row) => Object.fromEntries(COLUMNS.map(key => [key, row[key
 
 export const syncPatientDirectory = async ({ log }) => {
     if (!directoryAvailable()) return;
+    // 접수 상태 · 담당의사 칸이 새로 생겼을 수 있으면 전체를 다시 보냄
+    if (retryReceptionColumnsIfDue()) sentHash.clear();
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const todayIso = isoDay(today);

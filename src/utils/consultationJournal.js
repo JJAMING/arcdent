@@ -385,15 +385,16 @@ export const loadJournalAnalyticsRows = async (clinicId, year = null) => {
 // ---------------------------------------------------------------------------
 const PATIENT_COLUMNS_BASE = 'patient_key, chart_no, name, birth_year, gender, registered_date, last_visit_date, last_reception_at';
 const PATIENT_COLUMNS = `${PATIENT_COLUMNS_BASE}, reception_status, reception_doctor`;
-let receptionColumnsMissing = false;
+let receptionColumnsMissingAt = 0;
+const RECEPTION_COLUMNS_RETRY_MS = 5 * 60 * 1000;
 
-// 접수 상태 · 담당의사 칸이 아직 없으면(SQL 재실행 전) 기본 칸만 다시 조회합니다.
+// 접수 상태 · 담당의사 칸이 아직 없으면(SQL 재실행 전) 기본 칸만 조회하고, 5분 뒤 다시 확인합니다.
 const selectPatients = async (buildQuery) => {
-    if (!receptionColumnsMissing) {
+    if (Date.now() - receptionColumnsMissingAt > RECEPTION_COLUMNS_RETRY_MS) {
         const { data, error } = await buildQuery(PATIENT_COLUMNS);
         if (!error) return data || [];
         if (!/reception_(status|doctor)/.test(String(error.message))) return [];
-        receptionColumnsMissing = true;
+        receptionColumnsMissingAt = Date.now();
     }
     const { data, error } = await buildQuery(PATIENT_COLUMNS_BASE);
     return error ? [] : (data || []);
