@@ -251,29 +251,21 @@ const PatientSearchInput = ({ label, value, onChange, onPick, search, loadToday,
 // 왼쪽: 오늘 접수 현황 (덴트웹 접수 목록) — 누르면 오른쪽 작성 폼에 채움
 // ---------------------------------------------------------------------------
 const RECEPTION_FILTERS = [
-    { key: 'target', label: '상담 대상' },
-    { key: 'todo', label: '작성 전' },
     { key: 'all', label: '전체' },
+    { key: 'new', label: '신환' },
+    { key: 'returning', label: '구환' },
 ];
-// 진료완료(3) · 수납완료(4)
-const isTreatmentDone = (patient) => patient.reception_status === 3 || patient.reception_status === 4;
-const TodayReceptionPanel = ({ patients, loaded, isWritten, selectedChart, onPick }) => {
-    const [filter, setFilter] = useState('target');
+const TodayReceptionPanel = ({ patients, loaded, selectedChart, onPick }) => {
+    const [filter, setFilter] = useState('all');
     const [search, setSearch] = useState('');
     const isNewToday = (patient) => String(patient.registered_date || '') === toDateKey(new Date());
-    const newPatients = patients.filter(isNewToday);
-    const writtenNew = newPatients.filter(isWritten).length;
-    // 지금 써야 할 환자: 진료가 끝났는데 상담일지를 아직 안 쓴 환자
-    const isUrgent = (patient) => isTreatmentDone(patient) && !isWritten(patient);
-    // 상담 대상: 신환 전체 + 진료완료·수납완료인데 작성 전인 구환
-    const isTarget = (patient) => isNewToday(patient) || isUrgent(patient);
+    const newCount = patients.filter(isNewToday).length;
     const term = search.trim();
     const shown = patients
         .filter(patient => (term
             ? patient.name.includes(term) || String(patient.chart_no || '').includes(term)
-            : filter === 'all' ? true : filter === 'todo' ? !isWritten(patient) : isTarget(patient)))
-        .sort((a, b) => Number(isUrgent(b)) - Number(isUrgent(a))
-            || String(b.last_reception_at || '').localeCompare(String(a.last_reception_at || '')));
+            : filter === 'all' ? true : filter === 'new' ? isNewToday(patient) : !isNewToday(patient)))
+        .sort((a, b) => String(b.last_reception_at || '').localeCompare(String(a.last_reception_at || '')));
 
     return (
         <aside className="journal-reception">
@@ -284,8 +276,8 @@ const TodayReceptionPanel = ({ patients, loaded, isWritten, selectedChart, onPic
             </div>
             <div className="journal-reception-stats">
                 <div><span>접수</span><strong>{patients.length}</strong></div>
-                <div><span>신환</span><strong className="is-new">{newPatients.length}</strong></div>
-                <div className={newPatients.length > writtenNew ? 'is-warn' : ''}><span>신환 작성</span><strong>{writtenNew}/{newPatients.length}</strong></div>
+                <div><span>신환</span><strong className="is-new">{newCount}</strong></div>
+                <div><span>구환</span><strong className="is-returning">{patients.length - newCount}</strong></div>
             </div>
             <div className="journal-segment is-small">
                 {RECEPTION_FILTERS.map(item => (
@@ -304,17 +296,16 @@ const TodayReceptionPanel = ({ patients, loaded, isWritten, selectedChart, onPic
                     <div className="journal-muted journal-reception-empty">오늘 접수 환자가 없습니다. (EMR 연동 치과에서만 표시됩니다)</div>
                 )}
                 {loaded && patients.length > 0 && shown.length === 0 && (
-                    <div className="journal-muted journal-reception-empty">{term ? '찾는 환자가 없습니다.' : filter === 'all' ? '해당 환자가 없습니다.' : '모두 작성했습니다 👍'}</div>
+                    <div className="journal-muted journal-reception-empty">{term ? '찾는 환자가 없습니다.' : '해당 환자가 없습니다.'}</div>
                 )}
                 {shown.map(patient => {
-                    const written = isWritten(patient);
                     const status = RECEPTION_STATUS[patient.reception_status];
                     const isNew = isNewToday(patient);
                     return (
                         <button
                             key={patient.patient_key}
                             type="button"
-                            className={`journal-reception-item ${selectedChart && selectedChart === patient.chart_no ? 'is-selected' : ''} ${written ? 'is-written' : ''} ${isUrgent(patient) ? 'is-urgent' : ''}`}
+                            className={`journal-reception-item ${selectedChart && selectedChart === patient.chart_no ? 'is-selected' : ''}`}
                             onClick={() => onPick(patient)}
                         >
                             <span className="journal-reception-time">{receptionTime(patient.last_reception_at)}</span>
@@ -331,7 +322,6 @@ const TodayReceptionPanel = ({ patients, loaded, isWritten, selectedChart, onPic
                             </span>
                             <span className="journal-reception-side">
                                 {status && <span className={`journal-status status-${status.tone}`}>{status.label}</span>}
-                                <span className={`journal-written ${written ? 'is-done' : ''}`}>{written ? '✓ 작성' : '작성 전'}</span>
                             </span>
                         </button>
                     );
@@ -461,12 +451,6 @@ const ConsultationJournal = () => {
         const timer = window.setInterval(load, 60 * 1000);
         return () => { cancelled = true; window.clearInterval(timer); };
     }, [loadTodayPatients, refreshKey]);
-    // 오늘 상담일지를 쓴 환자 (차트번호 또는 성함으로 확인)
-    const writtenToday = useMemo(() => {
-        const charts = new Set(todayEntries.map(entry => entry.chartNo).filter(Boolean));
-        const names = new Set(todayEntries.map(entry => entry.patientName).filter(Boolean));
-        return (patient) => (patient.chart_no ? charts.has(patient.chart_no) : false) || names.has(patient.name);
-    }, [todayEntries]);
 
     const filteredEntries = useMemo(() => {
         const search = filters.search.trim();
@@ -650,11 +634,7 @@ const ConsultationJournal = () => {
                     <div className={todayNewPatients !== null && todayNewEntries < todayNewPatients ? 'is-warn' : ''}>
                         <span>오늘 작성</span>
                         <strong>{todayEntries.length.toLocaleString()}건</strong>
-                        <small>
-                            {todayNewPatients !== null
-                                ? `오늘 신환 ${todayNewPatients}명 · 신환 상담일지 ${todayNewEntries}건`
-                                : `신환 ${todayNewEntries}건 · 구환 ${todayEntries.length - todayNewEntries}건`}
-                        </small>
+                        <small>신환 {todayNewEntries}건 · 구환 {todayEntries.length - todayNewEntries}건</small>
                     </div>
                 )}
             </div>
@@ -686,7 +666,6 @@ const ConsultationJournal = () => {
                 <TodayReceptionPanel
                     patients={todayPatients}
                     loaded={todayPatientsLoaded}
-                    isWritten={writtenToday}
                     selectedChart={form.chartNo}
                     onPick={patient => pickPatient(patient, { fresh: true })}
                 />
