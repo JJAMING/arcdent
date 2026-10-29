@@ -10,7 +10,8 @@
 ```
 
 - 덴트웹 DB는 **읽기만** 합니다. (덴트웹이 외부 연동용으로 공개한 뷰/프로시저만 사용)
-- **환자 이름·연락처·차트번호·생년월일은 전송하지 않습니다.** 합계 숫자만 보냅니다.
+- 홈 화면용으로는 합계 숫자만 보냅니다.
+- 상담일지 환자 검색·접수현황용으로 **최근 30일 환자 명단**(차트번호, 이름, 출생연도, 성별, 등록/내원일, 접수 시각·상태·담당의)만 보내고 30일이 지나면 지웁니다. **연락처·주민번호·주소는 보내지 않습니다.**
 - SQL Server는 덴트웹에 원래 들어 있으므로 따로 설치하지 않습니다. 필요한 건 **Node.js**뿐입니다.
 
 ## 설정 정보는 어디에?
@@ -27,16 +28,17 @@
 
 ## 새 치과 설치 순서 (약 20분)
 
-### 1. Supabase: 중계 계정 만들기
-1. **Authentication → Users → Add user → Create new user**
-   - Email: `치과코드-agent@arcdent.local` / Password: 12자 이상
-   - **Auto Confirm User 체크**
-2. **User UID** 복사 → SQL Editor에서 실행 (`clinic_id` = `select id, name from public.clinics;` 의 id)
+### 0. Supabase: 치과 등록 (처음 한 번)
+SQL Editor에서 실행 (code는 영문 소문자, 예: `hclinic`)
 
 ```sql
-insert into public.profiles (user_id, clinic_id, role)
-values ('중계계정_USER_UID', '치과_UUID', 'agent');
+insert into public.clinics (name, code) values ('○○치과', 'hclinic');
 ```
+
+### 1. 관리자모드: 계정 만들기
+**관리자모드 → 계정 관리** 에서 그 치과를 선택
+- **[중계 계정]** → 만들기 → 나온 이메일·비밀번호를 setup.bat 에 넣을 때까지 보관 (창을 닫으면 다시 볼 수 없음 → 잊으면 비밀번호 버튼으로 새로 만들기)
+- 원장님 / 병원관리자 계정도 여기서 만들기
 
 ### 2. 관리자모드: EMR 연동 설정
 **관리자모드 → EMR 연동** 에서 그 치과를 선택하고 입력 후 저장
@@ -47,7 +49,8 @@ values ('중계계정_USER_UID', '치과_UUID', 'agent');
 1. **Node.js LTS** 설치: <https://nodejs.org>
 2. 이 `agent` 폴더를 그 PC에 복사 (예: `C:\arcdent-agent`)
    - ✅ `defaults.json`은 **같이 복사** (Supabase 주소/키를 다시 묻지 않음)
-   - ❌ `config.json`, `logs`, `node_modules`는 **빼고** 복사
+   - ❌ `config.json`, `state.json`, `logs`, `node_modules`는 **빼고** 복사
+     (`config.json` = 다른 치과 비밀번호, `state.json` = 다른 치과 진행 기록)
 3. **`setup.bat`** 더블클릭 → 질문에 답하기
    ```
    중계 계정 이메일: bclinic-agent@arcdent.local
