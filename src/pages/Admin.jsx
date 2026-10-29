@@ -22,6 +22,7 @@ import ClinicOperationsPanel from '../components/admin/ClinicOperationsPanel';
 import EmrIntegrationPanel from '../components/admin/EmrIntegrationPanel';
 import SampleClinicPanel from '../components/admin/SampleClinicPanel';
 import JournalOptionsEditor from '../components/journal/JournalOptionsEditor';
+import DailyReportPanel from '../components/admin/DailyReportPanel';
 import { adminClinicName } from '../utils/sampleClinic';
 import { loadJournalAnalyticsRows, mergeJournalRowsByMonth } from '../utils/consultationJournal';
 import AccountManagementPanel from '../components/admin/AccountManagementPanel';
@@ -5843,6 +5844,13 @@ const Admin = () => {
                 </button>
                 <button
                     type="button"
+                    className={`admin-panel-tab ${adminPanelTab === 'report' ? 'active' : ''}`}
+                    onClick={() => setAdminPanelTab('report')}
+                >
+                    알림톡
+                </button>
+                <button
+                    type="button"
                     className={`admin-panel-tab ${adminPanelTab === 'journal' ? 'active' : ''}`}
                     onClick={() => setAdminPanelTab('journal')}
                 >
@@ -6764,6 +6772,10 @@ const Admin = () => {
                     clinicName={selectedAdminClinic?.name}
                     onSelectClinic={(id) => handleAdminClinicChange({ target: { value: id } })}
                 />
+            )}
+
+            {adminPanelTab === 'report' && (
+                <DailyReportPanel key={selectedAdminClinicId} clinicId={selectedAdminClinicId} clinicName={selectedAdminClinic?.name} />
             )}
 
             {adminPanelTab === 'journal' && (

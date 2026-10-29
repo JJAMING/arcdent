@@ -1,0 +1,153 @@
+.report-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.report-warning {
+    margin-bottom: 0.75rem;
+    padding: 0.7rem 0.9rem;
+    border-radius: 0.6rem;
+    background: color-mix(in srgb, #f59e0b 14%, var(--card-bg));
+    font-size: 0.85rem;
+}
+
+.report-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.85rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.report-switch input {
+    width: 18px;
+    height: 18px;
+}
+
+.report-field {
+    display: grid;
+    gap: 0.4rem;
+    margin-bottom: 0.85rem;
+}
+
+.report-field > span {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
+.report-field small {
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+}
+
+.report-field select,
+.report-recipient input {
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.55rem;
+    background: var(--bg-color);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.report-field select {
+    width: 140px;
+}
+
+.report-recipient {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 200px) auto;
+    gap: 0.4rem;
+    align-items: center;
+}
+
+.report-add {
+    justify-self: start;
+}
+
+.report-icon-btn {
+    display: inline-grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: var(--card-bg);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.report-preview-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+}
+
+.report-preview-head h3 {
+    margin: 0;
+}
+
+/* 카카오톡 말풍선 느낌 */
+.report-bubble {
+    margin: 0;
+    padding: 0.9rem 1rem;
+    border-radius: 0.9rem 0.9rem 0 0;
+    background: #fef9c3;
+    color: #1f2937;
+    font-family: inherit;
+    font-size: 0.85rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+}
+
+.report-bubble-button {
+    padding: 0.6rem;
+    border-radius: 0 0 0.9rem 0.9rem;
+    background: #f1f5f9;
+    color: #1f2937;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-align: center;
+}
+
+.report-template {
+    margin: 0 0 0.5rem;
+    padding: 0.8rem 1rem;
+    border: 1px dashed var(--border-color);
+    border-radius: 0.6rem;
+    background: var(--bg-color);
+    font-family: inherit;
+    font-size: 0.82rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+}
+
+.report-status {
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 800;
+}
+
+.report-status.status-sent { background: color-mix(in srgb, #10b981 16%, transparent); color: #047857; }
+.report-status.status-failed { background: color-mix(in srgb, #ef4444 14%, transparent); color: #b91c1c; }
+.report-status.status-skipped { background: color-mix(in srgb, #64748b 16%, transparent); color: #475569; }
+
+.report-log-message {
+    max-width: 360px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 1000px) {
+    .report-grid {
+        grid-template-columns: 1fr;
+    }
+}
