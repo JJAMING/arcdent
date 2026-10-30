@@ -143,3 +143,45 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
+
+.emr-install {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1.5rem;
+}
+
+.emr-install-text {
+    flex: 1 1 360px;
+    min-width: 0;
+}
+
+.emr-install-text h3 {
+    margin: 0 0 0.3rem;
+}
+
+.emr-install-text p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.emr-install-warn {
+    margin-top: 0.3rem !important;
+    color: #b45309 !important;
+}
+
+.emr-install-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.emr-install-btn small {
+    opacity: 0.75;
+    font-weight: 600;
+}

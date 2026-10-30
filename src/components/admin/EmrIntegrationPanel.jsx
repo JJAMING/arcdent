@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { PlugZap, RefreshCw } from 'lucide-react';
+import { Download, PlugZap, RefreshCw } from 'lucide-react';
 import {
     DEFAULT_EMR_SETTINGS,
     describeAgentState,
@@ -22,6 +22,15 @@ const EmrIntegrationPanel = ({ clinics = [], clinicId, clinicName, onSelectClini
     const [form, setForm] = useState({ ...DEFAULT_EMR_SETTINGS });
     const [saving, setSaving] = useState(false);
     const [now, setNow] = useState(() => Date.now());
+    const [installInfo, setInstallInfo] = useState(null);
+
+    // 새 치과 설치 파일 (빌드 때 public/agent 에 만들어짐)
+    useEffect(() => {
+        fetch('/agent/install.json', { cache: 'no-store' })
+            .then(response => (response.ok ? response.json() : null))
+            .then(setInstallInfo)
+            .catch(() => setInstallInfo(null));
+    }, []);
 
     const refresh = useCallback(async () => {
         setLoading(true);
@@ -90,6 +99,26 @@ const EmrIntegrationPanel = ({ clinics = [], clinicId, clinicName, onSelectClini
             </p>
             {error && <div className="admin-history-error">{error}</div>}
             {success && <div className="admin-implant-success">{success}</div>}
+
+            <section className="clinic-settings-section emr-install">
+                <div className="emr-install-text">
+                    <h3>새 치과 설치 파일</h3>
+                    <p>
+                        치과 PC(원격 접속 포함)에서 내려받아 <b>압축 풀기</b> → 폴더를 <code>{'C:\\arcdent-agent'}</code> 로 옮긴 뒤 <b>setup.bat</b> 을 실행하세요.
+                        다른 치과의 비밀번호·기록은 들어 있지 않아 그 치과 중계 계정과 덴트웹 아이디만 새로 입력하면 됩니다.
+                    </p>
+                    {installInfo && !installInfo.hasDefaults && (
+                        <p className="emr-install-warn">이 파일에는 Supabase 주소가 빠져 있어 setup.bat 이 주소와 키를 물어봅니다.</p>
+                    )}
+                </div>
+                {installInfo ? (
+                    <a className="admin-implant-primary-btn emr-install-btn" href={`/agent/${installInfo.file}?v=${installInfo.version}`} download="arcdent-agent.zip">
+                        <Download size={15} /> 설치 파일 받기 <small>v{installInfo.version}</small>
+                    </a>
+                ) : (
+                    <span className="admin-helper-text">설치 파일은 배포된 사이트에서 받을 수 있습니다.</span>
+                )}
+            </section>
 
             <section className="clinic-settings-section">
                 <div className="clinic-settings-section-header">
